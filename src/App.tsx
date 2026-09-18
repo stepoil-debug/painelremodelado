@@ -2,29 +2,31 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
+  ArrowLeft,
   BarChart3,
   Bell,
   Boxes,
+  Check,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
+  CircleDot,
   Clock3,
   Eye,
+  FileText,
   Filter,
   ImagePlus,
-  Inbox,
-  ListChecks,
+  LayoutGrid,
+  List,
   PauseCircle,
   PlayCircle,
-  RotateCcw,
+  RefreshCcw,
   Search,
   ShieldCheck,
-  Truck,
   UserCheck,
   Users,
-  X,
   XCircle,
 } from 'lucide-react';
-import { seedNotifications } from './data/mock';
 import { liveHHReadOnlyEnabled, loadHHSessionsReadOnly } from './services/hhReadOnly';
 import { loadOperationalState, resetOperationalState, saveOperationalState, uid } from './store';
 import type {
@@ -33,20 +35,21 @@ import type {
   EvidenceType,
   NotificationItem,
   OperationalState,
+  Priority,
   SectorKey,
 } from './types';
 import {
   getNextStage,
   getStage,
+  getStageIndex,
   photoPolicyLabel,
   sectorName,
   sectors,
   workflowStages,
 } from './workflow';
 
-type ViewKey = 'queue' | 'flow' | 'live' | 'blocks' | 'notifications' | 'analytics';
-type QueueFilter = 'all' | DemandStatus;
-type Banner = { tone: 'success' | 'warning' | 'danger'; text: string } | null;
+type PageKey = 'portfolio' | 'live' | 'blocks' | 'notifications' | 'analytics';
+type ListMode = 'table' | 'board';
 
 const statusLabel: Record<DemandStatus, string> = {
   new: 'Nova',
@@ -57,56 +60,44 @@ const statusLabel: Record<DemandStatus, string> = {
   completed: 'Concluída',
 };
 
-const priorityLabel = {
+const priorityLabel: Record<Priority, string> = {
   critical: 'Crítica',
   high: 'Alta',
   normal: 'Normal',
   low: 'Baixa',
 };
 
-const blockerLabel = {
-  material: 'Material',
-  engineering: 'Engenharia',
-  client: 'Cliente',
-  access: 'Acesso',
-  quality: 'Qualidade',
-  other: 'Outro',
+const priorityWeight: Record<Priority, number> = {
+  critical: 4,
+  high: 3,
+  normal: 2,
+  low: 1,
 };
 
-const priorityWeight = { critical: 4, high: 3, normal: 2, low: 1 };
-
 function effectiveStatus(demand: Demand): DemandStatus {
-  if (demand.status === 'completed' || demand.status === 'blocked' || demand.status === 'waiting') return demand.status;
+  if (['completed', 'blocked', 'waiting'].includes(demand.status)) return demand.status;
   if (demand.status === 'late') return 'late';
   if (demand.slaDueAt && Date.now() > new Date(demand.slaDueAt).getTime()) return 'late';
   return demand.status;
 }
 
-function elapsedMinutes(date: string) {
-  return Math.max(0, Math.round((Date.now() - new Date(date).getTime()) / 60_000));
-}
-
-function elapsedLabel(date: string) {
-  const minutes = elapsedMinutes(date);
-  if (minutes < 60) return minutes + ' min';
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  if (hours < 24) return rest ? hours + 'h ' + rest + 'min' : hours + 'h';
-  return Math.floor(hours / 24) + 'd ' + (hours % 24) + 'h';
-}
-
-function dateTimeLabel(date?: string) {
+function fmtDate(date?: string) {
   if (!date) return '—';
   return new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
     month: '2-digit',
+    year: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(date));
 }
 
-function nextSectorFor(demand: Demand) {
-  return getNextStage(demand.stageKey)?.sector;
+function elapsedLabel(date: string) {
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(date).getTime()) / 60_000));
+  if (minutes < 60) return minutes + ' min';
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours + 'h ' + (minutes % 60) + 'min';
+  return Math.floor(hours / 24) + 'd ' + (hours % 24) + 'h';
 }
 
 function createNotification(
@@ -130,28 +121,32 @@ function createNotification(
 
 export default function App() {
   const [state, setState] = useState<OperationalState>(() => loadOperationalState());
-  const [view, setView] = useState<ViewKey>('queue');
+  const [page, setPage] = useState<PageKey>('portfolio');
   const [sector, setSector] = useState<SectorKey>('qualidade');
-  const [filter, setFilter] = useState<QueueFilter>('all');
-  const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [mode, setMode] = useState<ListMode>('table');
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | DemandStatus>('all');
+  const [priorityOnly, setPriorityOnly] = useState(false);
+  const [lateOnly, setLateOnly] = useState(false);
   const [loadingHH, setLoadingHH] = useState(liveHHReadOnlyEnabled);
-  const [hhError, setHHError] = useState<string | null>(null);
-  const [banner, setBanner] = useState<Banner>(null);
-  const [blockTarget, setBlockTarget] = useState<string | null>(null);
-  const [blockReason, setBlockReason] = useState<keyof typeof blockerLabel>('engineering');
-  const [blockNote, setBlockNote] = useState('');
+  const [banner, setBanner] = useState<string | null>(null);
+  const [clock, setClock] = useState(new Date());
 
   const demands = state.demands;
-  const selected = selectedId ? demands.find((item) => item.id === selectedId) ?? null : null;
+  const selected = selectedId ? demands.find((d) => d.id === selectedId) ?? null : null;
+
+  useEffect(() => saveOperationalState(state), [state]);
 
   useEffect(() => {
-    saveOperationalState(state);
-  }, [state]);
+    const timer = window.setInterval(() => setClock(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!banner) return;
-    const timer = window.setTimeout(() => setBanner(null), 4200);
+    const timer = window.setTimeout(() => setBanner(null), 3800);
     return () => window.clearTimeout(timer);
   }, [banner]);
 
@@ -160,223 +155,123 @@ export default function App() {
     loadHHSessionsReadOnly()
       .then((live) => {
         if (!live.length) return;
-        setState((current) => {
-          const demoOnly = current.demands.filter((item) => item.source !== 'hh_readonly');
-          return { ...current, demands: [...live, ...demoOnly] };
-        });
+        setState((current) => ({
+          ...current,
+          demands: [...live, ...current.demands.filter((d) => d.source !== 'hh_readonly')],
+        }));
       })
-      .catch((error: unknown) => setHHError(error instanceof Error ? error.message : 'Falha ao ler o HH.'))
       .finally(() => setLoadingHH(false));
   }, []);
 
-  const current = useMemo(
-    () => demands.filter((item) => item.sector === sector),
-    [demands, sector],
-  );
-
-  const upcoming = useMemo(
-    () => demands.filter((item) => {
-      const next = getNextStage(item.stageKey);
-      return item.status !== 'completed' && item.sector !== sector && next?.sector === sector;
-    }),
-    [demands, sector],
-  );
-
-  const visible = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return current
-      .filter((item) => {
-        const status = effectiveStatus(item);
-        const matchesFilter = filter === 'all' || status === filter;
-        const matchesSearch = !term || [
-          item.bsp,
-          item.iso,
-          item.stage,
-          item.project,
-          item.client,
-          item.assignedTo,
-        ].filter(Boolean).some((value) => String(value).toLowerCase().includes(term));
-        return matchesFilter && matchesSearch;
-      })
-      .sort((a, b) => {
-        const statusOrder = (value: Demand) => {
-          const status = effectiveStatus(value);
-          if (status === 'late') return 5;
-          if (status === 'blocked') return 4;
-          if (status === 'new') return 3;
-          if (status === 'in_progress') return 2;
-          if (status === 'waiting') return 1;
-          return 0;
-        };
-        return statusOrder(b) - statusOrder(a)
-          || priorityWeight[b.priority] - priorityWeight[a.priority]
-          || new Date(a.enteredAt).getTime() - new Date(b.enteredAt).getTime();
-      });
-  }, [current, filter, search]);
-
-  const notifications = useMemo(
-    () => state.notifications.filter((item) => item.sector === sector)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [state.notifications, sector],
-  );
-
-  const counts = useMemo(() => {
-    const statuses = current.map(effectiveStatus);
-    return {
-      total: current.filter((item) => item.status !== 'completed').length,
-      new: statuses.filter((value) => value === 'new').length,
-      inProgress: statuses.filter((value) => value === 'in_progress').length,
-      blocked: statuses.filter((value) => value === 'blocked').length,
-      late: statuses.filter((value) => value === 'late').length,
-    };
-  }, [current]);
-
-  function updateDemand(id: string, updater: (demand: Demand) => Demand, notification?: NotificationItem) {
-    setState((currentState) => ({
-      ...currentState,
-      demands: currentState.demands.map((item) => item.id === id ? updater(item) : item),
-      notifications: notification ? [notification, ...currentState.notifications] : currentState.notifications,
+  function updateDemand(id: string, updater: (d: Demand) => Demand, notification?: NotificationItem) {
+    setState((current) => ({
+      ...current,
+      demands: current.demands.map((d) => d.id === id ? updater(d) : d),
+      notifications: notification ? [notification, ...current.notifications] : current.notifications,
     }));
   }
 
-  function appendHistory(
-    demand: Demand,
-    type: Demand['history'][number]['type'],
-    title: string,
-    description: string,
-    sectorOverride?: SectorKey,
-  ) {
-    return [
-      ...demand.history,
-      {
-        id: uid('evt'),
-        type,
-        title,
-        description,
-        at: new Date().toISOString(),
-        actor: 'Usuário Demo',
-        sector: sectorOverride ?? demand.sector,
-      },
-    ];
+  function appendHistory(demand: Demand, type: Demand['history'][number]['type'], title: string, description: string, sectorOverride?: SectorKey) {
+    return [...demand.history, {
+      id: uid('evt'),
+      type,
+      title,
+      description,
+      at: new Date().toISOString(),
+      actor: 'Usuário Demo',
+      sector: sectorOverride ?? demand.sector,
+    }];
   }
 
   function assumeDemand(id: string) {
-    const demand = demands.find((item) => item.id === id);
+    const demand = demands.find((d) => d.id === id);
     if (!demand || demand.source === 'hh_readonly') return;
     const now = new Date().toISOString();
-    updateDemand(id, (item) => ({
-      ...item,
+    updateDemand(id, (d) => ({
+      ...d,
       status: 'in_progress',
       assignedTo: 'Usuário Demo',
       acceptedAt: now,
-      startedAt: item.startedAt ?? now,
-      history: appendHistory(item, 'accepted', 'Demanda assumida', 'Responsabilidade assumida pelo usuário de demonstração.'),
+      startedAt: d.startedAt ?? now,
+      history: appendHistory(d, 'accepted', 'Demanda assumida', 'Responsabilidade assumida pelo setor.'),
     }));
-    setBanner({ tone: 'success', text: demand.bsp + ' assumida. A demanda agora está em execução.' });
+    setBanner(demand.bsp + ' assumida pelo setor ' + sectorName(demand.sector) + '.');
   }
 
-  function advanceProgress(id: string) {
-    const demand = demands.find((item) => item.id === id);
+  function progressDemand(id: string) {
+    const demand = demands.find((d) => d.id === id);
     if (!demand || demand.source === 'hh_readonly') return;
-    const nextProgress = Math.min(75, Math.max(25, demand.progress + 25));
-    updateDemand(id, (item) => ({
-      ...item,
-      progress: nextProgress,
+    const progress = Math.min(75, Math.max(25, demand.progress + 25));
+    updateDemand(id, (d) => ({
+      ...d,
+      progress,
       status: 'in_progress',
-      history: appendHistory(item, 'progress', 'Progresso atualizado', 'Avanço demonstrativo registrado em ' + nextProgress + '%.'),
+      history: appendHistory(d, 'progress', 'Avanço registrado', 'Progresso atualizado para ' + progress + '%.'),
     }));
-    setBanner({ tone: 'success', text: 'Progresso atualizado para ' + nextProgress + '%.' });
+    setBanner('Avanço atualizado para ' + progress + '%.');
   }
 
-  function setWaiting(id: string) {
-    const demand = demands.find((item) => item.id === id);
+  function waitDemand(id: string) {
+    const demand = demands.find((d) => d.id === id);
     if (!demand || demand.source === 'hh_readonly') return;
-    updateDemand(id, (item) => ({
-      ...item,
+    updateDemand(id, (d) => ({
+      ...d,
       status: 'waiting',
-      history: appendHistory(item, 'waiting', 'Demanda em espera', 'Execução pausada temporariamente.'),
+      history: appendHistory(d, 'waiting', 'Demanda aguardando', 'Demanda colocada em espera temporária.'),
     }));
-    setBanner({ tone: 'warning', text: demand.bsp + ' movida para Aguardando.' });
+    setBanner(demand.bsp + ' movida para Aguardando.');
   }
 
   function resumeDemand(id: string) {
-    const demand = demands.find((item) => item.id === id);
+    const demand = demands.find((d) => d.id === id);
     if (!demand || demand.source === 'hh_readonly') return;
-    updateDemand(id, (item) => ({
-      ...item,
-      status: item.assignedTo ? 'in_progress' : 'new',
-      history: appendHistory(item, 'resumed', 'Demanda retomada', 'Demanda liberada para continuidade.'),
+    updateDemand(id, (d) => ({
+      ...d,
+      status: d.assignedTo ? 'in_progress' : 'new',
+      blocker: undefined,
+      history: appendHistory(d, 'resumed', 'Demanda retomada', 'Demanda liberada para continuidade.'),
     }));
-    setBanner({ tone: 'success', text: demand.bsp + ' retomada.' });
+    setBanner(demand.bsp + ' retomada.');
+  }
+
+  function blockDemand(id: string) {
+    const demand = demands.find((d) => d.id === id);
+    if (!demand || demand.source === 'hh_readonly') return;
+    const note = window.prompt('Descreva o motivo do bloqueio:', demand.blocker?.note ?? 'Aguardando retorno da Engenharia.');
+    if (note === null) return;
+    const notification = createNotification(demand.sector, demand, 'Demanda bloqueada', demand.bsp + ' / ' + demand.iso + ' · ' + note, 'warning');
+    updateDemand(id, (d) => ({
+      ...d,
+      status: 'blocked',
+      blocker: { reason: 'engineering', note: note || 'Bloqueio operacional.', createdAt: new Date().toISOString() },
+      history: appendHistory(d, 'blocked', 'Bloqueio aberto', note || 'Bloqueio operacional.'),
+    }), notification);
+    setBanner(demand.bsp + ' bloqueada.');
   }
 
   function addEvidence(id: string, type: EvidenceType) {
-    const demand = demands.find((item) => item.id === id);
+    const demand = demands.find((d) => d.id === id);
     if (!demand || demand.source === 'hh_readonly') return;
-    const label = type === 'start' ? 'Foto inicial · demonstração' : type === 'finish' ? 'Foto final · demonstração' : 'Evidência extra · demonstração';
-    updateDemand(id, (item) => ({
-      ...item,
-      evidences: [
-        ...item.evidences,
-        { id: uid('evd'), type, label, at: new Date().toISOString(), source: 'demo' },
-      ],
-      history: appendHistory(item, 'evidence', 'Evidência adicionada', label + ' adicionada ao estágio atual.'),
+    const label = type === 'start' ? 'Foto inicial' : type === 'finish' ? 'Foto final' : 'Evidência extra';
+    updateDemand(id, (d) => ({
+      ...d,
+      evidences: [...d.evidences, { id: uid('evd'), type, label: label + ' · demonstração', at: new Date().toISOString(), source: 'demo' }],
+      history: appendHistory(d, 'evidence', 'Evidência adicionada', label + ' registrada na etapa atual.'),
     }));
-    setBanner({ tone: 'success', text: label + ' adicionada.' });
-  }
-
-  function openBlock(id: string) {
-    setBlockTarget(id);
-    setBlockReason('engineering');
-    setBlockNote('');
-  }
-
-  function confirmBlock() {
-    if (!blockTarget) return;
-    const demand = demands.find((item) => item.id === blockTarget);
-    if (!demand || demand.source === 'hh_readonly') return;
-    const note = blockNote.trim() || 'Bloqueio aberto no ambiente demonstrativo.';
-    const notification = createNotification(
-      demand.sector,
-      demand,
-      'Demanda bloqueada',
-      demand.bsp + ' / ' + demand.iso + ' · ' + blockerLabel[blockReason] + ': ' + note,
-      'warning',
-    );
-    updateDemand(blockTarget, (item) => ({
-      ...item,
-      status: 'blocked',
-      blocker: { reason: blockReason, note, createdAt: new Date().toISOString() },
-      history: appendHistory(item, 'blocked', 'Bloqueio aberto', blockerLabel[blockReason] + ': ' + note),
-    }), notification);
-    setBlockTarget(null);
-    setBlockNote('');
-    setBanner({ tone: 'warning', text: demand.bsp + ' foi bloqueada e sinalizada ao setor.' });
-  }
-
-  function unblockDemand(id: string) {
-    const demand = demands.find((item) => item.id === id);
-    if (!demand || demand.source === 'hh_readonly') return;
-    updateDemand(id, (item) => ({
-      ...item,
-      status: item.assignedTo ? 'in_progress' : 'new',
-      blocker: undefined,
-      history: appendHistory(item, 'unblocked', 'Bloqueio resolvido', 'Demanda liberada para continuidade.'),
-    }));
-    setBanner({ tone: 'success', text: demand.bsp + ' foi desbloqueada.' });
+    setBanner(label + ' adicionada.');
   }
 
   function completeDemand(id: string) {
-    const demand = demands.find((item) => item.id === id);
+    const demand = demands.find((d) => d.id === id);
     if (!demand || demand.source === 'hh_readonly') return;
     const stage = getStage(demand.stageKey);
     if (!stage) return;
 
     if (stage.photoPolicy === 'required_start_finish') {
-      const hasStart = demand.evidences.some((item) => item.type === 'start');
-      const hasFinish = demand.evidences.some((item) => item.type === 'finish');
+      const hasStart = demand.evidences.some((e) => e.type === 'start');
+      const hasFinish = demand.evidences.some((e) => e.type === 'finish');
       if (!hasStart || !hasFinish) {
-        setBanner({ tone: 'danger', text: 'Esta etapa depende do apontamento: adicione foto inicial e foto final antes de concluir.' });
+        setBanner('Foto inicial e final são obrigatórias nesta etapa.');
         return;
       }
     }
@@ -385,42 +280,18 @@ export default function App() {
     const now = new Date().toISOString();
 
     if (!next) {
-      const notification = createNotification(
-        demand.sector,
-        demand,
-        'Demanda concluída',
-        demand.bsp + ' / ' + demand.iso + ' encerrou o fluxo operacional.',
-        'success',
-      );
-      updateDemand(id, (item) => ({
-        ...item,
+      updateDemand(id, (d) => ({
+        ...d,
         status: 'completed',
         progress: 100,
         completedAt: now,
-        history: appendHistory(item, 'completed', 'Fluxo concluído', stage.label + ' concluída e demanda encerrada.'),
-      }), notification);
-      setBanner({ tone: 'success', text: demand.bsp + ' concluiu todo o fluxo operacional.' });
+        history: appendHistory(d, 'completed', 'Fluxo concluído', 'Demanda encerrada.'),
+      }));
+      setBanner(demand.bsp + ' concluída.');
       return;
     }
 
-    const completedHistory = appendHistory(
-      demand,
-      'completed',
-      'Etapa concluída',
-      stage.label + ' concluída com sucesso.',
-    );
-    const handoffHistory = [
-      ...completedHistory,
-      {
-        id: uid('evt'),
-        type: 'handoff' as const,
-        title: 'Handoff realizado',
-        description: 'Demanda enviada de ' + sectorName(demand.sector) + ' para ' + sectorName(next.sector) + '.',
-        at: now,
-        actor: 'Motor de fluxo · demo',
-        sector: next.sector,
-      },
-    ];
+    const history = appendHistory(demand, 'completed', 'Etapa concluída', stage.label + ' concluída.');
     const updated: Demand = {
       ...demand,
       stageKey: next.key,
@@ -439,622 +310,444 @@ export default function App() {
       blocker: undefined,
       evidences: [],
       note: 'Recebida automaticamente após conclusão de ' + stage.label + '.',
-      history: handoffHistory,
+      history: [...history, {
+        id: uid('evt'),
+        type: 'handoff',
+        title: 'Handoff realizado',
+        description: sectorName(demand.sector) + ' → ' + sectorName(next.sector),
+        at: now,
+        actor: 'Motor de fluxo · demo',
+        sector: next.sector,
+      }],
     };
-    const notification = createNotification(
-      next.sector,
-      updated,
-      'Nova demanda na sua caixa',
-      updated.bsp + ' / ' + updated.iso + ' chegou de ' + sectorName(demand.sector) + ' para ' + next.label + '.',
-      'info',
-    );
+    const notification = createNotification(next.sector, updated, 'Nova demanda recebida', updated.bsp + ' / ' + updated.iso + ' entrou na sua caixa.', 'info');
     updateDemand(id, () => updated, notification);
-    setSelectedId(id);
-    setBanner({ tone: 'success', text: 'Handoff concluído: ' + sectorName(demand.sector) + ' → ' + sectorName(next.sector) + '.' });
-  }
-
-  function markNotificationRead(id: string) {
-    setState((currentState) => ({
-      ...currentState,
-      notifications: currentState.notifications.map((item) => item.id === id ? { ...item, read: true } : item),
-    }));
-  }
-
-  function markAllNotificationsRead() {
-    setState((currentState) => ({
-      ...currentState,
-      notifications: currentState.notifications.map((item) => item.sector === sector ? { ...item, read: true } : item),
-    }));
+    setSector(next.sector);
+    setBanner('Handoff realizado para ' + sectorName(next.sector) + '.');
   }
 
   function resetDemo() {
-    if (!window.confirm('Restaurar todos os dados e ações da demonstração?')) return;
+    if (!window.confirm('Restaurar a demonstração para o estado inicial?')) return;
     setState(resetOperationalState());
     setSelectedId(null);
-    setFilter('all');
-    setSearch('');
-    setBanner({ tone: 'success', text: 'Demonstração restaurada para o estado inicial.' });
+    setExpandedId(null);
+    setBanner('Demonstração restaurada.');
   }
 
-  const sectorInfo = sectors.find((item) => item.key === sector)!;
-  const unreadCount = state.notifications.filter((item) => item.sector === sector && !item.read).length;
+  const unread = state.notifications.filter((n) => !n.read).length;
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">S</div>
-          <div><strong>STEP</strong><span>Operational Flow</span></div>
-        </div>
-
-        <nav>
-          <NavButton active={view === 'queue'} onClick={() => setView('queue')} icon={<Inbox size={19} />} label="Minha Caixa" />
-          <NavButton active={view === 'flow'} onClick={() => setView('flow')} icon={<Boxes size={19} />} label="Fluxo Operacional" />
-          <NavButton active={view === 'live'} onClick={() => setView('live')} icon={<Activity size={19} />} label="Produção ao Vivo" />
-          <NavButton active={view === 'blocks'} onClick={() => setView('blocks')} icon={<AlertTriangle size={19} />} label="Bloqueios" />
-          <NavButton active={view === 'notifications'} onClick={() => setView('notifications')} icon={<Bell size={19} />} label="Notificações" badge={unreadCount} />
-          <NavButton active={view === 'analytics'} onClick={() => setView('analytics')} icon={<BarChart3 size={19} />} label="Indicadores" />
+    <div className="reference-app">
+      <header className="chrome-bar">
+        <div className="window-dots"><i /><i /><i /></div>
+        <img src={import.meta.env.BASE_URL + 'step-logo.jpg'} className="step-logo" alt="STEP Integrated Solutions" />
+        <div className="header-divider" />
+        <strong>Painel Operacional — Controle de Demandas</strong>
+        <nav className="header-nav">
+          <button className={page === 'portfolio' ? 'active' : ''} onClick={() => { setPage('portfolio'); setSelectedId(null); }}>Carteira</button>
+          <button className={page === 'live' ? 'active' : ''} onClick={() => { setPage('live'); setSelectedId(null); }}>Produção</button>
+          <button className={page === 'blocks' ? 'active' : ''} onClick={() => { setPage('blocks'); setSelectedId(null); }}>Bloqueios</button>
+          <button className={page === 'analytics' ? 'active' : ''} onClick={() => { setPage('analytics'); setSelectedId(null); }}>Indicadores</button>
         </nav>
+        <span className="clock">{clock.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+        <button className="header-bell" onClick={() => { setPage('notifications'); setSelectedId(null); }}><Bell size={16} />{unread > 0 && <b>{unread}</b>}</button>
+        <div className="user-chip"><span>UD</span><small>Usuário Demo</small></div>
+      </header>
 
-        <div className="sidebar-foot">
-          <ShieldCheck size={18} />
-          <div><strong>Ambiente de demonstração</strong><span>Persistência local. Sem escrita no HH ou Tracking.</span></div>
-        </div>
-        <button className="sidebar-reset" onClick={resetDemo}><RotateCcw size={15} /> Restaurar demo</button>
-      </aside>
+      {banner && <div className="floating-banner">{banner}</div>}
 
-      <main className="main">
-        <header className="topbar">
-          <div>
-            <span className="eyebrow">PAINEL OPERACIONAL</span>
-            <h1>{pageTitle(view, sectorInfo.name)}</h1>
-            <p className="page-subtitle">{pageSubtitle(view)}</p>
-          </div>
-          <div className="top-actions">
-            <label className="sector-switcher">
-              <span>Visualizar setor</span>
-              <select value={sector} onChange={(event) => setSector(event.target.value as SectorKey)}>
-                {sectors.map((item) => <option key={item.key} value={item.key}>{item.name}</option>)}
-              </select>
-            </label>
-            <button className="icon-button" title="Notificações" onClick={() => setView('notifications')}>
-              <Bell size={20} />
-              {unreadCount > 0 && <span className="notification-count">{unreadCount > 9 ? '9+' : unreadCount}</span>}
-            </button>
-          </div>
-        </header>
-
-        <div className="demo-banner">
-          <ShieldCheck size={18} />
-          <div>
-            <strong>Demonstração pública segura.</strong>
-            <span> Os dados exibidos são fictícios. O Supabase operacional foi validado somente para leitura administrativa e continua protegido por RLS.</span>
-          </div>
-        </div>
-
-        {hhError && <div className="error-banner"><AlertTriangle size={18} /> {hhError} O painel segue disponível no modo demonstrativo.</div>}
-        {banner && <div className={'action-banner ' + banner.tone}>{banner.text}<button onClick={() => setBanner(null)}><X size={15} /></button></div>}
-
-        {view === 'queue' && (
-          <>
-            <section className="kpi-grid">
-              <Kpi label="Com meu setor" value={counts.total} icon={<Inbox size={20} />} tone="blue" />
-              <Kpi label="Novas" value={counts.new} icon={<ListChecks size={20} />} tone="cyan" />
-              <Kpi label="Em execução" value={counts.inProgress} icon={<Activity size={20} />} tone="green" />
-              <Kpi label="Bloqueadas" value={counts.blocked} icon={<AlertTriangle size={20} />} tone="amber" />
-              <Kpi label="Atrasadas" value={counts.late} icon={<Clock3 size={20} />} tone="red" />
-            </section>
-
-            <section className="panel">
-              <div className="panel-head queue-head">
-                <div>
-                  <span className="eyebrow">DEMANDAS ATUAIS</span>
-                  <h2>O que {sectorInfo.name} precisa resolver agora</h2>
-                  <p>A caixa mostra somente demandas cujo dono operacional atual é este setor.</p>
-                </div>
-                <div className="search-box">
-                  <Search size={17} />
-                  <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="BSP, ISO, etapa, projeto..." />
-                </div>
-              </div>
-
-              <div className="filter-row">
-                <Filter size={16} />
-                {([
-                  ['all', 'Todas'],
-                  ['new', 'Novas'],
-                  ['in_progress', 'Em execução'],
-                  ['waiting', 'Aguardando'],
-                  ['blocked', 'Bloqueadas'],
-                  ['late', 'Atrasadas'],
-                  ['completed', 'Concluídas'],
-                ] as [QueueFilter, string][]).map(([key, label]) => (
-                  <button key={key} className={filter === key ? 'active' : ''} onClick={() => setFilter(key)}>{label}</button>
-                ))}
-              </div>
-
-              <div className="demand-list">
-                {visible.map((demand) => (
-                  <DemandCard
-                    key={demand.id}
-                    demand={demand}
-                    onOpen={() => setSelectedId(demand.id)}
-                    onAssume={() => assumeDemand(demand.id)}
-                  />
-                ))}
-                {!visible.length && (
-                  <div className="empty-state">
-                    <CheckCircle2 size={30} />
-                    <strong>Nenhuma demanda nesta visão.</strong>
-                    <span>Altere o filtro ou a busca para consultar outras demandas.</span>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <section className="panel upcoming-panel">
-              <div className="panel-head">
-                <div>
-                  <span className="eyebrow">PRÓXIMAS PARA O SETOR</span>
-                  <h2>Carga a caminho de {sectorInfo.name}</h2>
-                  <p>O setor consegue se antecipar antes do handoff oficial.</p>
-                </div>
-                <span className="count-chip">{upcoming.length} previstas</span>
-              </div>
-              <div className="upcoming-grid">
-                {upcoming.map((item) => (
-                  <button className="upcoming-card" key={item.id} onClick={() => setSelectedId(item.id)}>
-                    <div className="upcoming-top">
-                      <div><strong>{item.bsp}</strong><span>{item.iso}</span></div>
-                      <span className={'priority ' + item.priority}>{priorityLabel[item.priority]}</span>
-                    </div>
-                    <div className="progress-line"><i style={{ width: item.progress + '%' }} /></div>
-                    <div className="upcoming-meta">
-                      <span>{sectorName(item.sector)} · {item.stage} · {item.progress}%</span>
-                      <ChevronRight size={16} />
-                    </div>
-                  </button>
-                ))}
-                {!upcoming.length && <div className="empty-inline">Nenhuma demanda prevista para este setor.</div>}
-              </div>
-            </section>
-          </>
-        )}
-
-        {view === 'flow' && <FlowBoard demands={demands} onOpen={setSelectedId} onSector={(value) => { setSector(value); setView('queue'); }} />}
-        {view === 'live' && <LiveProduction demands={demands} loading={loadingHH} onOpen={setSelectedId} />}
-        {view === 'blocks' && <BlocksView demands={demands} onOpen={setSelectedId} onUnblock={unblockDemand} />}
-        {view === 'notifications' && (
-          <NotificationsView
-            items={notifications}
-            onRead={markNotificationRead}
-            onReadAll={markAllNotificationsRead}
-            onOpen={(id) => { setSelectedId(id); }}
+      <main className="workspace">
+        {selected ? (
+          <DemandDetail
+            demand={selected}
+            onBack={() => setSelectedId(null)}
+            onAssume={() => assumeDemand(selected.id)}
+            onProgress={() => progressDemand(selected.id)}
+            onWait={() => waitDemand(selected.id)}
+            onResume={() => resumeDemand(selected.id)}
+            onBlock={() => blockDemand(selected.id)}
+            onEvidence={(type) => addEvidence(selected.id, type)}
+            onComplete={() => completeDemand(selected.id)}
           />
+        ) : page === 'portfolio' ? (
+          <Portfolio
+            demands={demands}
+            sector={sector}
+            setSector={setSector}
+            mode={mode}
+            setMode={setMode}
+            search={search}
+            setSearch={setSearch}
+            statusFilter={statusFilter}
+            setStatusFilter={setStatusFilter}
+            priorityOnly={priorityOnly}
+            setPriorityOnly={setPriorityOnly}
+            lateOnly={lateOnly}
+            setLateOnly={setLateOnly}
+            expandedId={expandedId}
+            setExpandedId={setExpandedId}
+            onOpen={setSelectedId}
+            onAssume={assumeDemand}
+            onReset={resetDemo}
+          />
+        ) : page === 'live' ? (
+          <LivePage demands={demands} loading={loadingHH} onOpen={setSelectedId} />
+        ) : page === 'blocks' ? (
+          <BlocksPage demands={demands} onOpen={setSelectedId} onResume={resumeDemand} />
+        ) : page === 'notifications' ? (
+          <NotificationsPage state={state} setState={setState} onOpen={setSelectedId} />
+        ) : (
+          <AnalyticsPage demands={demands} />
         )}
-        {view === 'analytics' && <Analytics demands={demands} />}
       </main>
 
-      {selected && (
-        <DemandDrawer
-          demand={selected}
-          onClose={() => setSelectedId(null)}
-          onAssume={() => assumeDemand(selected.id)}
-          onProgress={() => advanceProgress(selected.id)}
-          onWaiting={() => setWaiting(selected.id)}
-          onResume={() => resumeDemand(selected.id)}
-          onBlock={() => openBlock(selected.id)}
-          onUnblock={() => unblockDemand(selected.id)}
-          onEvidence={(type) => addEvidence(selected.id, type)}
-          onComplete={() => completeDemand(selected.id)}
-        />
-      )}
-
-      {blockTarget && (
-        <BlockDialog
-          reason={blockReason}
-          note={blockNote}
-          onReason={setBlockReason}
-          onNote={setBlockNote}
-          onClose={() => setBlockTarget(null)}
-          onConfirm={confirmBlock}
-        />
-      )}
+      <footer className="status-bar">
+        <span>{selected ? 'Arquivo operacional aberto' : sectorName(sector) + ' · visibilidade por responsabilidade atual'}</span>
+        <span>Demonstração pública · sem escrita no Apontamento HH</span>
+      </footer>
     </div>
   );
 }
 
-function pageTitle(view: ViewKey, sector: string) {
-  if (view === 'queue') return sector + ' · Minha Caixa';
-  if (view === 'flow') return 'Fluxo Operacional';
-  if (view === 'live') return 'Produção ao Vivo';
-  if (view === 'blocks') return 'Central de Bloqueios';
-  if (view === 'notifications') return 'Central de Notificações';
-  return 'Indicadores Operacionais';
-}
+function Portfolio(props: {
+  demands: Demand[];
+  sector: SectorKey;
+  setSector: (value: SectorKey) => void;
+  mode: ListMode;
+  setMode: (value: ListMode) => void;
+  search: string;
+  setSearch: (value: string) => void;
+  statusFilter: 'all' | DemandStatus;
+  setStatusFilter: (value: 'all' | DemandStatus) => void;
+  priorityOnly: boolean;
+  setPriorityOnly: (value: boolean) => void;
+  lateOnly: boolean;
+  setLateOnly: (value: boolean) => void;
+  expandedId: string | null;
+  setExpandedId: (value: string | null) => void;
+  onOpen: (id: string) => void;
+  onAssume: (id: string) => void;
+  onReset: () => void;
+}) {
+  const filtered = useMemo(() => {
+    const term = props.search.trim().toLowerCase();
+    return props.demands
+      .filter((d) => d.sector === props.sector)
+      .filter((d) => props.statusFilter === 'all' || effectiveStatus(d) === props.statusFilter)
+      .filter((d) => !props.priorityOnly || d.priority === 'critical' || d.priority === 'high')
+      .filter((d) => !props.lateOnly || effectiveStatus(d) === 'late')
+      .filter((d) => !term || [d.bsp, d.iso, d.stage, d.project, d.client, d.assignedTo].filter(Boolean).some((v) => String(v).toLowerCase().includes(term)))
+      .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority] || new Date(a.enteredAt).getTime() - new Date(b.enteredAt).getTime());
+  }, [props.demands, props.sector, props.statusFilter, props.priorityOnly, props.lateOnly, props.search]);
 
-function pageSubtitle(view: ViewKey) {
-  if (view === 'queue') return 'Demandas atuais, próximas entradas e responsabilidade do setor.';
-  if (view === 'flow') return 'Visão ponta a ponta da demanda entre os setores.';
-  if (view === 'live') return 'Atividades dependentes do apontamento e progresso de execução.';
-  if (view === 'blocks') return 'Pendências que impedem o fluxo e exigem tratamento.';
-  if (view === 'notifications') return 'Eventos, handoffs, alertas e mudanças relevantes.';
-  return 'Leitura do WIP, filas, SLA e gargalos do estado atual.';
-}
+  const current = props.demands.filter((d) => d.sector === props.sector);
+  const active = current.filter((d) => d.status !== 'completed');
+  const late = current.filter((d) => effectiveStatus(d) === 'late').length;
+  const blocked = current.filter((d) => d.status === 'blocked').length;
+  const avg = active.length ? Math.round(active.reduce((sum, d) => sum + d.progress, 0) / active.length) : 0;
+  const incoming = props.demands.filter((d) => d.status !== 'completed' && d.sector !== props.sector && getNextStage(d.stageKey)?.sector === props.sector).length;
 
-function NavButton({ active, onClick, icon, label, badge }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; badge?: number }) {
   return (
-    <button className={active ? 'active' : ''} onClick={onClick}>
-      {icon}<span>{label}</span>{Boolean(badge) && <i className="nav-badge">{badge! > 9 ? '9+' : badge}</i>}
-    </button>
+    <>
+      <section className="portfolio-head">
+        <div>
+          <span className="eyebrow">Portal operacional</span>
+          <h1>Carteira de Demandas</h1>
+          <p>Demandas alocadas ao setor, com avanço, responsável, histórico e arquivo operacional de cada BSP / ISO.</p>
+        </div>
+        <div className="head-actions">
+          <span className="sync-chip"><i /> Ambiente isolado</span>
+          <button className="soft-btn" onClick={props.onReset}><RefreshCcw size={15} /> Restaurar demo</button>
+        </div>
+      </section>
+
+      <section className="overview-strip">
+        <div className="overview-icon"><BarChart3 size={25} /></div>
+        <div className="overview-copy">
+          <strong>Visão geral da caixa · {sectorName(props.sector)}</strong>
+          <span>Responsabilidade atual do setor e carga prevista pelo fluxo.</span>
+        </div>
+        <Metric value={active.length} label="Na caixa" />
+        <Metric value={late} label="Atrasadas" danger={late > 0} />
+        <Metric value={blocked} label="Bloqueadas" warning={blocked > 0} />
+        <Metric value={avg + '%'} label="Avanço médio" />
+        <Metric value={incoming} label="Próximas" />
+      </section>
+
+      <section className="portfolio-title-row">
+        <div>
+          <span className="eyebrow">Sua operação</span>
+          <h2>Demandas alocadas</h2>
+          <p>{filtered.length} registro(s) · clique na linha para expandir; abra o arquivo para ver todas as fases.</p>
+        </div>
+        <div className="mode-toggle">
+          <button className={props.mode === 'table' ? 'active' : ''} onClick={() => props.setMode('table')}><List size={14} /> Tabela</button>
+          <button className={props.mode === 'board' ? 'active' : ''} onClick={() => props.setMode('board')}><LayoutGrid size={14} /> Quadros</button>
+        </div>
+      </section>
+
+      <section className="filters-bar">
+        <label className="filter-field search-field"><Search size={15} /><input value={props.search} onChange={(e) => props.setSearch(e.target.value)} placeholder="Buscar BSP, ISO, projeto, etapa..." /></label>
+        <label className="filter-field"><span>Setor</span><select value={props.sector} onChange={(e) => props.setSector(e.target.value as SectorKey)}>{sectors.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}</select></label>
+        <label className="filter-field"><span>Status</span><select value={props.statusFilter} onChange={(e) => props.setStatusFilter(e.target.value as 'all' | DemandStatus)}><option value="all">Todos</option><option value="new">Novas</option><option value="in_progress">Em execução</option><option value="waiting">Aguardando</option><option value="blocked">Bloqueadas</option><option value="late">Atrasadas</option><option value="completed">Concluídas</option></select></label>
+        <button className={'flag-filter ' + (props.lateOnly ? 'active danger' : '')} onClick={() => props.setLateOnly(!props.lateOnly)}><AlertTriangle size={14} /> Só atrasadas</button>
+        <button className={'flag-filter ' + (props.priorityOnly ? 'active' : '')} onClick={() => props.setPriorityOnly(!props.priorityOnly)}><CircleDot size={14} /> Prioridade</button>
+      </section>
+
+      {props.mode === 'table' ? (
+        <div className="demand-table">
+          <div className="table-head">
+            <span>BSP / ISO</span><span>Projeto / Cliente</span><span>Etapa atual</span><span>Responsável</span><span>Avanço</span><span>Status</span><span />
+          </div>
+          {filtered.map((d) => (
+            <DemandRow
+              key={d.id}
+              demand={d}
+              expanded={props.expandedId === d.id}
+              onToggle={() => props.setExpandedId(props.expandedId === d.id ? null : d.id)}
+              onOpen={() => props.onOpen(d.id)}
+              onAssume={() => props.onAssume(d.id)}
+            />
+          ))}
+          {!filtered.length && <div className="empty-reference"><CheckCircle2 size={28} /><strong>Nenhuma demanda nesta visão.</strong><span>Altere os filtros ou selecione outro setor.</span></div>}
+        </div>
+      ) : (
+        <BoardMode demands={filtered} onOpen={props.onOpen} />
+      )}
+    </>
   );
 }
 
-function Kpi({ label, value, icon, tone }: { label: string; value: number; icon: React.ReactNode; tone: string }) {
-  return <div className={'kpi ' + tone}><div className="kpi-icon">{icon}</div><div><span>{label}</span><strong>{value}</strong></div></div>;
+function Metric({ value, label, danger, warning }: { value: string | number; label: string; danger?: boolean; warning?: boolean }) {
+  return <div className="overview-metric"><strong className={danger ? 'danger' : warning ? 'warning' : ''}>{value}</strong><span>{label}</span></div>;
 }
 
-function DemandCard({ demand, onOpen, onAssume }: { demand: Demand; onOpen: () => void; onAssume: () => void }) {
+function DemandRow({ demand, expanded, onToggle, onOpen, onAssume }: { demand: Demand; expanded: boolean; onToggle: () => void; onOpen: () => void; onAssume: () => void }) {
   const status = effectiveStatus(demand);
+  const latest = [...demand.history].reverse().slice(0, 3);
   const next = getNextStage(demand.stageKey);
+
   return (
-    <article className={'demand-card status-' + status}>
-      <div className="demand-identity">
-        <div className="status-rail" />
-        <div>
-          <div className="demand-title"><strong>{demand.bsp}</strong><span>{demand.iso}</span></div>
-          <span className="subtle">{demand.project ?? 'Projeto'} · {demand.client ?? 'Cliente'}</span>
+    <article className={'reference-row ' + (expanded ? 'expanded' : '')}>
+      <button className="row-main" onClick={onToggle}>
+        <div className="bsp-cell">
+          <div className="bsp-orb">BSP</div>
+          <div><strong>{demand.bsp}</strong><span>{demand.iso}</span></div>
         </div>
-      </div>
-      <div className="stage-cell">
-        <span>Etapa atual</span>
-        <strong>{demand.stage}</strong>
-        <small>{demand.originSector ? 'Veio de ' + sectorName(demand.originSector) : 'Setor ' + sectorName(demand.sector)}</small>
-      </div>
-      <div className="owner-cell">
-        <span>Responsável</span>
-        <strong>{demand.assignedTo ?? 'Não atribuída'}</strong>
-        <small>Na caixa há {elapsedLabel(demand.enteredAt)}</small>
-      </div>
-      <div className="next-cell">
-        <span>Próximo destino</span>
-        <strong>{next ? sectorName(next.sector) : 'Encerramento'}</strong>
-        <small>{next?.label ?? 'Fim do fluxo'}</small>
-      </div>
-      <div className="badges">
-        <span className={'status-badge ' + status}>{statusLabel[status]}</span>
-        <span className={'priority ' + demand.priority}>{priorityLabel[demand.priority]}</span>
-      </div>
-      <div className="actions">
-        {demand.status === 'new' && demand.source === 'demo' && <button className="primary small" onClick={onAssume}><UserCheck size={16} /> Assumir</button>}
-        <button className="secondary small" onClick={onOpen}><Eye size={16} /> Detalhes</button>
-      </div>
+        <div className="project-cell"><strong>{demand.project ?? 'Projeto'}</strong><span>{demand.client ?? 'Cliente'}</span></div>
+        <div className="stage-ref"><strong>{demand.stage}</strong><span>{sectorName(demand.sector)} · há {elapsedLabel(demand.enteredAt)}</span></div>
+        <div className="owner-ref"><strong>{demand.assignedTo ?? 'Não atribuída'}</strong><span>{demand.assignedTo ? 'Responsável atual' : 'Aguardando aceite'}</span></div>
+        <div className="progress-ref"><strong>{demand.progress}%</strong><div><i style={{ width: demand.progress + '%' }} /></div></div>
+        <div><StatusPill status={status} /><PriorityPill priority={demand.priority} /></div>
+        <ChevronDown className={expanded ? 'rotate' : ''} size={17} />
+      </button>
+
+      {expanded && (
+        <div className="row-expanded">
+          <div className="expanded-updates">
+            <span className="section-mono">Últimas atualizações</span>
+            {latest.map((u) => <div className="mini-update" key={u.id}><i /><div><strong>{u.title}</strong><p>{u.description}</p><span>{fmtDate(u.at)} · {u.actor}</span></div></div>)}
+          </div>
+          <div className="expanded-steps">
+            <span className="section-mono">Fluxo da demanda</span>
+            <div className="mini-flow"><div><span>Origem</span><strong>{sectorName(demand.originSector)}</strong></div><ChevronRight size={14} /><div className="current"><span>Agora</span><strong>{sectorName(demand.sector)}</strong></div><ChevronRight size={14} /><div><span>Próximo</span><strong>{next ? sectorName(next.sector) : 'Encerramento'}</strong></div></div>
+            <div className="expanded-kpis">
+              <div><span>Evidências</span><strong>{demand.evidences.length}</strong></div>
+              <div><span>HH</span><strong>{demand.hhMinutes ? demand.hhMinutes + ' min' : '—'}</strong></div>
+              <div><span>SLA</span><strong>{fmtDate(demand.slaDueAt)}</strong></div>
+            </div>
+          </div>
+          <div className="expanded-actions">
+            {demand.status === 'new' && demand.source === 'demo' && <button className="soft-btn" onClick={(e) => { e.stopPropagation(); onAssume(); }}><UserCheck size={14} /> Assumir</button>}
+            <button className="primary-ref" onClick={(e) => { e.stopPropagation(); onOpen(); }}>Abrir arquivo operacional <ChevronRight size={14} /></button>
+          </div>
+        </div>
+      )}
     </article>
   );
 }
 
-function FlowBoard({ demands, onOpen, onSector }: { demands: Demand[]; onOpen: (id: string) => void; onSector: (sector: SectorKey) => void }) {
-  return (
-    <section className="panel flow-panel">
-      <div className="panel-head">
-        <div><span className="eyebrow">PIPELINE</span><h2>Onde cada demanda está agora</h2><p>Cada coluna representa o dono operacional atual da demanda.</p></div>
-        <span className="count-chip">{demands.filter((item) => item.status !== 'completed').length} em fluxo</span>
-      </div>
-      <div className="flow-board">
-        {sectors.map((sector) => {
-          const items = demands.filter((item) => item.sector === sector.key && item.status !== 'completed')
-            .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority]);
-          return (
-            <div className="flow-column" key={sector.key}>
-              <button className="flow-column-head" onClick={() => onSector(sector.key)}>
-                <div><span>{sector.shortName}</span><strong>{sector.name}</strong></div><b>{items.length}</b>
-              </button>
-              <div className="flow-column-body">
-                {items.map((item) => {
-                  const status = effectiveStatus(item);
-                  return (
-                    <button className={'flow-card status-' + status} key={item.id} onClick={() => onOpen(item.id)}>
-                      <div><strong>{item.bsp}</strong><span>{item.iso}</span></div>
-                      <p>{item.stage}</p>
-                      <div className="flow-card-meta"><span className={'status-badge ' + status}>{statusLabel[status]}</span><small>{item.progress}%</small></div>
-                    </button>
-                  );
-                })}
-                {!items.length && <div className="flow-empty">Sem demandas</div>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
+function BoardMode({ demands, onOpen }: { demands: Demand[]; onOpen: (id: string) => void }) {
+  const groups = sectors.map((s) => ({ sector: s, items: demands.filter((d) => d.sector === s.key) })).filter((g) => g.items.length);
+  return <div className="board-reference">{groups.map((g) => <section key={g.sector.key}><div className="board-group-head"><strong>{g.sector.name}</strong><i /><span>{g.items.length} demanda(s)</span></div><div className="board-grid">{g.items.map((d) => <button key={d.id} className="board-card" onClick={() => onOpen(d.id)}><div><strong>{d.bsp}</strong><span>{d.iso}</span></div><h3>{d.stage}</h3><p>{d.project} · {d.client}</p><div className="board-progress"><i style={{ width: d.progress + '%' }} /></div><footer><StatusPill status={effectiveStatus(d)} /><span>{d.progress}%</span></footer></button>)}</div></section>)}</div>;
 }
 
-function LiveProduction({ demands, loading, onOpen }: { demands: Demand[]; loading: boolean; onOpen: (id: string) => void }) {
-  const live = demands.filter((item) => {
-    const stage = getStage(item.stageKey);
-    return stage?.usesPointing && item.status !== 'completed';
-  }).sort((a, b) => {
-    if (a.status === 'in_progress' && b.status !== 'in_progress') return -1;
-    if (b.status === 'in_progress' && a.status !== 'in_progress') return 1;
-    return new Date(a.enteredAt).getTime() - new Date(b.enteredAt).getTime();
-  });
+function DemandDetail(props: {
+  demand: Demand;
+  onBack: () => void;
+  onAssume: () => void;
+  onProgress: () => void;
+  onWait: () => void;
+  onResume: () => void;
+  onBlock: () => void;
+  onEvidence: (type: EvidenceType) => void;
+  onComplete: () => void;
+}) {
+  const { demand } = props;
+  const status = effectiveStatus(demand);
+  const currentIndex = getStageIndex(demand.stageKey);
+  const [phaseKey, setPhaseKey] = useState(demand.stageKey);
+  const phase = getStage(phaseKey) ?? getStage(demand.stageKey)!;
+  const phaseIndex = getStageIndex(phase.key);
+  const isCurrent = phase.key === demand.stageKey;
+  const next = getNextStage(demand.stageKey);
+  const hasStart = demand.evidences.some((e) => e.type === 'start');
+  const hasFinish = demand.evidences.some((e) => e.type === 'finish');
+  const readOnly = demand.source === 'hh_readonly';
 
-  return (
-    <section className="panel">
-      <div className="panel-head">
-        <div><span className="eyebrow">APONTAMENTO</span><h2>Atividades de chão de fábrica</h2><p>Etapas configuradas para receber início/fim, HH e evidências do aplicativo de apontamento.</p></div>
-        <span className="count-chip">{loading ? 'Lendo HH...' : live.length + ' atividades'}</span>
-      </div>
-      <div className="live-table">
-        <div className="live-row header"><span>BSP / ISO</span><span>Atividade</span><span>Setor</span><span>Progresso</span><span>Evidências</span><span>Origem</span></div>
-        {live.map((item) => (
-          <button className="live-row" key={item.id} onClick={() => onOpen(item.id)}>
-            <span><strong>{item.bsp}</strong><small>{item.iso}</small></span>
-            <span>{item.stage}</span>
-            <span>{sectorName(item.sector)}</span>
-            <span><div className="mini-progress"><i style={{ width: item.progress + '%' }} /></div><small>{item.progress}%</small></span>
-            <span>{item.evidences.filter((ev) => ev.type === 'start').length ? 'Início ✓' : 'Início —'} · {item.evidences.filter((ev) => ev.type === 'finish').length ? 'Fim ✓' : 'Fim —'}</span>
-            <span className={item.source === 'hh_readonly' ? 'source-live' : 'source-mock'}>{item.source === 'hh_readonly' ? 'HH leitura' : 'Demo'}</span>
-          </button>
-        ))}
-        {!live.length && <div className="empty-state"><Activity size={30} /><strong>Nenhuma atividade de apontamento em fluxo.</strong></div>}
-      </div>
-    </section>
-  );
-}
-
-function BlocksView({ demands, onOpen, onUnblock }: { demands: Demand[]; onOpen: (id: string) => void; onUnblock: (id: string) => void }) {
-  const blocked = demands.filter((item) => item.status === 'blocked').sort((a, b) => new Date(a.blocker?.createdAt ?? a.enteredAt).getTime() - new Date(b.blocker?.createdAt ?? b.enteredAt).getTime());
-  return (
-    <section className="panel">
-      <div className="panel-head">
-        <div><span className="eyebrow">EXCEÇÕES</span><h2>Demandas impedidas de avançar</h2><p>Visão única dos bloqueios, independentemente do setor.</p></div>
-        <span className="count-chip warning">{blocked.length} bloqueadas</span>
-      </div>
-      <div className="block-list">
-        {blocked.map((item) => (
-          <article className="block-card" key={item.id}>
-            <div className="block-icon"><AlertTriangle size={19} /></div>
-            <div className="block-main">
-              <div className="block-title"><strong>{item.bsp}</strong><span>{item.iso}</span><em>{sectorName(item.sector)}</em></div>
-              <p>{item.blocker ? blockerLabel[item.blocker.reason] + ' · ' + item.blocker.note : 'Bloqueio sem observação.'}</p>
-              <small>Aberto há {elapsedLabel(item.blocker?.createdAt ?? item.enteredAt)}</small>
-            </div>
-            <div className="actions">
-              {item.source === 'demo' && <button className="primary small" onClick={() => onUnblock(item.id)}><PlayCircle size={15} /> Resolver</button>}
-              <button className="secondary small" onClick={() => onOpen(item.id)}><Eye size={15} /> Detalhes</button>
-            </div>
-          </article>
-        ))}
-        {!blocked.length && <div className="empty-state"><CheckCircle2 size={30} /><strong>Nenhum bloqueio aberto.</strong></div>}
-      </div>
-    </section>
-  );
-}
-
-function NotificationsView({ items, onRead, onReadAll, onOpen }: { items: NotificationItem[]; onRead: (id: string) => void; onReadAll: () => void; onOpen: (id: string) => void }) {
-  return (
-    <section className="panel">
-      <div className="panel-head">
-        <div><span className="eyebrow">EVENTOS DO SETOR</span><h2>Notificações operacionais</h2><p>Handoffs, alertas de execução, bloqueios e conclusões.</p></div>
-        <button className="secondary compact" onClick={onReadAll}>Marcar todas como lidas</button>
-      </div>
-      <div className="notification-list">
-        {items.map((item) => (
-          <article key={item.id} className={'notification ' + item.severity + (!item.read ? ' unread' : '')}>
-            <div className="notification-icon"><Bell size={18} /></div>
-            <button className="notification-content" onClick={() => { onRead(item.id); if (item.demandId) onOpen(item.demandId); }}>
-              <strong>{item.title}</strong>
-              <p>{item.message}</p>
-              <span>{dateTimeLabel(item.createdAt)}</span>
-            </button>
-            {!item.read && <button className="unread-button" title="Marcar como lida" onClick={() => onRead(item.id)} />}
-          </article>
-        ))}
-        {!items.length && <div className="empty-state"><Bell size={30} /><strong>Sem notificações para este setor.</strong></div>}
-      </div>
-    </section>
-  );
-}
-
-function Analytics({ demands }: { demands: Demand[] }) {
-  const active = demands.filter((item) => item.status !== 'completed');
-  const completed = demands.filter((item) => item.status === 'completed').length;
-  const blocked = active.filter((item) => item.status === 'blocked').length;
-  const late = active.filter((item) => effectiveStatus(item) === 'late').length;
-  const ages = active.map((item) => elapsedMinutes(item.enteredAt));
-  const avgAge = ages.length ? Math.round(ages.reduce((sum, value) => sum + value, 0) / ages.length) : 0;
-  const bySector = sectors.map((sector) => ({
-    sector,
-    count: active.filter((item) => item.sector === sector.key).length,
-    blocked: active.filter((item) => item.sector === sector.key && item.status === 'blocked').length,
-  }));
-  const max = Math.max(1, ...bySector.map((item) => item.count));
+  useEffect(() => setPhaseKey(demand.stageKey), [demand.stageKey]);
 
   return (
     <>
-      <section className="kpi-grid analytics-kpis">
-        <Kpi label="WIP total" value={active.length} icon={<Boxes size={20} />} tone="blue" />
-        <Kpi label="Concluídas" value={completed} icon={<CheckCircle2 size={20} />} tone="green" />
-        <Kpi label="Bloqueios" value={blocked} icon={<AlertTriangle size={20} />} tone="amber" />
-        <Kpi label="Fora do SLA" value={late} icon={<Clock3 size={20} />} tone="red" />
-        <Kpi label="Idade média (min)" value={avgAge} icon={<BarChart3 size={20} />} tone="cyan" />
+      <section className="detail-top">
+        <button className="back-link" onClick={props.onBack}><ArrowLeft size={15} /> Voltar à carteira</button>
+        <div className="detail-title-row">
+          <div className="detail-bsp"><span>BSP / ISO</span><strong>{demand.bsp}</strong><em>{demand.iso}</em></div>
+          <div className="detail-title-copy"><h1>{demand.project}</h1><p>{demand.client} · {sectorName(demand.sector)}</p></div>
+          <StatusPill status={status} />
+          <PriorityPill priority={demand.priority} />
+        </div>
+        <div className="detail-summary-grid">
+          <SummaryField label="Etapa atual" value={demand.stage} />
+          <SummaryField label="Responsável" value={demand.assignedTo ?? 'Não atribuída'} />
+          <SummaryField label="Entrada no setor" value={fmtDate(demand.enteredAt)} />
+          <SummaryField label="SLA da etapa" value={fmtDate(demand.slaDueAt)} />
+          <SummaryField label="Evidências" value={String(demand.evidences.length)} />
+          <SummaryField label="HH / duração" value={demand.hhMinutes ? demand.hhMinutes + ' min' : '—'} />
+        </div>
       </section>
-      <section className="analytics-grid">
-        <div className="panel analytics-panel">
-          <div className="panel-head"><div><span className="eyebrow">WIP POR SETOR</span><h2>Distribuição da carga atual</h2></div></div>
-          <div className="bar-list">
-            {bySector.map((item) => (
-              <div className="bar-row" key={item.sector.key}>
-                <div className="bar-label"><strong>{item.sector.name}</strong><span>{item.count} demanda(s){item.blocked ? ' · ' + item.blocked + ' bloqueada(s)' : ''}</span></div>
-                <div className="bar-track"><i style={{ width: (item.count / max * 100) + '%' }} /></div>
-                <b>{item.count}</b>
-              </div>
-            ))}
+
+      <section className="phases-wrap">
+        <span className="eyebrow">Fases do processo</span>
+        <div className="phase-strip">
+          {workflowStages.map((stage, index) => {
+            const done = index < currentIndex;
+            const current = index === currentIndex;
+            const future = index > currentIndex;
+            const pct = done ? 100 : current ? demand.progress : 0;
+            return (
+              <button key={stage.key} className={'phase-card ' + (phaseKey === stage.key ? 'selected ' : '') + (done ? 'done' : current ? 'current' : future ? 'future' : '')} onClick={() => setPhaseKey(stage.key)}>
+                <div><small>{String(index + 1).padStart(2, '0')}</small><strong>{stage.label}</strong><b>{pct}%</b></div>
+                <span>{sectorName(stage.sector)} · SLA {Math.round(stage.slaMinutes / 60 * 10) / 10}h</span>
+                <i><em style={{ width: pct + '%' }} /></i>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="detail-content">
+        <div className="detail-main-column">
+          <div className="section-card">
+            <div className="section-card-head"><div><span className="section-mono">{isCurrent ? 'Etapa atual' : phaseIndex < currentIndex ? 'Fase concluída' : 'Fase futura'}</span><h2>{phase.label}</h2></div><span className="phase-sector">{sectorName(phase.sector)}</span></div>
+            <div className="phase-data-grid">
+              <SummaryField label="Política de evidência" value={photoPolicyLabel(phase.photoPolicy)} />
+              <SummaryField label="Apontamento HH" value={phase.usesPointing ? 'Vinculado ao apontador' : 'Não obrigatório'} />
+              <SummaryField label="SLA configurado" value={Math.round(phase.slaMinutes / 60 * 10) / 10 + ' horas'} />
+              <SummaryField label="Próximo destino" value={isCurrent ? (next ? sectorName(next.sector) : 'Encerramento') : '—'} />
+            </div>
+
+            {isCurrent && (
+              <>
+                <div className="detail-progress-block"><div><span>Avanço da etapa</span><strong>{demand.progress}%</strong></div><div className="detail-progress"><i style={{ width: demand.progress + '%' }} /></div></div>
+                {demand.blocker && <div className="reference-warning"><AlertTriangle size={17} /><div><strong>Bloqueio ativo</strong><p>{demand.blocker.note}</p></div></div>}
+                <div className="evidence-reference">
+                  <div className={hasStart ? 'ready' : ''}><ImagePlus size={16} /><span>Foto inicial</span><strong>{hasStart ? 'Disponível' : 'Pendente'}</strong></div>
+                  <div className={hasFinish ? 'ready' : ''}><ImagePlus size={16} /><span>Foto final</span><strong>{hasFinish ? 'Disponível' : 'Pendente'}</strong></div>
+                  <div><FileText size={16} /><span>Extras</span><strong>{demand.evidences.filter((e) => e.type === 'extra').length}</strong></div>
+                </div>
+
+                {!readOnly && demand.status !== 'completed' && (
+                  <div className="detail-actions">
+                    {demand.status === 'new' && <button className="primary-ref" onClick={props.onAssume}><UserCheck size={14} /> Assumir demanda</button>}
+                    {demand.status === 'in_progress' && <button className="soft-btn" onClick={props.onProgress}><Activity size={14} /> Avançar 25%</button>}
+                    {demand.status === 'in_progress' && <button className="soft-btn" onClick={props.onWait}><PauseCircle size={14} /> Aguardar</button>}
+                    {(demand.status === 'waiting' || demand.status === 'blocked') && <button className="soft-btn" onClick={props.onResume}><PlayCircle size={14} /> Retomar</button>}
+                    {demand.status !== 'blocked' && <button className="danger-ref" onClick={props.onBlock}><XCircle size={14} /> Bloquear</button>}
+                    {!hasStart && <button className="soft-btn" onClick={() => props.onEvidence('start')}><ImagePlus size={14} /> Foto início</button>}
+                    {!hasFinish && <button className="soft-btn" onClick={() => props.onEvidence('finish')}><ImagePlus size={14} /> Foto fim</button>}
+                    {(demand.status === 'in_progress' || demand.status === 'waiting' || demand.status === 'late') && <button className="success-ref" onClick={props.onComplete}><CheckCircle2 size={14} /> Concluir etapa e enviar</button>}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="section-card">
+            <div className="section-card-head"><div><span className="section-mono">Rastreabilidade</span><h2>Histórico completo da demanda</h2></div><span className="count-ref">{demand.history.length}</span></div>
+            <div className="full-timeline">
+              {[...demand.history].reverse().map((u) => <div key={u.id}><i /><div><strong>{u.title}</strong><p>{u.description}</p><span>{fmtDate(u.at)} · {u.actor} · {sectorName(u.sector)}</span></div></div>)}
+            </div>
           </div>
         </div>
-        <div className="panel analytics-panel">
-          <div className="panel-head"><div><span className="eyebrow">REGRAS DO FLUXO</span><h2>Etapas e SLA configurados</h2></div></div>
-          <div className="rules-list">
-            {workflowStages.map((stage, index) => (
-              <div className="rule-row" key={stage.key}>
-                <span>{String(index + 1).padStart(2, '0')}</span>
-                <div><strong>{stage.label}</strong><small>{sectorName(stage.sector)} · SLA {Math.round(stage.slaMinutes / 60 * 10) / 10}h · {photoPolicyLabel(stage.photoPolicy)}</small></div>
-              </div>
-            ))}
+
+        <aside className="detail-side-column">
+          <div className="side-section">
+            <span className="section-mono">Últimas atualizações</span>
+            {[...demand.history].reverse().slice(0, 5).map((u) => <div className="side-update" key={u.id}><i /><div><p>{u.description}</p><span>{fmtDate(u.at)} · {u.actor}</span></div></div>)}
           </div>
-        </div>
+
+          <div className="side-section">
+            <span className="section-mono">Dados operacionais</span>
+            <div className="data-list">
+              <div><span>Setor atual</span><strong>{sectorName(demand.sector)}</strong></div>
+              <div><span>Origem</span><strong>{sectorName(demand.originSector)}</strong></div>
+              <div><span>Próximo setor</span><strong>{next ? sectorName(next.sector) : 'Encerramento'}</strong></div>
+              <div><span>Prioridade</span><strong>{priorityLabel[demand.priority]}</strong></div>
+              <div><span>Fonte</span><strong>{demand.source === 'hh_readonly' ? 'HH · leitura' : 'Demonstração'}</strong></div>
+            </div>
+          </div>
+
+          <div className="side-section">
+            <span className="section-mono">Evidências e anexos</span>
+            <div className="docs-list">
+              {demand.evidences.map((e) => <div key={e.id}><span>IMG</span><div><strong>{e.label}</strong><small>{fmtDate(e.at)}</small></div></div>)}
+              {!demand.evidences.length && <p className="muted-side">Nenhuma evidência nesta etapa.</p>}
+            </div>
+          </div>
+
+          <div className="secure-note"><ShieldCheck size={17} /><div><strong>Ambiente isolado</strong><span>As ações da demo não escrevem no Apontamento HH.</span></div></div>
+        </aside>
       </section>
     </>
   );
 }
 
-function DemandDrawer(props: {
-  demand: Demand;
-  onClose: () => void;
-  onAssume: () => void;
-  onProgress: () => void;
-  onWaiting: () => void;
-  onResume: () => void;
-  onBlock: () => void;
-  onUnblock: () => void;
-  onEvidence: (type: EvidenceType) => void;
-  onComplete: () => void;
-}) {
-  const { demand } = props;
-  const stage = getStage(demand.stageKey);
-  const next = getNextStage(demand.stageKey);
-  const status = effectiveStatus(demand);
-  const readOnly = demand.source === 'hh_readonly';
-  const hasStart = demand.evidences.some((item) => item.type === 'start');
-  const hasFinish = demand.evidences.some((item) => item.type === 'finish');
-
-  return (
-    <div className="drawer-backdrop" onMouseDown={props.onClose}>
-      <aside className="drawer" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="drawer-head">
-          <div><span className="eyebrow">DETALHE DA DEMANDA</span><h2>{demand.bsp} <span>/ {demand.iso}</span></h2><p>{demand.project} · {demand.client}</p></div>
-          <button className="icon-button" onClick={props.onClose}><X size={20} /></button>
-        </div>
-
-        <div className="drawer-status">
-          <span className={'status-badge ' + status}>{statusLabel[status]}</span>
-          <span className={'priority ' + demand.priority}>{priorityLabel[demand.priority]}</span>
-          {stage?.usesPointing && <span className="pointing-chip">APONTAMENTO</span>}
-        </div>
-
-        <section className="detail-section">
-          <h3>Fluxo atual</h3>
-          <div className="flow-line">
-            <div><span>Origem</span><strong>{sectorName(demand.originSector)}</strong></div>
-            <ChevronRight />
-            <div className="current"><span>Agora</span><strong>{sectorName(demand.sector)}</strong></div>
-            <ChevronRight />
-            <div><span>Próximo</span><strong>{next ? sectorName(next.sector) : 'Encerramento'}</strong></div>
-          </div>
-        </section>
-
-        <div className="detail-grid">
-          <Detail label="Etapa" value={demand.stage} />
-          <Detail label="Responsável" value={demand.assignedTo ?? 'Não atribuída'} />
-          <Detail label="Entrada no setor" value={dateTimeLabel(demand.enteredAt)} />
-          <Detail label="Tempo na caixa" value={elapsedLabel(demand.enteredAt)} />
-          <Detail label="SLA" value={dateTimeLabel(demand.slaDueAt)} />
-          <Detail label="HH / duração" value={demand.hhMinutes ? demand.hhMinutes + ' min' : '—'} />
-        </div>
-
-        <section className="detail-section">
-          <div className="section-title-row"><h3>Progresso</h3><strong>{demand.progress}%</strong></div>
-          <div className="large-progress"><i style={{ width: demand.progress + '%' }} /></div>
-          {stage && <p className="rule-note">{photoPolicyLabel(stage.photoPolicy)}{stage.usesPointing ? ' · etapa vinculada ao apontamento.' : ''}</p>}
-        </section>
-
-        {demand.blocker && (
-          <div className="blocker-box">
-            <AlertTriangle size={18} />
-            <div><strong>Bloqueada por {blockerLabel[demand.blocker.reason]}</strong><p>{demand.blocker.note}</p><span>Desde {dateTimeLabel(demand.blocker.createdAt)}</span></div>
-          </div>
-        )}
-
-        <section className="detail-section">
-          <div className="section-title-row"><h3>Evidências da etapa atual</h3><span>{demand.evidences.length}</span></div>
-          <div className="evidence-grid">
-            <EvidenceState label="Foto inicial" ready={hasStart} />
-            <EvidenceState label="Foto final" ready={hasFinish} />
-            {demand.evidences.filter((item) => item.type === 'extra').map((item) => <EvidenceState key={item.id} label={item.label} ready />)}
-          </div>
-          {!readOnly && (
-            <div className="evidence-actions">
-              {!hasStart && <button className="secondary compact" onClick={() => props.onEvidence('start')}><ImagePlus size={15} /> Adicionar início</button>}
-              {!hasFinish && <button className="secondary compact" onClick={() => props.onEvidence('finish')}><ImagePlus size={15} /> Adicionar fim</button>}
-              <button className="secondary compact" onClick={() => props.onEvidence('extra')}><ImagePlus size={15} /> Extra</button>
-            </div>
-          )}
-        </section>
-
-        {demand.note && <div className="note-box"><strong>Observação</strong><p>{demand.note}</p></div>}
-
-        <section className="detail-section">
-          <h3>Rastreabilidade</h3>
-          <div className="timeline">
-            {[...demand.history].reverse().map((event) => (
-              <div className="timeline-item" key={event.id}>
-                <i />
-                <div><strong>{event.title}</strong><p>{event.description}</p><span>{dateTimeLabel(event.at)} · {event.actor} · {sectorName(event.sector)}</span></div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <div className="read-only-box">
-          <ShieldCheck size={18} />
-          <div>
-            <strong>{readOnly ? 'Registro lido do Apontamento HH' : 'Ação isolada da demonstração'}</strong>
-            <span>{readOnly ? 'Este painel não oferece qualquer comando de escrita sobre o HH.' : 'As ações abaixo são salvas apenas no navegador e não alteram sistemas da STEP.'}</span>
-          </div>
-        </div>
-
-        {!readOnly && demand.status !== 'completed' && (
-          <div className="drawer-actions">
-            {demand.status === 'new' && <button className="primary" onClick={props.onAssume}><UserCheck size={16} /> Assumir demanda</button>}
-            {demand.status === 'in_progress' && <button className="secondary" onClick={props.onProgress}><Activity size={16} /> Avançar 25%</button>}
-            {demand.status === 'in_progress' && <button className="secondary" onClick={props.onWaiting}><PauseCircle size={16} /> Aguardar</button>}
-            {demand.status === 'waiting' && <button className="secondary" onClick={props.onResume}><PlayCircle size={16} /> Retomar</button>}
-            {demand.status !== 'blocked' && <button className="danger-button" onClick={props.onBlock}><XCircle size={16} /> Bloquear</button>}
-            {demand.status === 'blocked' && <button className="primary" onClick={props.onUnblock}><PlayCircle size={16} /> Resolver bloqueio</button>}
-            {(demand.status === 'in_progress' || demand.status === 'waiting' || demand.status === 'late') && <button className="complete-button" onClick={props.onComplete}><CheckCircle2 size={16} /> Concluir etapa e enviar</button>}
-          </div>
-        )}
-      </aside>
-    </div>
-  );
+function SummaryField({ label, value }: { label: string; value: string }) {
+  return <div className="summary-field"><span>{label}</span><strong>{value}</strong></div>;
 }
 
-function EvidenceState({ label, ready }: { label: string; ready: boolean }) {
-  return <div className={'evidence-state ' + (ready ? 'ready' : 'missing')}><div>{ready ? <CheckCircle2 size={17} /> : <ImagePlus size={17} />}</div><span>{label}</span><strong>{ready ? 'Disponível' : 'Pendente'}</strong></div>;
+function StatusPill({ status }: { status: DemandStatus }) {
+  return <span className={'status-ref ' + status}><i />{statusLabel[status]}</span>;
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
-  return <div className="detail-item"><span>{label}</span><strong>{value}</strong></div>;
+function PriorityPill({ priority }: { priority: Priority }) {
+  return <span className={'priority-ref ' + priority}>{priorityLabel[priority]}</span>;
 }
 
-function BlockDialog(props: {
-  reason: keyof typeof blockerLabel;
-  note: string;
-  onReason: (value: keyof typeof blockerLabel) => void;
-  onNote: (value: string) => void;
-  onClose: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <div className="modal-backdrop" onMouseDown={props.onClose}>
-      <div className="modal-card" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="modal-head"><div><span className="eyebrow">BLOQUEIO</span><h2>Sinalizar impedimento</h2></div><button className="icon-button" onClick={props.onClose}><X size={19} /></button></div>
-        <label className="form-field"><span>Motivo</span><select value={props.reason} onChange={(event) => props.onReason(event.target.value as keyof typeof blockerLabel)}>{Object.entries(blockerLabel).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-        <label className="form-field"><span>Observação</span><textarea value={props.note} onChange={(event) => props.onNote(event.target.value)} placeholder="Descreva o que impede a continuidade..." rows={4} /></label>
-        <div className="modal-actions"><button className="secondary" onClick={props.onClose}>Cancelar</button><button className="danger-button" onClick={props.onConfirm}><AlertTriangle size={16} /> Confirmar bloqueio</button></div>
-      </div>
-    </div>
-  );
+function LivePage({ demands, loading, onOpen }: { demands: Demand[]; loading: boolean; onOpen: (id: string) => void }) {
+  const live = demands.filter((d) => getStage(d.stageKey)?.usesPointing && d.status !== 'completed');
+  return <GenericPage title="Produção ao Vivo" subtitle="Atividades que dependem do apontamento, mantendo a mesma leitura de carteira."><div className="section-card"><div className="section-card-head"><div><span className="section-mono">Apontamento HH</span><h2>Sessões em acompanhamento</h2></div><span className="count-ref">{loading ? '...' : live.length}</span></div><div className="simple-table"><div className="simple-head"><span>BSP / ISO</span><span>Atividade</span><span>Setor</span><span>Avanço</span><span>Evidências</span></div>{live.map((d) => <button key={d.id} onClick={() => onOpen(d.id)}><span><strong>{d.bsp}</strong><small>{d.iso}</small></span><span>{d.stage}</span><span>{sectorName(d.sector)}</span><span>{d.progress}%</span><span>{d.evidences.length}</span></button>)}</div></div></GenericPage>;
+}
+
+function BlocksPage({ demands, onOpen, onResume }: { demands: Demand[]; onOpen: (id: string) => void; onResume: (id: string) => void }) {
+  const blocked = demands.filter((d) => d.status === 'blocked');
+  return <GenericPage title="Bloqueios Operacionais" subtitle="Pendências que impedem a demanda de avançar para o próximo setor."><div className="section-card"><div className="simple-table"><div className="simple-head blocked-head"><span>BSP / ISO</span><span>Setor</span><span>Motivo</span><span>Desde</span><span>Ações</span></div>{blocked.map((d) => <div className="simple-block-row" key={d.id}><span><strong>{d.bsp}</strong><small>{d.iso}</small></span><span>{sectorName(d.sector)}</span><span>{d.blocker?.note ?? 'Bloqueio operacional'}</span><span>{fmtDate(d.blocker?.createdAt)}</span><span><button className="soft-btn" onClick={() => onOpen(d.id)}><Eye size={13} /> Abrir</button>{d.source === 'demo' && <button className="success-ref" onClick={() => onResume(d.id)}><Check size={13} /> Resolver</button>}</span></div>)}</div></div></GenericPage>;
+}
+
+function NotificationsPage({ state, setState, onOpen }: { state: OperationalState; setState: React.Dispatch<React.SetStateAction<OperationalState>>; onOpen: (id: string) => void }) {
+  const items = [...state.notifications].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  function read(id: string) { setState((current) => ({ ...current, notifications: current.notifications.map((n) => n.id === id ? { ...n, read: true } : n) })); }
+  return <GenericPage title="Notificações" subtitle="Handoffs, alertas de execução e eventos relevantes do fluxo operacional."><div className="section-card notification-reference-list">{items.map((n) => <button key={n.id} className={!n.read ? 'unread' : ''} onClick={() => { read(n.id); if (n.demandId) onOpen(n.demandId); }}><div className={'notification-icon-ref ' + n.severity}><Bell size={15} /></div><div><strong>{n.title}</strong><p>{n.message}</p><span>{fmtDate(n.createdAt)} · {sectorName(n.sector)}</span></div>{!n.read && <i />}</button>)}</div></GenericPage>;
+}
+
+function AnalyticsPage({ demands }: { demands: Demand[] }) {
+  const active = demands.filter((d) => d.status !== 'completed');
+  const bySector = sectors.map((s) => ({ ...s, count: active.filter((d) => d.sector === s.key).length }));
+  const max = Math.max(1, ...bySector.map((s) => s.count));
+  return <GenericPage title="Indicadores Operacionais" subtitle="Leitura da carteira, WIP e distribuição da carga por setor."><section className="overview-strip analytics-overview"><div className="overview-icon"><BarChart3 size={25} /></div><div className="overview-copy"><strong>Consolidado operacional</strong><span>Estado atual da demonstração.</span></div><Metric value={active.length} label="WIP" /><Metric value={active.filter((d) => effectiveStatus(d) === 'late').length} label="Atrasadas" danger /><Metric value={active.filter((d) => d.status === 'blocked').length} label="Bloqueadas" warning /><Metric value={demands.filter((d) => d.status === 'completed').length} label="Concluídas" /></section><div className="section-card"><div className="section-card-head"><div><span className="section-mono">WIP por setor</span><h2>Distribuição atual</h2></div></div><div className="analytics-bars">{bySector.map((s) => <div key={s.key}><div><strong>{s.name}</strong><span>{s.count}</span></div><i><em style={{ width: (s.count / max * 100) + '%' }} /></i></div>)}</div></div></GenericPage>;
+}
+
+function GenericPage({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+  return <><section className="portfolio-head generic-head"><div><span className="eyebrow">Portal operacional</span><h1>{title}</h1><p>{subtitle}</p></div></section>{children}</>;
 }
