@@ -13,6 +13,7 @@ import {
   CircleDot,
   Clock3,
   Eye,
+  EyeOff,
   FileText,
   Filter,
   ImagePlus,
