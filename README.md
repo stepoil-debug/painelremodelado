@@ -35,3 +35,10 @@ O Supabase operacional da STEP foi inspecionado apenas em leitura. As tabelas de
 A integração real com o Apontamento fica desabilitada por padrão. Quando o módulo for colocado dentro do STEP One, o frontend poderá consumir o backend autenticado da intranet sem expor o banco.
 
 A proposta SQL do futuro schema operacional está em `supabase/proposals/` e não é executada automaticamente.
+
+
+## Hub operacional de dados
+
+A arquitetura real de dados está documentada em `docs/DATA-HUB.md`. O schema `ops_panel` consolida Tracking, WIP, Job Order, Drawing/FCB, 3D Dimensional, Logística e Production Progress PT, sem escrever nas fontes Smartsheet.
+
+O GitHub Pages continua propositalmente em modo demonstrativo. Dados reais devem ser consumidos somente via proxy autenticado do STEP One.
