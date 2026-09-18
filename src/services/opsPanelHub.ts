@@ -86,7 +86,7 @@ async function requestHub<T>(payload: Record<string, unknown>): Promise<T> {
 
   const response = await fetch(proxyUrl, {
     method: 'POST',
-    credentials: 'include',
+    credentials: proxyUrl === directEdgeApi ? 'omit' : 'include',
     cache: 'no-store',
     headers: {
       'Content-Type': 'application/json',
