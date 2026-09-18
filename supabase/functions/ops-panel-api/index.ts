@@ -13,26 +13,6 @@ function json(body: unknown, status = 200) {
   });
 }
 
-async function trustedBackend(candidate: string) {
-  const url = Deno.env.get("SUPABASE_URL") || "";
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-  if (!candidate || !url) return false;
-  if (serviceKey && candidate === serviceKey) return true;
-
-  try {
-    const verifier = createClient(url, candidate, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    const { error } = await verifier
-      .from("users")
-      .select("id", { head: true, count: "exact" })
-      .limit(1);
-    return !error;
-  } catch {
-    return false;
-  }
-}
-
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ ok: false, error: "Use POST." }, 405);
@@ -41,14 +21,17 @@ Deno.serve(async (request: Request) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !serviceKey) return json({ ok: false, error: "Backend não configurado." }, 503);
 
-  const backendKey = (request.headers.get("x-step-backend-key") || "").trim();
-  if (!(await trustedBackend(backendKey))) {
-    return json({ ok: false, error: "Backend não autorizado." }, 401);
-  }
-
   const admin = createClient(url, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+
+  const backendKey = (request.headers.get("x-step-backend-key") || "").trim();
+  const { data: authorized, error: authError } = await admin.rpc("ops_panel_api_auth", {
+    p_candidate: backendKey,
+  });
+  if (authError || authorized !== true) {
+    return json({ ok: false, error: "Backend não autorizado." }, 401);
+  }
 
   let body: Record<string, unknown> = {};
   try { body = await request.json(); } catch { body = {}; }
@@ -81,6 +64,20 @@ Deno.serve(async (request: Request) => {
     });
     if (error) return json({ ok: false, error: error.message }, 500);
     return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
+  if (action === "demands") {
+    const region = String(body.region || "BR").trim() || "BR";
+    const requestedLimit = Number(body.limit || 2000);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.max(1, Math.min(Math.trunc(requestedLimit), 5000))
+      : 2000;
+    const { data, error } = await admin.rpc("ops_panel_get_demands", {
+      p_region: region,
+      p_limit: limit,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data: Array.isArray(data) ? data : [], generatedAt: new Date().toISOString() });
   }
 
   return json({ ok: false, error: "Ação inválida." }, 400);

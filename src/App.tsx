@@ -28,6 +28,8 @@ import {
   XCircle,
 } from 'lucide-react';
 import { liveHHReadOnlyEnabled, loadHHSessionsReadOnly } from './services/hhReadOnly';
+import { hubConfigured, loadHubDemands } from './services/opsPanelHub';
+import { hubRowsToOperationalState } from './services/hubDemandAdapter';
 import { loadOperationalState, resetOperationalState, saveOperationalState, uid } from './store';
 import type {
   Demand,
@@ -120,7 +122,7 @@ function createNotification(
 }
 
 export default function App() {
-  const [state, setState] = useState<OperationalState>(() => loadOperationalState());
+  const [state, setState] = useState<OperationalState>(() => hubConfigured ? { version: 4, demands: [], notifications: [] } : loadOperationalState());
   const [page, setPage] = useState<PageKey>('portfolio');
   const [sector, setSector] = useState<SectorKey>('qualidade');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -130,14 +132,18 @@ export default function App() {
   const [statusFilter, setStatusFilter] = useState<'all' | DemandStatus>('all');
   const [priorityOnly, setPriorityOnly] = useState(false);
   const [lateOnly, setLateOnly] = useState(false);
-  const [loadingHH, setLoadingHH] = useState(liveHHReadOnlyEnabled);
+  const [loadingHH, setLoadingHH] = useState(!hubConfigured && liveHHReadOnlyEnabled);
+  const [loadingHub, setLoadingHub] = useState(hubConfigured);
+  const [hubError, setHubError] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
   const [clock, setClock] = useState(new Date());
 
   const demands = state.demands;
   const selected = selectedId ? demands.find((d) => d.id === selectedId) ?? null : null;
 
-  useEffect(() => saveOperationalState(state), [state]);
+  useEffect(() => {
+    if (!hubConfigured) saveOperationalState(state);
+  }, [state]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(new Date()), 30_000);
@@ -150,8 +156,32 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [banner]);
 
+  async function refreshHub(showBanner = false) {
+    if (!hubConfigured) return;
+    setLoadingHub(true);
+    setHubError(null);
+    try {
+      const rows = await loadHubDemands('BR', 2000);
+      setState(hubRowsToOperationalState(rows));
+      setSelectedId(null);
+      setExpandedId(null);
+      if (showBanner) setBanner(rows.length + ' itens reais carregados do Tracking.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao carregar dados reais.';
+      setHubError(message);
+      if (showBanner) setBanner(message);
+    } finally {
+      setLoadingHub(false);
+    }
+  }
+
   useEffect(() => {
-    if (!liveHHReadOnlyEnabled) return;
+    if (!hubConfigured) return;
+    void refreshHub(false);
+  }, []);
+
+  useEffect(() => {
+    if (hubConfigured || !liveHHReadOnlyEnabled) return;
     loadHHSessionsReadOnly()
       .then((live) => {
         if (!live.length) return;
@@ -185,7 +215,7 @@ export default function App() {
 
   function assumeDemand(id: string) {
     const demand = demands.find((d) => d.id === id);
-    if (!demand || demand.source === 'hh_readonly') return;
+    if (!demand || demand.source !== 'demo') return;
     const now = new Date().toISOString();
     updateDemand(id, (d) => ({
       ...d,
@@ -200,7 +230,7 @@ export default function App() {
 
   function progressDemand(id: string) {
     const demand = demands.find((d) => d.id === id);
-    if (!demand || demand.source === 'hh_readonly') return;
+    if (!demand || demand.source !== 'demo') return;
     const progress = Math.min(75, Math.max(25, demand.progress + 25));
     updateDemand(id, (d) => ({
       ...d,
@@ -213,7 +243,7 @@ export default function App() {
 
   function waitDemand(id: string) {
     const demand = demands.find((d) => d.id === id);
-    if (!demand || demand.source === 'hh_readonly') return;
+    if (!demand || demand.source !== 'demo') return;
     updateDemand(id, (d) => ({
       ...d,
       status: 'waiting',
@@ -224,7 +254,7 @@ export default function App() {
 
   function resumeDemand(id: string) {
     const demand = demands.find((d) => d.id === id);
-    if (!demand || demand.source === 'hh_readonly') return;
+    if (!demand || demand.source !== 'demo') return;
     updateDemand(id, (d) => ({
       ...d,
       status: d.assignedTo ? 'in_progress' : 'new',
@@ -236,7 +266,7 @@ export default function App() {
 
   function blockDemand(id: string) {
     const demand = demands.find((d) => d.id === id);
-    if (!demand || demand.source === 'hh_readonly') return;
+    if (!demand || demand.source !== 'demo') return;
     const note = window.prompt('Descreva o motivo do bloqueio:', demand.blocker?.note ?? 'Aguardando retorno da Engenharia.');
     if (note === null) return;
     const notification = createNotification(demand.sector, demand, 'Demanda bloqueada', demand.bsp + ' / ' + demand.iso + ' · ' + note, 'warning');
@@ -251,7 +281,7 @@ export default function App() {
 
   function addEvidence(id: string, type: EvidenceType) {
     const demand = demands.find((d) => d.id === id);
-    if (!demand || demand.source === 'hh_readonly') return;
+    if (!demand || demand.source !== 'demo') return;
     const label = type === 'start' ? 'Foto inicial' : type === 'finish' ? 'Foto final' : 'Evidência extra';
     updateDemand(id, (d) => ({
       ...d,
@@ -263,7 +293,7 @@ export default function App() {
 
   function completeDemand(id: string) {
     const demand = demands.find((d) => d.id === id);
-    if (!demand || demand.source === 'hh_readonly') return;
+    if (!demand || demand.source !== 'demo') return;
     const stage = getStage(demand.stageKey);
     if (!stage) return;
 
@@ -327,6 +357,10 @@ export default function App() {
   }
 
   function resetDemo() {
+    if (hubConfigured) {
+      void refreshHub(true);
+      return;
+    }
     if (!window.confirm('Restaurar a demonstração para o estado inicial?')) return;
     setState(resetOperationalState());
     setSelectedId(null);
@@ -351,7 +385,7 @@ export default function App() {
         </nav>
         <span className="clock">{clock.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
         <button className="header-bell" onClick={() => { setPage('notifications'); setSelectedId(null); }}><Bell size={16} />{unread > 0 && <b>{unread}</b>}</button>
-        <div className="user-chip"><span>UD</span><small>Usuário Demo</small></div>
+        <div className="user-chip"><span>{hubConfigured ? 'ST' : 'UD'}</span><small>{hubConfigured ? 'Dados STEP' : 'Usuário Demo'}</small></div>
       </header>
 
       {banner && <div className="floating-banner">{banner}</div>}
@@ -389,9 +423,12 @@ export default function App() {
             onOpen={setSelectedId}
             onAssume={assumeDemand}
             onReset={resetDemo}
+            liveData={hubConfigured}
+            loading={loadingHub}
+            error={hubError}
           />
         ) : page === 'live' ? (
-          <LivePage demands={demands} loading={loadingHH} onOpen={setSelectedId} />
+          <LivePage demands={demands} loading={loadingHub || loadingHH} onOpen={setSelectedId} />
         ) : page === 'blocks' ? (
           <BlocksPage demands={demands} onOpen={setSelectedId} onResume={resumeDemand} />
         ) : page === 'notifications' ? (
@@ -403,7 +440,7 @@ export default function App() {
 
       <footer className="status-bar">
         <span>{selected ? 'Arquivo operacional aberto' : sectorName(sector) + ' · visibilidade por responsabilidade atual'}</span>
-        <span>Demonstração pública · sem escrita no Apontamento HH</span>
+        <span>{hubConfigured ? 'Dados reais · Tracking/Smartsheet · somente leitura' : 'Demonstração pública · sem escrita no Apontamento HH'}</span>
       </footer>
     </div>
   );
@@ -428,6 +465,9 @@ function Portfolio(props: {
   onOpen: (id: string) => void;
   onAssume: (id: string) => void;
   onReset: () => void;
+  liveData: boolean;
+  loading: boolean;
+  error: string | null;
 }) {
   const filtered = useMemo(() => {
     const term = props.search.trim().toLowerCase();
@@ -456,10 +496,12 @@ function Portfolio(props: {
           <p>Demandas alocadas ao setor, com avanço, responsável, histórico e arquivo operacional de cada BSP / ISO.</p>
         </div>
         <div className="head-actions">
-          <span className="sync-chip"><i /> Ambiente isolado</span>
-          <button className="soft-btn" onClick={props.onReset}><RefreshCcw size={15} /> Restaurar demo</button>
+          <span className="sync-chip"><i /> {props.liveData ? 'Dados reais · leitura' : 'Ambiente isolado'}</span>
+          <button className="soft-btn" onClick={props.onReset} disabled={props.loading}><RefreshCcw size={15} /> {props.loading ? 'Sincronizando...' : props.liveData ? 'Atualizar dados' : 'Restaurar demo'}</button>
         </div>
       </section>
+
+      {props.error && <div className="reference-warning"><AlertTriangle size={17} /><div><strong>Falha na leitura do hub</strong><p>{props.error}</p></div></div>}
 
       <section className="overview-strip">
         <div className="overview-icon"><BarChart3 size={25} /></div>
@@ -509,7 +551,7 @@ function Portfolio(props: {
               onAssume={() => props.onAssume(d.id)}
             />
           ))}
-          {!filtered.length && <div className="empty-reference"><CheckCircle2 size={28} /><strong>Nenhuma demanda nesta visão.</strong><span>Altere os filtros ou selecione outro setor.</span></div>}
+          {!filtered.length && <div className="empty-reference">{props.loading ? <RefreshCcw size={28} /> : <CheckCircle2 size={28} />}<strong>{props.loading ? 'Sincronizando dados reais...' : 'Nenhuma demanda nesta visão.'}</strong><span>{props.loading ? 'Consultando o hub operacional.' : 'Altere os filtros ou selecione outro setor.'}</span></div>}
         </div>
       ) : (
         <BoardMode demands={filtered} onOpen={props.onOpen} />
@@ -593,7 +635,7 @@ function DemandDetail(props: {
   const next = getNextStage(demand.stageKey);
   const hasStart = demand.evidences.some((e) => e.type === 'start');
   const hasFinish = demand.evidences.some((e) => e.type === 'finish');
-  const readOnly = demand.source === 'hh_readonly';
+  const readOnly = demand.source !== 'demo';
 
   useEffect(() => setPhaseKey(demand.stageKey), [demand.stageKey]);
 
@@ -694,7 +736,7 @@ function DemandDetail(props: {
               <div><span>Origem</span><strong>{sectorName(demand.originSector)}</strong></div>
               <div><span>Próximo setor</span><strong>{next ? sectorName(next.sector) : 'Encerramento'}</strong></div>
               <div><span>Prioridade</span><strong>{priorityLabel[demand.priority]}</strong></div>
-              <div><span>Fonte</span><strong>{demand.source === 'hh_readonly' ? 'HH · leitura' : 'Demonstração'}</strong></div>
+              <div><span>Fonte</span><strong>{demand.source !== 'demo' ? 'HH · leitura' : 'Demonstração'}</strong></div>
             </div>
           </div>
 
@@ -706,7 +748,7 @@ function DemandDetail(props: {
             </div>
           </div>
 
-          <div className="secure-note"><ShieldCheck size={17} /><div><strong>Ambiente isolado</strong><span>As ações da demo não escrevem no Apontamento HH.</span></div></div>
+          <div className="secure-note"><ShieldCheck size={17} /><div><strong>{demand.source === 'hub_readonly' ? 'Dados reais · somente leitura' : 'Ambiente isolado'}</strong><span>{demand.source === 'hub_readonly' ? 'Os dados vêm do hub operacional e esta tela não escreve no Smartsheet.' : 'As ações da demo não escrevem no Apontamento HH.'}</span></div></div>
         </aside>
       </section>
     </>
@@ -745,7 +787,7 @@ function AnalyticsPage({ demands }: { demands: Demand[] }) {
   const active = demands.filter((d) => d.status !== 'completed');
   const bySector = sectors.map((s) => ({ ...s, count: active.filter((d) => d.sector === s.key).length }));
   const max = Math.max(1, ...bySector.map((s) => s.count));
-  return <GenericPage title="Indicadores Operacionais" subtitle="Leitura da carteira, WIP e distribuição da carga por setor."><section className="overview-strip analytics-overview"><div className="overview-icon"><BarChart3 size={25} /></div><div className="overview-copy"><strong>Consolidado operacional</strong><span>Estado atual da demonstração.</span></div><Metric value={active.length} label="WIP" /><Metric value={active.filter((d) => effectiveStatus(d) === 'late').length} label="Atrasadas" danger /><Metric value={active.filter((d) => d.status === 'blocked').length} label="Bloqueadas" warning /><Metric value={demands.filter((d) => d.status === 'completed').length} label="Concluídas" /></section><div className="section-card"><div className="section-card-head"><div><span className="section-mono">WIP por setor</span><h2>Distribuição atual</h2></div></div><div className="analytics-bars">{bySector.map((s) => <div key={s.key}><div><strong>{s.name}</strong><span>{s.count}</span></div><i><em style={{ width: (s.count / max * 100) + '%' }} /></i></div>)}</div></div></GenericPage>;
+  return <GenericPage title="Indicadores Operacionais" subtitle="Leitura da carteira, WIP e distribuição da carga por setor."><section className="overview-strip analytics-overview"><div className="overview-icon"><BarChart3 size={25} /></div><div className="overview-copy"><strong>Consolidado operacional</strong><span>Estado atual da carteira.</span></div><Metric value={active.length} label="WIP" /><Metric value={active.filter((d) => effectiveStatus(d) === 'late').length} label="Atrasadas" danger /><Metric value={active.filter((d) => d.status === 'blocked').length} label="Bloqueadas" warning /><Metric value={demands.filter((d) => d.status === 'completed').length} label="Concluídas" /></section><div className="section-card"><div className="section-card-head"><div><span className="section-mono">WIP por setor</span><h2>Distribuição atual</h2></div></div><div className="analytics-bars">{bySector.map((s) => <div key={s.key}><div><strong>{s.name}</strong><span>{s.count}</span></div><i><em style={{ width: (s.count / max * 100) + '%' }} /></i></div>)}</div></div></GenericPage>;
 }
 
 function GenericPage({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {

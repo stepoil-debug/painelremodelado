@@ -19,7 +19,7 @@ export type DemandStatus =
 export type Priority = 'critical' | 'high' | 'normal' | 'low';
 export type PhotoPolicy = 'required_start_finish' | 'optional' | 'none';
 export type EvidenceType = 'start' | 'finish' | 'extra';
-export type DemandSource = 'demo' | 'hh_readonly';
+export type DemandSource = 'demo' | 'hh_readonly' | 'hub_readonly';
 
 export interface Sector {
   key: SectorKey;

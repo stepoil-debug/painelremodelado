@@ -110,3 +110,43 @@ export async function loadHubProject(projectKey: string): Promise<HubProjectDeta
   });
   return response.data;
 }
+
+
+export interface HubDemandRow {
+  region: string;
+  iso_key: string;
+  project_row_id: string;
+  project_number: string;
+  iso: string;
+  drawing?: string | null;
+  line_number?: string | null;
+  description?: string | null;
+  client_tag?: string | null;
+  project_type?: string | null;
+  current_stage?: string | null;
+  current_status?: string | null;
+  planned_start?: string | null;
+  planned_finish?: string | null;
+  fabrication_start?: string | null;
+  overall_progress?: number | null;
+  weight_kg?: number | null;
+  m2?: number | null;
+  source_version?: string | null;
+  source_updated_at?: string | null;
+  synced_at?: string | null;
+  project_display?: string | null;
+  client?: string | null;
+  vessel?: string | null;
+  pm?: string | null;
+  project_status?: string | null;
+  replanned_finish?: string | null;
+}
+
+export async function loadHubDemands(region = 'BR', limit = 2000): Promise<HubDemandRow[]> {
+  const response = await requestHub<{ ok: true; data: HubDemandRow[] }>({
+    action: 'demands',
+    region,
+    limit,
+  });
+  return Array.isArray(response.data) ? response.data : [];
+}
