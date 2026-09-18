@@ -1,0 +1,46 @@
+name: Deploy Secure Operational Panel
+
+on:
+  push:
+    branches:
+      - feature/operational-panel-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Request temporary Netlify deploy credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          OIDC_RESPONSE="$(curl -fsS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=ops-panel-netlify-deploy")"
+          OIDC_TOKEN="$(printf '%s' "$OIDC_RESPONSE" | jq -r '.value')"
+          test -n "$OIDC_TOKEN"
+          test "$OIDC_TOKEN" != "null"
+
+          DEPLOY_RESPONSE="$(curl -fsS -X POST "https://qxmxtbjxkhecqilpnhgq.supabase.co/functions/v1/ops-panel-deploy-secret"             -H "Authorization: Bearer $OIDC_TOKEN"             -H "Content-Type: application/json"             --data '{}')"
+
+          PROXY_PATH="$(printf '%s' "$DEPLOY_RESPONSE" | jq -r '.proxyPath')"
+          test -n "$PROXY_PATH"
+          test "$PROXY_PATH" != "null"
+          echo "::add-mask::$PROXY_PATH"
+          printf 'NETLIFY_PROXY_PATH=%s\n' "$PROXY_PATH" >> "$GITHUB_ENV"
+
+      - name: Deploy isolated real-data panel
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx -y @netlify/mcp@latest             --site-id 3ae88cc7-eac3-4fd5-84e2-3cd727a7dc9f             --proxy-path "$NETLIFY_PROXY_PATH"
