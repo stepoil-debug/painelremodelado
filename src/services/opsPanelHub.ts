@@ -72,7 +72,12 @@ export interface HubHealth {
   generatedAt: string;
 }
 
-const proxyUrl = (import.meta.env.VITE_OPS_PANEL_PROXY_URL as string | undefined)?.trim() || '';
+import { getPanelToken } from './panelAuth';
+
+const envProxy = (import.meta.env.VITE_OPS_PANEL_PROXY_URL as string | undefined)?.trim() || '';
+const directEdgeApi = 'https://qxmxtbjxkhecqilpnhgq.supabase.co/functions/v1/ops-panel-api';
+const demoOnly = import.meta.env.VITE_OPS_PANEL_DEMO === 'true';
+const proxyUrl = demoOnly ? '' : (envProxy || directEdgeApi);
 
 export const hubConfigured = Boolean(proxyUrl);
 
@@ -83,7 +88,10 @@ async function requestHub<T>(payload: Record<string, unknown>): Promise<T> {
     method: 'POST',
     credentials: 'include',
     cache: 'no-store',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(getPanelToken() ? { Authorization: 'Bearer ' + getPanelToken() } : {}),
+    },
     body: JSON.stringify(payload),
   });
 

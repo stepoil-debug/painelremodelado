@@ -18,6 +18,8 @@ import {
   ImagePlus,
   LayoutGrid,
   List,
+  LockKeyhole,
+  LogOut,
   PauseCircle,
   PlayCircle,
   RefreshCcw,
@@ -28,8 +30,16 @@ import {
   XCircle,
 } from 'lucide-react';
 import { liveHHReadOnlyEnabled, loadHHSessionsReadOnly } from './services/hhReadOnly';
-import { hubConfigured, loadHubDemands } from './services/opsPanelHub';
+import { hubConfigured, loadHubDemands, loadHubProject } from './services/opsPanelHub';
 import { hubRowsToOperationalState } from './services/hubDemandAdapter';
+import {
+  clearPanelSession,
+  getRememberedPanelLogin,
+  loginPanel,
+  logoutPanel,
+  restorePanelSession,
+  type PanelUser,
+} from './services/panelAuth';
 import { loadOperationalState, resetOperationalState, saveOperationalState, uid } from './store';
 import type {
   Demand,
@@ -133,8 +143,13 @@ export default function App() {
   const [priorityOnly, setPriorityOnly] = useState(false);
   const [lateOnly, setLateOnly] = useState(false);
   const [loadingHH, setLoadingHH] = useState(!hubConfigured && liveHHReadOnlyEnabled);
-  const [loadingHub, setLoadingHub] = useState(hubConfigured);
+  const [loadingHub, setLoadingHub] = useState(false);
   const [hubError, setHubError] = useState<string | null>(null);
+  const [panelUser, setPanelUser] = useState<PanelUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(hubConfigured);
+  const [authError, setAuthError] = useState('');
+  const [projectDetail, setProjectDetail] = useState<Awaited<ReturnType<typeof loadHubProject>> | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [clock, setClock] = useState(new Date());
 
@@ -156,12 +171,49 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [banner]);
 
+  useEffect(() => {
+    if (!hubConfigured) {
+      setAuthLoading(false);
+      return;
+    }
+
+    let active = true;
+    restorePanelSession()
+      .then((user) => {
+        if (active) setPanelUser(user);
+      })
+      .finally(() => {
+        if (active) setAuthLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!panelUser) return;
+    const normalized = panelUser.sector
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+    if (normalized.includes('qualidade')) setSector('qualidade');
+    else if (normalized.includes('solda')) setSector('solda');
+    else if (normalized.includes('caldeir')) setSector('caldeiraria');
+    else if (normalized.includes('engenharia')) setSector('engenharia');
+    else if (normalized.includes('pcp') || normalized.includes('projeto')) setSector('pcp');
+    else if (normalized.includes('supr')) setSector('suprimentos');
+    else if (normalized.includes('pint')) setSector('pintura');
+    else if (normalized.includes('log') || normalized.includes('exped')) setSector('expedicao');
+  }, [panelUser]);
+
   async function refreshHub(showBanner = false) {
-    if (!hubConfigured) return;
+    if (!hubConfigured || !panelUser) return;
     setLoadingHub(true);
     setHubError(null);
     try {
-      const rows = await loadHubDemands('BR', 2000);
+      const region = panelUser.operationRegion || 'BR';
+      const rows = await loadHubDemands(region, 3000);
       setState(hubRowsToOperationalState(rows));
       setSelectedId(null);
       setExpandedId(null);
@@ -169,6 +221,11 @@ export default function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Falha ao carregar dados reais.';
       setHubError(message);
+      if (/sessão inválida|não autorizado/i.test(message)) {
+        clearPanelSession();
+        setPanelUser(null);
+        setAuthError('Sua sessão expirou. Entre novamente.');
+      }
       if (showBanner) setBanner(message);
     } finally {
       setLoadingHub(false);
@@ -176,9 +233,34 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!hubConfigured) return;
+    if (!hubConfigured || !panelUser) return;
     void refreshHub(false);
-  }, []);
+  }, [panelUser]);
+
+  useEffect(() => {
+    if (!hubConfigured || !panelUser || !selected || selected.source !== 'hub_readonly') {
+      setProjectDetail(null);
+      setDetailLoading(false);
+      return;
+    }
+
+    let active = true;
+    setDetailLoading(true);
+    loadHubProject(selected.bsp)
+      .then((detail) => {
+        if (active) setProjectDetail(detail);
+      })
+      .catch(() => {
+        if (active) setProjectDetail(null);
+      })
+      .finally(() => {
+        if (active) setDetailLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [panelUser, selectedId]);
 
   useEffect(() => {
     if (hubConfigured || !liveHHReadOnlyEnabled) return;
@@ -356,6 +438,32 @@ export default function App() {
     setBanner('Handoff realizado para ' + sectorName(next.sector) + '.');
   }
 
+  async function handlePanelLogin(identifier: string, password: string) {
+    setAuthError('');
+    try {
+      const user = await loginPanel(identifier, password);
+      setPanelUser(user);
+      setState({ version: 4, demands: [], notifications: [] });
+      setHubError(null);
+      return null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Não foi possível entrar.';
+      setAuthError(message);
+      return message;
+    }
+  }
+
+  async function handlePanelLogout() {
+    await logoutPanel();
+    setPanelUser(null);
+    setState({ version: 4, demands: [], notifications: [] });
+    setSelectedId(null);
+    setExpandedId(null);
+    setProjectDetail(null);
+    setHubError(null);
+    setAuthError('');
+  }
+
   function resetDemo() {
     if (hubConfigured) {
       void refreshHub(true);
@@ -366,6 +474,14 @@ export default function App() {
     setSelectedId(null);
     setExpandedId(null);
     setBanner('Demonstração restaurada.');
+  }
+
+  if (hubConfigured && authLoading) {
+    return <PanelLogin loadingMode />;
+  }
+
+  if (hubConfigured && !panelUser) {
+    return <PanelLogin error={authError} onLogin={handlePanelLogin} />;
   }
 
   const unread = state.notifications.filter((n) => !n.read).length;
@@ -385,7 +501,8 @@ export default function App() {
         </nav>
         <span className="clock">{clock.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
         <button className="header-bell" onClick={() => { setPage('notifications'); setSelectedId(null); }}><Bell size={16} />{unread > 0 && <b>{unread}</b>}</button>
-        <div className="user-chip"><span>{hubConfigured ? 'ST' : 'UD'}</span><small>{hubConfigured ? 'Dados STEP' : 'Usuário Demo'}</small></div>
+        <div className="user-chip"><span>{panelUser ? initials(panelUser.name) : 'UD'}</span><small>{panelUser?.name || 'Usuário Demo'}</small></div>
+        {panelUser && <button className="header-logout" title="Sair do painel" onClick={() => void handlePanelLogout()}><LogOut size={15} /></button>}
       </header>
 
       {banner && <div className="floating-banner">{banner}</div>}
@@ -402,6 +519,8 @@ export default function App() {
             onBlock={() => blockDemand(selected.id)}
             onEvidence={(type) => addEvidence(selected.id, type)}
             onComplete={() => completeDemand(selected.id)}
+            hubDetail={projectDetail}
+            detailLoading={detailLoading}
           />
         ) : page === 'portfolio' ? (
           <Portfolio
@@ -442,6 +561,249 @@ export default function App() {
         <span>{selected ? 'Arquivo operacional aberto' : sectorName(sector) + ' · visibilidade por responsabilidade atual'}</span>
         <span>{hubConfigured ? 'Dados reais · Tracking/Smartsheet · somente leitura' : 'Demonstração pública · sem escrita no Apontamento HH'}</span>
       </footer>
+    </div>
+  );
+}
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'ST';
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+}
+
+function PanelLogin(props: {
+  error?: string;
+  loadingMode?: boolean;
+  onLogin?: (identifier: string, password: string) => Promise<string | null>;
+}) {
+  const [identifier, setIdentifier] = useState(() => getRememberedPanelLogin());
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [localError, setLocalError] = useState('');
+
+  if (props.loadingMode) {
+    return (
+      <main className="panel-login-page">
+        <div className="panel-login-card panel-login-loading">
+          <img src={import.meta.env.BASE_URL + 'step-logo.jpg'} alt="STEP Integrated Solutions" />
+          <RefreshCcw size={24} className="spin" />
+          <strong>Validando sessão STEP...</strong>
+          <span>Preparando a carteira operacional.</span>
+        </div>
+      </main>
+    );
+  }
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!props.onLogin || submitting) return;
+    setSubmitting(true);
+    setLocalError('');
+    const error = await props.onLogin(identifier, password);
+    if (error) setLocalError(error);
+    else setPassword('');
+    setSubmitting(false);
+  }
+
+  return (
+    <main className="panel-login-page">
+      <section className="panel-login-visual">
+        <div className="panel-login-visual-mark">
+          <img src={import.meta.env.BASE_URL + 'step-logo.jpg'} alt="STEP Integrated Solutions" />
+        </div>
+        <div>
+          <span className="eyebrow">STEP Operational Flow</span>
+          <h1>Controle operacional conectado à execução real.</h1>
+          <p>Tracking, Work in Progress, Job Order, Drawing / FCB, revisões, dimensional e logística em uma única visão.</p>
+          <div className="panel-login-features">
+            <span><CheckCircle2 size={16} /> Dados sincronizados com as fontes STEP</span>
+            <span><CheckCircle2 size={16} /> Acesso conforme permissões do STEP One</span>
+            <span><ShieldCheck size={16} /> Somente leitura sobre as planilhas de origem</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel-login-form-wrap">
+        <form className="panel-login-card" onSubmit={submit} autoComplete="off">
+          <div className="panel-login-heading">
+            <span><LockKeyhole size={21} /></span>
+            <div><small>Painel Operacional</small><h2>Acessar dados reais</h2></div>
+          </div>
+          <p>Use o mesmo login ou e-mail e a mesma senha cadastrados no STEP One.</p>
+
+          <label>
+            E-mail ou login
+            <div className="panel-login-input">
+              <Users size={17} />
+              <input value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder="seu@email.com ou login" autoComplete="username" required />
+            </div>
+          </label>
+
+          <label>
+            Senha
+            <div className="panel-login-input">
+              <LockKeyhole size={17} />
+              <input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Senha" autoComplete="current-password" required />
+              <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}>
+                {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            </div>
+          </label>
+
+          {(localError || props.error) && <div className="panel-login-error">{localError || props.error}</div>}
+
+          <button className="panel-login-submit" type="submit" disabled={submitting}>
+            {submitting ? <RefreshCcw size={16} className="spin" /> : <ShieldCheck size={16} />}
+            {submitting ? 'Validando acesso...' : 'Entrar no Painel Operacional'}
+          </button>
+
+          <div className="panel-login-note">
+            <ShieldCheck size={15} />
+            <span>Somente usuários ativos com acesso a <strong>Operações e Projetos</strong> podem consultar esta carteira.</span>
+          </div>
+        </form>
+      </section>
+    </main>
+  );
+}
+
+function textField(record: Record<string, unknown>, key: string, fallback = '—') {
+  const value = record[key];
+  if (value === null || value === undefined || value === '') return fallback;
+  return String(value);
+}
+
+function asRecords(value: unknown[] | undefined) {
+  return (value || []).filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
+}
+
+function money(value: unknown) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(number);
+}
+
+function RealSourcesPanel({ detail, loading }: {
+  detail: Awaited<ReturnType<typeof loadHubProject>> | null;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="section-card real-sources-card">
+        <div className="real-source-loading"><RefreshCcw size={18} className="spin" /> Carregando WIP, Job Order, Drawing / FCB e inspeções...</div>
+      </div>
+    );
+  }
+  if (!detail) return null;
+
+  const project = detail.project;
+  const wip = asRecords(detail.wip);
+  const drawings = asRecords(detail.drawings);
+  const revisions = asRecords(detail.drawing_revisions);
+  const jobs = asRecords(detail.job_orders);
+  const dimensional = asRecords(detail.dimensional);
+  const logistics = asRecords(detail.logistics);
+
+  return (
+    <div className="section-card real-sources-card">
+      <div className="section-card-head">
+        <div><span className="section-mono">Fontes integradas</span><h2>Dados reais consolidados do projeto</h2></div>
+        <span className="live-source-badge"><i /> SINCRONIZADO</span>
+      </div>
+
+      <div className="source-count-grid">
+        <div><span>WIP</span><strong>{wip.length}</strong></div>
+        <div><span>Job Order</span><strong>{jobs.length}</strong></div>
+        <div><span>Drawings</span><strong>{drawings.length}</strong></div>
+        <div><span>FCBs</span><strong>{drawings.filter((row) => row.is_fcb === true).length}</strong></div>
+        <div><span>Revisões</span><strong>{revisions.length}</strong></div>
+        <div><span>Dimensional</span><strong>{dimensional.length}</strong></div>
+        <div><span>Logística</span><strong>{logistics.length}</strong></div>
+      </div>
+
+      {project && (
+        <div className="source-project-summary">
+          <SummaryField label="Status WIP" value={project.project_status || project.wip_progress_text || '—'} />
+          <SummaryField label="Customer PO" value={project.customer_po || project.po_numbers || '—'} />
+          <SummaryField label="Job Order" value={project.job_order_ids || '—'} />
+          <SummaryField label="Valor da PO" value={money(project.po_value)} />
+          <SummaryField label="Faturado" value={money(project.billed_value)} />
+          <SummaryField label="Saldo contratual" value={money(project.contractual_balance)} />
+          <SummaryField label="Última revisão desenho" value={project.latest_drawing_revision || '—'} />
+          <SummaryField label="Atualização consolidada" value={fmtDate(project.data_updated_at || undefined)} />
+        </div>
+      )}
+
+      {drawings.length > 0 && (
+        <div className="source-block">
+          <div className="source-block-head"><strong>Drawing / FCB</strong><span>{drawings.length} documento(s)</span></div>
+          <div className="source-mini-table drawing-source-table">
+            <div className="source-mini-head"><span>Documento</span><span>Revisão</span><span>Status</span><span>Tipo</span></div>
+            {drawings.slice(0, 12).map((row, index) => (
+              <div className="source-mini-row" key={String(row.source_row_id || index)}>
+                <span><strong>{textField(row, 'drawing_number', textField(row, 'document_title'))}</strong><small>{textField(row, 'document_title', '')}</small></span>
+                <span>{textField(row, 'current_revision')}</span>
+                <span>{textField(row, 'current_status')}</span>
+                <span>{row.is_fcb === true ? <b className="fcb-pill">FCB</b> : 'Drawing'}</span>
+              </div>
+            ))}
+          </div>
+          {drawings.length > 12 && <div className="source-more">+ {drawings.length - 12} documento(s) vinculados ao projeto.</div>}
+        </div>
+      )}
+
+      {jobs.length > 0 && (
+        <div className="source-block">
+          <div className="source-block-head"><strong>Job Order / Comercial</strong><span>{jobs.length} registro(s)</span></div>
+          <div className="source-card-grid">
+            {jobs.slice(0, 4).map((row, index) => (
+              <div className="source-data-card" key={String(row.project_key || index)}>
+                <div><span>PO</span><strong>{textField(row, 'po_numbers')}</strong></div>
+                <div><span>Job Order</span><strong>{textField(row, 'line_ids')}</strong></div>
+                <div><span>Valor</span><strong>{money(row.po_value)}</strong></div>
+                <div><span>Faturado</span><strong>{money(row.billed_value)}</strong></div>
+                <div><span>Saldo</span><strong>{money(row.contractual_balance)}</strong></div>
+                <div><span>Status</span><strong>{textField(row, 'billing_status')}</strong></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {dimensional.length > 0 && (
+        <div className="source-block">
+          <div className="source-block-head"><strong>3D / Dimensional</strong><span>{dimensional.length} registro(s)</span></div>
+          <div className="source-mini-table dimensional-source-table">
+            <div className="source-mini-head"><span>Referência</span><span>Spool</span><span>Etapa</span><span>Status</span></div>
+            {dimensional.slice(0, 10).map((row, index) => (
+              <div className="source-mini-row" key={String(row.source_row_id || index)}>
+                <span>{textField(row, 'sob_reference')}</span>
+                <span>{textField(row, 'spool')}</span>
+                <span>{textField(row, 'inspection_stage')}</span>
+                <span>{textField(row, 'status')}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {logistics.length > 0 && (
+        <div className="source-block">
+          <div className="source-block-head"><strong>Logística</strong><span>{logistics.length} movimento(s)</span></div>
+          <div className="source-mini-table logistics-source-table">
+            <div className="source-mini-head"><span>Data</span><span>Movimento</span><span>Origem</span><span>Destino</span></div>
+            {logistics.slice(0, 8).map((row, index) => (
+              <div className="source-mini-row" key={String(row.source_row_id || index)}>
+                <span>{textField(row, 'movement_date')}</span>
+                <span>{textField(row, 'movement')}</span>
+                <span>{textField(row, 'origin')}</span>
+                <span>{textField(row, 'destination')}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -624,6 +986,8 @@ function DemandDetail(props: {
   onBlock: () => void;
   onEvidence: (type: EvidenceType) => void;
   onComplete: () => void;
+  hubDetail: Awaited<ReturnType<typeof loadHubProject>> | null;
+  detailLoading: boolean;
 }) {
   const { demand } = props;
   const status = effectiveStatus(demand);
@@ -714,6 +1078,10 @@ function DemandDetail(props: {
               </>
             )}
           </div>
+
+          {demand.source === 'hub_readonly' && (
+            <RealSourcesPanel detail={props.hubDetail} loading={props.detailLoading} />
+          )}
 
           <div className="section-card">
             <div className="section-card-head"><div><span className="section-mono">Rastreabilidade</span><h2>Histórico completo da demanda</h2></div><span className="count-ref">{demand.history.length}</span></div>
