@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -849,12 +849,12 @@ function RevisionHistory({
     <div className="drawing-revision-history">
       <div className="drawing-revision-track" aria-hidden="true">
         {revisions.map((revision, index) => (
-          <React.Fragment key={String(revision.revision || index)}>
+          <Fragment key={String(revision.revision || index)}>
             <i className={String(revision.revision || '') === currentRevision ? 'current' : ''}>
               {String(revision.revision || '—')}
             </i>
             {index < revisions.length - 1 && <b />}
-          </React.Fragment>
+          </Fragment>
         ))}
       </div>
 
