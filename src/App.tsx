@@ -31,7 +31,19 @@ import {
   XCircle,
 } from 'lucide-react';
 import { liveHHReadOnlyEnabled, loadHHSessionsReadOnly } from './services/hhReadOnly';
-import { hubConfigured, loadHubDemands, loadHubEvidence, loadHubProject, type HubHHEvidence, type HubHHEvidencePhoto, type HubHHSession } from './services/opsPanelHub';
+import {
+  hubConfigured,
+  loadHubDemands,
+  loadHubDrawingAttachments,
+  loadHubDrawingAttachmentUrl,
+  loadHubEvidence,
+  loadHubProject,
+  type HubDrawingAttachment,
+  type HubDrawingAttachments,
+  type HubHHEvidence,
+  type HubHHEvidencePhoto,
+  type HubHHSession,
+} from './services/opsPanelHub';
 import { hubRowsToOperationalState } from './services/hubDemandAdapter';
 import {
   clearPanelSession,
@@ -1089,10 +1101,182 @@ function RevisionHistory({
   );
 }
 
+function attachmentSize(sizeKb?: number | null) {
+  const value = Number(sizeKb || 0);
+  if (!Number.isFinite(value) || value <= 0) return '—';
+  if (value >= 1024) return (value / 1024).toFixed(1) + ' MB';
+  return Math.round(value) + ' KB';
+}
+
+function DrawingAttachmentsPanel({
+  rowId,
+  loading,
+  data,
+  openingId,
+  onOpen,
+}: {
+  rowId: number;
+  loading: boolean;
+  data: HubDrawingAttachments | null;
+  openingId: number | null;
+  onOpen: (attachment: HubDrawingAttachment) => void;
+}) {
+  const row = data?.rows.find((item) => Number(item.source_row_id) === Number(rowId));
+  const attachments = row?.attachments ?? [];
+
+  if (loading) {
+    return <div className="drawing-attachments-loading"><RefreshCcw size={14} className="spin" /> Buscando PDFs anexados no Smartsheet...</div>;
+  }
+  if (!attachments.length) {
+    return <div className="drawing-attachments-empty">Nenhum PDF anexado nesta linha do Drawing.</div>;
+  }
+
+  return (
+    <div className="drawing-attachments">
+      <div className="drawing-attachments-head">
+        <div><FileText size={15} /><strong>PDFs anexados no Drawing</strong></div>
+        <span>{attachments.length} arquivo(s)</span>
+      </div>
+      <div className="drawing-attachment-list">
+        {attachments.map((attachment) => (
+          <div className="drawing-attachment-row" key={attachment.id}>
+            <div className="drawing-attachment-icon"><FileText size={17} /></div>
+            <div className="drawing-attachment-name">
+              <strong>{attachment.name}</strong>
+              <span>
+                {attachment.revision ? 'Rev. ' + attachment.revision + ' · ' : ''}
+                {attachmentSize(attachment.size_kb)}
+                {attachment.created_at ? ' · ' + fmtDate(attachment.created_at) : ''}
+              </span>
+            </div>
+            <span className={'drawing-attachment-revision ' + (attachment.revision ? 'known' : 'unknown')}>
+              {attachment.revision ? 'REV. ' + attachment.revision : 'REV. NÃO IDENTIFICADA'}
+            </span>
+            <button
+              className="drawing-attachment-open"
+              type="button"
+              onClick={() => onOpen(attachment)}
+              disabled={openingId !== null}
+            >
+              {openingId === attachment.id ? <RefreshCcw size={14} className="spin" /> : <Eye size={14} />}
+              {openingId === attachment.id ? 'Abrindo...' : 'Visualizar PDF'}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DrawingPdfModal({
+  name,
+  revision,
+  url,
+  onClose,
+}: {
+  name: string;
+  revision: string;
+  url: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handler);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handler);
+    };
+  }, [onClose]);
+
+  return (
+    <div className="drawing-pdf-modal" role="dialog" aria-modal="true" aria-label="Visualizador de PDF do Drawing">
+      <button className="drawing-pdf-backdrop" type="button" onClick={onClose} aria-label="Fechar PDF" />
+      <div className="drawing-pdf-dialog">
+        <header>
+          <div>
+            <span>Drawing Documentation Control</span>
+            <strong>{name}</strong>
+            <small>{revision ? 'Revisão ' + revision : 'Revisão não identificada no nome do arquivo'}</small>
+          </div>
+          <div className="drawing-pdf-actions">
+            <a href={url} target="_blank" rel="noreferrer"><Eye size={14} /> Abrir em nova aba</a>
+            <button type="button" onClick={onClose}><XCircle size={20} /></button>
+          </div>
+        </header>
+        <div className="drawing-pdf-frame-wrap">
+          <iframe src={url} title={name} className="drawing-pdf-frame" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RealSourcesPanel({ detail, loading }: {
   detail: Awaited<ReturnType<typeof loadHubProject>> | null;
   loading: boolean;
 }) {
+  const projectKey = detail?.project?.project_key || '';
+  const [drawingAttachments, setDrawingAttachments] = useState<HubDrawingAttachments | null>(null);
+  const [attachmentsLoading, setAttachmentsLoading] = useState(false);
+  const [attachmentError, setAttachmentError] = useState('');
+  const [pdfViewer, setPdfViewer] = useState<{
+    name: string;
+    revision: string;
+    url: string;
+  } | null>(null);
+  const [pdfLoadingId, setPdfLoadingId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!projectKey) {
+      setDrawingAttachments(null);
+      return;
+    }
+
+    let active = true;
+    setAttachmentsLoading(true);
+    setAttachmentError('');
+
+    loadHubDrawingAttachments(projectKey)
+      .then((data) => {
+        if (active) setDrawingAttachments(data);
+      })
+      .catch((error) => {
+        if (active) {
+          setDrawingAttachments(null);
+          setAttachmentError(error instanceof Error ? error.message : 'Não foi possível carregar os PDFs do Drawing.');
+        }
+      })
+      .finally(() => {
+        if (active) setAttachmentsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [projectKey]);
+
+  async function openDrawingPdf(attachment: HubDrawingAttachment) {
+    if (!projectKey || pdfLoadingId !== null) return;
+    setPdfLoadingId(attachment.id);
+    setAttachmentError('');
+    try {
+      const result = await loadHubDrawingAttachmentUrl(projectKey, attachment.id);
+      setPdfViewer({
+        name: result.name || attachment.name,
+        revision: attachment.revision || '',
+        url: result.url,
+      });
+    } catch (error) {
+      setAttachmentError(error instanceof Error ? error.message : 'Não foi possível abrir o PDF.');
+    } finally {
+      setPdfLoadingId(null);
+    }
+  }
+
   if (loading) {
     return (
       <div className="section-card real-sources-card">
@@ -1123,6 +1307,7 @@ function RealSourcesPanel({ detail, loading }: {
         <div><span>Drawings</span><strong>{drawings.length}</strong></div>
         <div><span>FCBs</span><strong>{drawings.filter((row) => row.is_fcb === true).length}</strong></div>
         <div><span>Revisões</span><strong>{revisions.length}</strong></div>
+        <div><span>PDFs Drawing</span><strong>{attachmentsLoading ? '…' : drawingAttachments?.attachment_count ?? 0}</strong></div>
         <div><span>Dimensional</span><strong>{dimensional.length}</strong></div>
         <div><span>Logística</span><strong>{logistics.length}</strong></div>
       </div>
@@ -1146,6 +1331,8 @@ function RealSourcesPanel({ detail, loading }: {
             <strong>Drawing / FCB</strong>
             <span>{drawings.length} documento(s) · {revisions.length} revisão(ões)</span>
           </div>
+
+          {attachmentError && <div className="drawing-attachment-error">{attachmentError}</div>}
 
           <div className="drawing-revision-list">
             {drawings.slice(0, 20).map((row, index) => {
@@ -1186,6 +1373,14 @@ function RealSourcesPanel({ detail, loading }: {
                   <RevisionHistory
                     revisions={rowRevisions}
                     currentRevision={currentRevision}
+                  />
+
+                  <DrawingAttachmentsPanel
+                    rowId={Number(rowId)}
+                    loading={attachmentsLoading}
+                    data={drawingAttachments}
+                    openingId={pdfLoadingId}
+                    onOpen={openDrawingPdf}
                   />
                 </details>
               );
@@ -1246,6 +1441,15 @@ function RealSourcesPanel({ detail, loading }: {
             ))}
           </div>
         </div>
+      )}
+
+      {pdfViewer && (
+        <DrawingPdfModal
+          name={pdfViewer.name}
+          revision={pdfViewer.revision}
+          url={pdfViewer.url}
+          onClose={() => setPdfViewer(null)}
+        />
       )}
     </div>
   );

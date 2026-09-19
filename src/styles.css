@@ -1201,3 +1201,246 @@ h1,h2,h3,p { margin-top: 0; }
     justify-content: flex-start;
   }
 }
+
+
+/* Drawing PDF attachments */
+.drawing-attachment-error {
+  margin: 0 0 9px;
+  padding: 8px 10px;
+  border: 1px solid #F0CACA;
+  border-radius: 9px;
+  background: #FFF7F7;
+  color: #B63838;
+  font-size: 8px;
+}
+.drawing-attachments,
+.drawing-attachments-loading,
+.drawing-attachments-empty {
+  border-top: 1px solid #E8EEF6;
+  background: #F8FBFE;
+}
+.drawing-attachments-loading,
+.drawing-attachments-empty {
+  padding: 11px 14px;
+  color: #7B8FA2;
+  font-size: 8px;
+}
+.drawing-attachments-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.drawing-attachments-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px 8px;
+}
+.drawing-attachments-head > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #1355C2;
+}
+.drawing-attachments-head strong {
+  font-size: 9px;
+}
+.drawing-attachments-head span {
+  color: #8B9CAD;
+  font: 7px 'IBM Plex Mono', monospace;
+}
+.drawing-attachment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 14px 12px;
+}
+.drawing-attachment-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0,1fr) auto auto;
+  gap: 9px;
+  align-items: center;
+  padding: 8px 9px;
+  border: 1px solid #E1E9F2;
+  border-radius: 9px;
+  background: #fff;
+}
+.drawing-attachment-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #FFF1F1;
+  color: #D64242;
+}
+.drawing-attachment-name {
+  min-width: 0;
+}
+.drawing-attachment-name strong,
+.drawing-attachment-name span {
+  display: block;
+}
+.drawing-attachment-name strong {
+  color: #263A4F;
+  font: 600 8px 'IBM Plex Mono', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drawing-attachment-name span {
+  margin-top: 3px;
+  color: #8B9CAD;
+  font-size: 7px;
+}
+.drawing-attachment-revision {
+  padding: 4px 7px;
+  border-radius: 999px;
+  font: 700 7px 'IBM Plex Mono', monospace;
+  white-space: nowrap;
+}
+.drawing-attachment-revision.known {
+  background: #E8F4FD;
+  color: #1355C2;
+}
+.drawing-attachment-revision.unknown {
+  background: #F1F4F7;
+  color: #7B8FA2;
+}
+.drawing-attachment-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 104px;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid #B9D8F3;
+  border-radius: 8px;
+  background: #F4FAFF;
+  color: #1355C2;
+  font-size: 8px;
+  font-weight: 700;
+}
+.drawing-attachment-open:hover:not(:disabled) {
+  background: #EAF5FE;
+}
+.drawing-attachment-open:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+.drawing-pdf-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+.drawing-pdf-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: rgba(4,16,29,.84);
+  backdrop-filter: blur(7px);
+}
+.drawing-pdf-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(1280px,97vw);
+  height: min(92vh,900px);
+  display: grid;
+  grid-template-rows: auto minmax(0,1fr);
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 30px 90px rgba(0,0,0,.4);
+}
+.drawing-pdf-dialog > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  background: #0B2340;
+  color: #fff;
+}
+.drawing-pdf-dialog > header span,
+.drawing-pdf-dialog > header strong,
+.drawing-pdf-dialog > header small {
+  display: block;
+}
+.drawing-pdf-dialog > header span {
+  color: #81CDF2;
+  font-size: 7px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.drawing-pdf-dialog > header strong {
+  margin-top: 3px;
+  max-width: 780px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 10px 'IBM Plex Mono', monospace;
+}
+.drawing-pdf-dialog > header small {
+  margin-top: 3px;
+  color: rgba(255,255,255,.62);
+  font-size: 7px;
+}
+.drawing-pdf-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.drawing-pdf-actions a,
+.drawing-pdf-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 32px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 8px;
+  background: rgba(255,255,255,.08);
+  color: #fff;
+  text-decoration: none;
+  font-size: 8px;
+  font-weight: 700;
+}
+.drawing-pdf-actions a { padding: 0 10px; }
+.drawing-pdf-actions button { width: 34px; }
+.drawing-pdf-frame-wrap {
+  min-height: 0;
+  background: #E9EEF3;
+}
+.drawing-pdf-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+@media (max-width: 760px) {
+  .drawing-attachment-row {
+    grid-template-columns: 30px minmax(0,1fr) auto;
+  }
+  .drawing-attachment-revision {
+    grid-column: 2;
+    width: max-content;
+  }
+  .drawing-attachment-open {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    min-width: 82px;
+    padding: 0 7px;
+  }
+  .drawing-pdf-modal { padding: 6px; }
+  .drawing-pdf-dialog { width: 100%; height: 97vh; border-radius: 11px; }
+  .drawing-pdf-actions a { display: none; }
+}

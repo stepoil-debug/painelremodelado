@@ -221,3 +221,63 @@ export async function loadHubEvidence(bsp: string, iso: string): Promise<HubHHEv
   });
   return response.data;
 }
+
+
+export interface HubDrawingAttachment {
+  id: number;
+  parent_id: number;
+  name: string;
+  mime_type?: string | null;
+  size_kb?: number | null;
+  created_at?: string | null;
+  created_by?: { email?: string | null; name?: string | null } | null;
+  revision?: string | null;
+}
+
+export interface HubDrawingAttachmentRow {
+  source_row_id: number;
+  project_key: string;
+  drawing_number?: string | null;
+  document_title?: string | null;
+  current_revision?: string | null;
+  current_status?: string | null;
+  is_fcb?: boolean | null;
+  attachments: HubDrawingAttachment[];
+}
+
+export interface HubDrawingAttachments {
+  project_key: string;
+  sheet_id: number;
+  rows: HubDrawingAttachmentRow[];
+  attachment_count: number;
+}
+
+export async function loadHubDrawingAttachments(projectKey: string): Promise<HubDrawingAttachments> {
+  const response = await requestHub<{ ok: true; data: HubDrawingAttachments }>({
+    action: 'drawing_attachments',
+    projectKey,
+  });
+  return response.data;
+}
+
+export async function loadHubDrawingAttachmentUrl(
+  projectKey: string,
+  attachmentId: number,
+): Promise<{
+  id: number;
+  parent_id: number;
+  name: string;
+  mime_type?: string | null;
+  size_kb?: number | null;
+  created_at?: string | null;
+  created_by?: { email?: string | null; name?: string | null } | null;
+  url: string;
+  url_expires_in_millis?: number | null;
+}> {
+  const response = await requestHub<{ ok: true; data: any }>({
+    action: 'drawing_attachment_url',
+    projectKey,
+    attachmentId,
+  });
+  return response.data;
+}

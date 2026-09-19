@@ -230,6 +230,140 @@ Deno.serve(async (request: Request) => {
     });
   }
 
+
+  if (action === "drawing_attachments") {
+    const projectKey = String(body.projectKey || "").trim();
+    if (!projectKey) return json({ ok: false, error: "projectKey é obrigatório." }, 400);
+
+    const smartsheetToken = Deno.env.get("SMARTSHEET_ACCESS_TOKEN");
+    if (!smartsheetToken) return json({ ok: false, error: "Integração Smartsheet não configurada." }, 503);
+
+    const { data: drawingRowsRaw, error: drawingsError } = await admin.rpc(
+      "ops_panel_get_drawing_rows_for_attachments",
+      { p_project_key: projectKey }
+    );
+
+    if (drawingsError) return json({ ok: false, error: drawingsError.message }, 500);
+    const drawingRows = Array.isArray(drawingRowsRaw) ? drawingRowsRaw : [];
+
+    const DRAWING_SHEET_ID = 2580648465590148;
+    const API = "https://api.smartsheet.com/2.0";
+
+    async function sheetGet(path: string) {
+      const response = await fetch(API + path, {
+        headers: {
+          Authorization: "Bearer " + smartsheetToken,
+          "Content-Type": "application/json",
+          "smartsheet-integration-source": "APPLICATION,STEP Oil & Gas,Painel Operacional Remodelado",
+        },
+      });
+      const raw = await response.text();
+      if (!response.ok) throw new Error("Smartsheet " + response.status + ": " + raw.slice(0, 500));
+      return JSON.parse(raw);
+    }
+
+    function inferRevision(name: string, fallback: string) {
+      const match = name.match(/(?:REV(?:ISION)?|R)[_\s.\-]*([A-Z0-9]{1,3})(?:\b|[_\s.\-])/i);
+      if (match?.[1]) return String(match[1]).toUpperCase();
+      return fallback || "";
+    }
+
+    const groups = await Promise.all((drawingRows || []).map(async (row: Record<string, unknown>) => {
+      const rowId = Number(row.source_row_id);
+      if (!rowId) return { ...row, attachments: [] };
+
+      const listing = await sheetGet(
+        "/sheets/" + DRAWING_SHEET_ID + "/rows/" + rowId + "/attachments?pageSize=100&page=1"
+      ).catch(() => ({ data: [] }));
+
+      const attachments = (Array.isArray(listing.data) ? listing.data : [])
+        .filter((attachment: Record<string, unknown>) => {
+          const mime = String(attachment.mimeType || "").toLowerCase();
+          const name = String(attachment.name || "").toLowerCase();
+          return mime === "application/pdf" || name.endsWith(".pdf");
+        })
+        .map((attachment: Record<string, unknown>) => ({
+          id: attachment.id,
+          parent_id: attachment.parentId,
+          name: attachment.name,
+          mime_type: attachment.mimeType,
+          size_kb: attachment.sizeInKb,
+          created_at: attachment.createdAt,
+          created_by: attachment.createdBy || null,
+          revision: inferRevision(String(attachment.name || ""), String(row.current_revision || "")),
+        }));
+
+      return { ...row, attachments };
+    }));
+
+    return json({
+      ok: true,
+      data: {
+        project_key: projectKey,
+        sheet_id: DRAWING_SHEET_ID,
+        rows: groups,
+        attachment_count: groups.reduce((sum, row: any) => sum + (row.attachments?.length || 0), 0),
+      },
+      generatedAt: new Date().toISOString(),
+    });
+  }
+
+  if (action === "drawing_attachment_url") {
+    const projectKey = String(body.projectKey || "").trim();
+    const attachmentId = Number(body.attachmentId || 0);
+    if (!projectKey || !attachmentId) {
+      return json({ ok: false, error: "projectKey e attachmentId são obrigatórios." }, 400);
+    }
+
+    const smartsheetToken = Deno.env.get("SMARTSHEET_ACCESS_TOKEN");
+    if (!smartsheetToken) return json({ ok: false, error: "Integração Smartsheet não configurada." }, 503);
+
+    const DRAWING_SHEET_ID = 2580648465590148;
+    const response = await fetch(
+      "https://api.smartsheet.com/2.0/sheets/" + DRAWING_SHEET_ID + "/attachments/" + attachmentId,
+      {
+        headers: {
+          Authorization: "Bearer " + smartsheetToken,
+          "Content-Type": "application/json",
+          "smartsheet-integration-source": "APPLICATION,STEP Oil & Gas,Painel Operacional Remodelado",
+        },
+      }
+    );
+    const raw = await response.text();
+    if (!response.ok) return json({ ok: false, error: "Não foi possível abrir o PDF no Smartsheet." }, 502);
+
+    const attachment = JSON.parse(raw) as Record<string, unknown>;
+    const parentId = Number(attachment.parentId || 0);
+
+    const { data: allowedRow, error: rowError } = await admin.rpc(
+      "ops_panel_drawing_attachment_parent_allowed",
+      { p_project_key: projectKey, p_parent_id: parentId }
+    );
+
+    if (rowError || allowedRow !== true) {
+      return json({ ok: false, error: "Este anexo não pertence ao projeto selecionado." }, 403);
+    }
+
+    const url = String(attachment.url || "");
+    if (!url) return json({ ok: false, error: "O Smartsheet não retornou URL temporária para este PDF." }, 502);
+
+    return json({
+      ok: true,
+      data: {
+        id: attachment.id,
+        parent_id: attachment.parentId,
+        name: attachment.name,
+        mime_type: attachment.mimeType,
+        size_kb: attachment.sizeInKb,
+        created_at: attachment.createdAt,
+        created_by: attachment.createdBy || null,
+        url,
+        url_expires_in_millis: attachment.urlExpiresInMillis || null,
+      },
+      generatedAt: new Date().toISOString(),
+    });
+  }
+
   if (action === "demands") {
     const region = String(body.region || "BR").trim() || "BR";
     const requestedLimit = Number(body.limit || 2000);
