@@ -1593,8 +1593,9 @@ function groupDemandsByBsp(demands: Demand[]): BspGroup[] {
   const map = new Map<string, Demand[]>();
 
   for (const demand of demands) {
-    const normalizedBsp = demand.bsp.trim().toUpperCase();
-    const key = normalizedBsp || demand.bsp || demand.id;
+    const rawBsp = String(demand.bsp ?? '').trim();
+    const normalizedBsp = rawBsp.toUpperCase();
+    const key = normalizedBsp || String(demand.id || 'sem-bsp');
     const items = map.get(key) ?? [];
     items.push(demand);
     map.set(key, items);
@@ -1603,9 +1604,9 @@ function groupDemandsByBsp(demands: Demand[]): BspGroup[] {
   return [...map.entries()]
     .map(([key, items]) => ({
       key,
-      bsp: items[0]?.bsp ?? key,
+      bsp: String(items[0]?.bsp ?? key),
       demands: [...items].sort((a, b) =>
-        a.iso.localeCompare(b.iso, 'pt-BR', { numeric: true, sensitivity: 'base' })
+        String(a.iso ?? '').localeCompare(String(b.iso ?? ''), 'pt-BR', { numeric: true, sensitivity: 'base' })
       ),
     }))
     .sort((a, b) => {

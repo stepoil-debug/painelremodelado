@@ -23,6 +23,17 @@ const originBySector: Partial<Record<SectorKey, SectorKey>> = {
   expedicao: 'pintura',
 };
 
+function projectKeyFromRow(row: HubDemandRow) {
+  const direct = String(row.project_number || '').trim();
+  if (direct) return direct;
+
+  const candidate = String(row.iso || row.drawing || '').toUpperCase();
+  const match = candidate.match(/(?:BSP|BEP|BPP|B3D)[\s-]*([0-9]{2}-[0-9]{3,4}(?:-[0-9]{2})?)/i);
+  if (match?.[1]) return match[1];
+
+  return 'SEM-BSP-' + String(row.iso_key || 'REGISTRO');
+}
+
 function normalize(value?: string | null) {
   return (value || '')
     .normalize('NFD')
@@ -37,6 +48,18 @@ function stageMap(row: HubDemandRow): StageMap {
 
   if (group.includes('engenharia')) {
     return { stageKey: 'engineering_release', sector: 'engenharia', label: row.current_status || 'Engenharia' };
+  }
+  if (group.includes('pcp')) {
+    return { stageKey: 'pcp_planning', sector: 'pcp', label: row.current_status || 'PCP' };
+  }
+  if (group.includes('suprimentos')) {
+    return { stageKey: 'material_separation', sector: 'suprimentos', label: row.current_status || 'Suprimentos' };
+  }
+  if (group.includes('caldeiraria')) {
+    return { stageKey: 'fitup', sector: 'caldeiraria', label: row.current_status || 'Caldeiraria / Fit-up' };
+  }
+  if (group.includes('solda')) {
+    return { stageKey: 'welding', sector: 'solda', label: row.current_status || 'Solda' };
   }
   if (group.includes('on hold')) {
     return { stageKey: 'pcp_planning', sector: 'pcp', label: 'On Hold' };
@@ -56,8 +79,8 @@ function stageMap(row: HubDemandRow): StageMap {
   if (group.includes('pintura')) {
     return { stageKey: 'painting', sector: 'pintura', label: row.current_status || 'Pintura' };
   }
-  if (group.includes('logistica')) {
-    return { stageKey: 'dispatch', sector: 'expedicao', label: row.current_status || 'Logística' };
+  if (group.includes('logistica') || group.includes('expedicao')) {
+    return { stageKey: 'dispatch', sector: 'expedicao', label: row.current_status || 'Expedição' };
   }
   if (group.includes('enviado')) {
     return { stageKey: 'dispatch', sector: 'expedicao', label: 'Enviado' };
@@ -118,12 +141,13 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
     const progress = progressFor(row);
     const vessel = row.vessel ? ' · ' + row.vessel : '';
     const sourceStatus = [row.current_stage, row.current_status].filter(Boolean).join(' / ');
+    const bsp = projectKeyFromRow(row);
 
     return {
-      id: 'hub-' + row.region + '-' + row.iso_key,
-      bsp: row.project_number,
+      id: 'hub-' + String(row.region || 'BR') + '-' + String(row.iso_key || bsp),
+      bsp,
       iso: compactIso(row),
-      project: row.project_display || ('BSP ' + row.project_number),
+      project: row.project_display || ('BSP ' + bsp),
       client: row.client || '—',
       stageKey: mapped.stageKey,
       stage: mapped.label,
