@@ -814,6 +814,89 @@ function HHEvidenceGallery({ evidence, loading }: {
   );
 }
 
+function revisionsForDrawing(
+  revisions: Record<string, unknown>[],
+  drawingRowId: unknown,
+) {
+  return revisions
+    .filter((revision) => String(revision.drawing_row_id ?? '') === String(drawingRowId ?? ''))
+    .sort((a, b) =>
+      String(a.revision ?? '').localeCompare(String(b.revision ?? ''), 'pt-BR', {
+        numeric: true,
+        sensitivity: 'base',
+      })
+    );
+}
+
+function revisionMetaValue(revision: Record<string, unknown>, key: string) {
+  const value = revision[key];
+  if (value === null || value === undefined || value === '') return '';
+  return String(value);
+}
+
+function RevisionHistory({
+  revisions,
+  currentRevision,
+}: {
+  revisions: Record<string, unknown>[];
+  currentRevision: string;
+}) {
+  if (!revisions.length) {
+    return <div className="drawing-revision-empty">Sem histórico de revisão preenchido nesta linha do Drawing.</div>;
+  }
+
+  return (
+    <div className="drawing-revision-history">
+      <div className="drawing-revision-track" aria-hidden="true">
+        {revisions.map((revision, index) => (
+          <React.Fragment key={String(revision.revision || index)}>
+            <i className={String(revision.revision || '') === currentRevision ? 'current' : ''}>
+              {String(revision.revision || '—')}
+            </i>
+            {index < revisions.length - 1 && <b />}
+          </React.Fragment>
+        ))}
+      </div>
+
+      <div className="drawing-revision-cards">
+        {revisions.map((revision, index) => {
+          const revisionCode = String(revision.revision || '—');
+          const isCurrent = revisionCode === currentRevision;
+          const start = revisionMetaValue(revision, 'start_date');
+          const sentPm = revisionMetaValue(revision, 'internally_sent_pm');
+          const pmApproval = revisionMetaValue(revision, 'pm_approval');
+          const clientComment = revisionMetaValue(revision, 'client_comments_date');
+          const originReview = revisionMetaValue(revision, 'origin_review');
+          const draftman = revisionMetaValue(revision, 'draftman');
+          const reviewer = revisionMetaValue(revision, 'reviewer');
+          const approver = revisionMetaValue(revision, 'approver');
+          const drawingNumber = revisionMetaValue(revision, 'drawing_number');
+
+          return (
+            <div className={'drawing-revision-card ' + (isCurrent ? 'current' : '')} key={revisionCode + '-' + index}>
+              <div className="drawing-revision-card-head">
+                <strong>Rev. {revisionCode}</strong>
+                {isCurrent && <span>ATUAL</span>}
+              </div>
+              {drawingNumber && <div className="revision-drawing-number">{drawingNumber}</div>}
+              <div className="drawing-revision-data">
+                <div><span>Início</span><strong>{start || '—'}</strong></div>
+                <div><span>Desenhista</span><strong>{draftman || '—'}</strong></div>
+                <div><span>Reviewer</span><strong>{reviewer || '—'}</strong></div>
+                <div><span>Approver</span><strong>{approver || '—'}</strong></div>
+                <div><span>Envio ao PM</span><strong>{sentPm || '—'}</strong></div>
+                <div><span>Aprovação PM</span><strong>{pmApproval || '—'}</strong></div>
+                <div><span>Comentário cliente</span><strong>{clientComment || '—'}</strong></div>
+                <div><span>Origin Review</span><strong>{originReview || '—'}</strong></div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function RealSourcesPanel({ detail, loading }: {
   detail: Awaited<ReturnType<typeof loadHubProject>> | null;
   loading: boolean;
@@ -867,19 +950,57 @@ function RealSourcesPanel({ detail, loading }: {
 
       {drawings.length > 0 && (
         <div className="source-block">
-          <div className="source-block-head"><strong>Drawing / FCB</strong><span>{drawings.length} documento(s)</span></div>
-          <div className="source-mini-table drawing-source-table">
-            <div className="source-mini-head"><span>Documento</span><span>Revisão</span><span>Status</span><span>Tipo</span></div>
-            {drawings.slice(0, 12).map((row, index) => (
-              <div className="source-mini-row" key={String(row.source_row_id || index)}>
-                <span><strong>{textField(row, 'drawing_number', textField(row, 'document_title'))}</strong><small>{textField(row, 'document_title', '')}</small></span>
-                <span>{textField(row, 'current_revision')}</span>
-                <span>{textField(row, 'current_status')}</span>
-                <span>{row.is_fcb === true ? <b className="fcb-pill">FCB</b> : 'Drawing'}</span>
-              </div>
-            ))}
+          <div className="source-block-head">
+            <strong>Drawing / FCB</strong>
+            <span>{drawings.length} documento(s) · {revisions.length} revisão(ões)</span>
           </div>
-          {drawings.length > 12 && <div className="source-more">+ {drawings.length - 12} documento(s) vinculados ao projeto.</div>}
+
+          <div className="drawing-revision-list">
+            {drawings.slice(0, 20).map((row, index) => {
+              const rowId = row.source_row_id;
+              const rowRevisions = revisionsForDrawing(revisions, rowId);
+              const currentRevision = textField(
+                row,
+                'current_revision',
+                rowRevisions.length ? String(rowRevisions[rowRevisions.length - 1].revision || '—') : '—',
+              );
+
+              return (
+                <details className="drawing-revision-item" key={String(rowId || index)}>
+                  <summary className="drawing-revision-summary">
+                    <span className="drawing-doc-cell">
+                      <strong>{textField(row, 'drawing_number', textField(row, 'document_title'))}</strong>
+                      <small>{textField(row, 'document_title', '')}</small>
+                    </span>
+
+                    <span className="drawing-current-revision">
+                      <small>Revisão atual</small>
+                      <strong>Rev. {currentRevision}</strong>
+                      <em>{rowRevisions.length} revisão(ões)</em>
+                    </span>
+
+                    <span className="drawing-status-cell">
+                      <small>Status</small>
+                      <strong>{textField(row, 'current_status')}</strong>
+                    </span>
+
+                    <span className="drawing-type-cell">
+                      {row.is_fcb === true ? <b className="fcb-pill">FCB</b> : <b className="drawing-pill">Drawing</b>}
+                    </span>
+
+                    <ChevronDown className="drawing-revision-chevron" size={16} />
+                  </summary>
+
+                  <RevisionHistory
+                    revisions={rowRevisions}
+                    currentRevision={currentRevision}
+                  />
+                </details>
+              );
+            })}
+          </div>
+
+          {drawings.length > 20 && <div className="source-more">+ {drawings.length - 20} documento(s) vinculados ao projeto.</div>}
         </div>
       )}
 
