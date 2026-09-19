@@ -1803,7 +1803,10 @@ function Portfolio(props: {
           <strong>{props.sector === 'all' ? 'Visão geral da carteira · Todos os setores' : 'Visão geral da caixa · ' + sectorName(props.sector)}</strong>
           <span>{props.sector === 'all' ? 'Veja onde cada BSP / ISO está no fluxo operacional completo.' : 'Responsabilidade atual do setor e carga prevista pelo fluxo.'}</span>
         </div>
-        <Metric value={activeGroups.length} label="BSPs na caixa" />
+        <Metric
+          value={props.sector === 'all' ? currentGroups.length : activeGroups.length}
+          label={props.sector === 'all' ? 'BSPs no Tracking' : 'BSPs na caixa'}
+        />
         <Metric value={late} label="Atrasadas" danger={late > 0} />
         <Metric value={blocked} label="Bloqueadas" warning={blocked > 0} />
         <Metric value={avg + '%'} label="Avanço médio" />
