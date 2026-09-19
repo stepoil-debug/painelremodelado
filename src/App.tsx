@@ -895,6 +895,66 @@ function groupOwnerLabel(demands: Demand[]) {
   return owners.length + ' responsáveis';
 }
 
+function normalizeSearchValue(value: unknown) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function matchesDemandSearch(demand: Demand, rawQuery: string) {
+  const query = rawQuery.trim();
+  if (!query) return true;
+
+  const normalizedQuery = normalizeSearchValue(query);
+  if (!normalizedQuery) return true;
+
+  const identifierFields = [
+    demand.bsp,
+    demand.iso,
+  ].map(normalizeSearchValue).filter(Boolean);
+
+  const isIdentifierLike = /^[\d\s\-_/\.]+$/.test(query)
+    || /^(bsp|iso|spl)[\s\-_/\.]*[a-z0-9\s\-_/\.]*/i.test(query);
+
+  if (isIdentifierLike) {
+    const compactIdentifierQuery = normalizedQuery
+      .replace(/^bsp/, '')
+      .replace(/^iso/, '')
+      .replace(/^spl/, '');
+
+    return identifierFields.some((field) => {
+      const comparable = field
+        .replace(/^bsp/, '')
+        .replace(/^iso/, '')
+        .replace(/^spl/, '');
+      return comparable.includes(compactIdentifierQuery);
+    });
+  }
+
+  const words = query
+    .split(/\s+/)
+    .map(normalizeSearchValue)
+    .filter(Boolean);
+
+  const haystack = [
+    demand.bsp,
+    demand.iso,
+    demand.stage,
+    demand.project,
+    demand.client,
+    demand.assignedTo,
+    sectorName(demand.sector),
+    demand.note,
+  ]
+    .map(normalizeSearchValue)
+    .filter(Boolean)
+    .join(' ');
+
+  return words.every((word) => haystack.includes(word));
+}
+
 function Portfolio(props: {
   demands: Demand[];
   sector: SectorFilter;
@@ -919,13 +979,12 @@ function Portfolio(props: {
   error: string | null;
 }) {
   const filtered = useMemo(() => {
-    const term = props.search.trim().toLowerCase();
     return props.demands
       .filter((d) => props.sector === 'all' || d.sector === props.sector)
       .filter((d) => props.statusFilter === 'all' || effectiveStatus(d) === props.statusFilter)
       .filter((d) => !props.priorityOnly || d.priority === 'critical' || d.priority === 'high')
       .filter((d) => !props.lateOnly || effectiveStatus(d) === 'late')
-      .filter((d) => !term || [d.bsp, d.iso, d.stage, d.project, d.client, d.assignedTo, sectorName(d.sector)].filter(Boolean).some((v) => String(v).toLowerCase().includes(term)))
+      .filter((d) => matchesDemandSearch(d, props.search))
       .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority] || new Date(a.enteredAt).getTime() - new Date(b.enteredAt).getTime());
   }, [props.demands, props.sector, props.statusFilter, props.priorityOnly, props.lateOnly, props.search]);
 
@@ -983,11 +1042,20 @@ function Portfolio(props: {
       </section>
 
       <section className="filters-bar">
-        <label className="filter-field search-field"><Search size={15} /><input value={props.search} onChange={(e) => props.setSearch(e.target.value)} placeholder="Buscar BSP, ISO, projeto, etapa..." /></label>
+        <label className="filter-field search-field">
+          <Search size={15} />
+          <input
+            value={props.search}
+            onChange={(e) => props.setSearch(e.target.value)}
+            placeholder="BSP ou ISO: 26-955, 26955, ISO001..."
+          />
+          {props.search && <button type="button" className="search-clear" onClick={() => props.setSearch('')}>Limpar</button>}
+        </label>
         <label className="filter-field"><span>Setor</span><select value={props.sector} onChange={(e) => props.setSector(e.target.value as SectorFilter)}><option value="all">Todos os setores</option>{sectors.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}</select></label>
         <label className="filter-field"><span>Status</span><select value={props.statusFilter} onChange={(e) => props.setStatusFilter(e.target.value as 'all' | DemandStatus)}><option value="all">Todos</option><option value="new">Novas</option><option value="in_progress">Em execução</option><option value="waiting">Aguardando</option><option value="blocked">Bloqueadas</option><option value="late">Atrasadas</option><option value="completed">Concluídas</option></select></label>
         <button className={'flag-filter ' + (props.lateOnly ? 'active danger' : '')} onClick={() => props.setLateOnly(!props.lateOnly)}><AlertTriangle size={14} /> Só atrasadas</button>
         <button className={'flag-filter ' + (props.priorityOnly ? 'active' : '')} onClick={() => props.setPriorityOnly(!props.priorityOnly)}><CircleDot size={14} /> Prioridade</button>
+        {props.search && <div className="search-feedback"><strong>{grouped.length}</strong> BSP(s) encontrada(s) para <span>“{props.search}”</span></div>}
       </section>
 
       {props.mode === 'table' ? (

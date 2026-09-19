@@ -610,3 +610,33 @@ h1,h2,h3,p { margin-top: 0; }
     align-self: start;
   }
 }
+
+
+/* Smarter BSP/ISO search */
+.search-field { position: relative; }
+.search-field input { padding-right: 52px; }
+.search-clear {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: #1355C2;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 3px 2px;
+}
+.search-clear:hover { text-decoration: underline; }
+.search-feedback {
+  flex: 1 1 100%;
+  margin-top: -1px;
+  padding-left: 3px;
+  color: #7B8FA2;
+  font-size: 9px;
+}
+.search-feedback strong {
+  color: #0B2340;
+  font: 600 9px 'IBM Plex Mono', monospace;
+}
+.search-feedback span {
+  color: #1355C2;
+  font-weight: 600;
+}
