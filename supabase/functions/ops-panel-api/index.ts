@@ -152,11 +152,56 @@ Deno.serve(async (request: Request) => {
   if (action === "project") {
     const projectKey = String(body.projectKey || "").trim();
     if (!projectKey) return json({ ok: false, error: "projectKey é obrigatório." }, 400);
-    const { data, error } = await admin.rpc("ops_panel_get_project", {
-      p_project_key: projectKey,
-    });
+
+    const [{ data, error }, { data: stepflowConfig, error: stepflowConfigError }] = await Promise.all([
+      admin.rpc("ops_panel_get_project", { p_project_key: projectKey }),
+      admin.rpc("ops_panel_stepflow_config"),
+    ]);
+
     if (error) return json({ ok: false, error: error.message }, 500);
-    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+
+    let stepflow: unknown = null;
+    let stepflowError: string | null = null;
+
+    if (!stepflowConfigError && stepflowConfig?.url && stepflowConfig?.key) {
+      try {
+        const response = await fetch(String(stepflowConfig.url), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-step-client-key": "ops-panel",
+            "x-step-integration-key": String(stepflowConfig.key),
+          },
+          body: JSON.stringify({
+            action: "project",
+            projectKey,
+            limit: 250,
+          }),
+          signal: AbortSignal.timeout(12000),
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (response.ok && payload?.ok !== false) {
+          stepflow = payload?.data ?? null;
+        } else {
+          stepflowError = String(payload?.error || "Falha na leitura do STEP Flow.");
+        }
+      } catch (error) {
+        stepflowError = error instanceof Error ? error.message : "Falha na leitura do STEP Flow.";
+      }
+    } else if (stepflowConfigError) {
+      stepflowError = stepflowConfigError.message;
+    }
+
+    return json({
+      ok: true,
+      data: {
+        ...(data && typeof data === "object" ? data : {}),
+        stepflow,
+        stepflow_error: stepflowError,
+      },
+      generatedAt: new Date().toISOString(),
+    });
   }
 
 

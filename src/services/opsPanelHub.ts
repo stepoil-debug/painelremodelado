@@ -53,6 +53,28 @@ export interface HubSnapshot {
   projects: HubProject[];
 }
 
+export interface HubStepflowSummary {
+  compras: number;
+  diligenciamentos: number;
+  rm_itens: number;
+  materiais_alugados: number;
+  compras_abertas: number;
+  diligenciamentos_abertos: number;
+  rm_pendentes: number;
+}
+
+export interface HubStepflowProject {
+  project_key: string;
+  summary: HubStepflowSummary;
+  compras: unknown[];
+  diligenciamentos: unknown[];
+  rm_itens: unknown[];
+  rm_status: unknown[];
+  materiais_alugados: unknown[];
+  versions: unknown[];
+  generated_at?: string | null;
+}
+
 export interface HubProjectDetail {
   project: HubProject | null;
   wip: unknown[];
@@ -63,6 +85,8 @@ export interface HubProjectDetail {
   dimensional: unknown[];
   logistics: unknown[];
   production_pt: unknown[];
+  stepflow?: HubStepflowProject | null;
+  stepflow_error?: string | null;
 }
 
 export interface HubHealth {

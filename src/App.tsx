@@ -1310,6 +1310,105 @@ function drawingMatchesItem(
   );
 }
 
+function stepflowClosedPhase(value: unknown) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return ['po enviada', 'processos cancelados', 'recebido', 'cancelado', 'nao diligenciavel'].includes(normalized);
+}
+
+function StepFlowProjectBlock({ data, error }: {
+  data: import('./services/opsPanelHub').HubStepflowProject | null | undefined;
+  error?: string | null;
+}) {
+  if (!data && !error) return null;
+
+  if (!data) {
+    return (
+      <div className="source-block stepflow-block">
+        <div className="source-block-head">
+          <strong>STEP Flow</strong>
+          <span>Leitura indisponível</span>
+        </div>
+        <div className="stepflow-error">{error || 'Não foi possível consultar o STEP Flow.'}</div>
+      </div>
+    );
+  }
+
+  const compras = asRecords(data.compras);
+  const diligenciamentos = asRecords(data.diligenciamentos);
+  const rmStatus = asRecords(data.rm_status);
+  const rentals = asRecords(data.materiais_alugados);
+  const openCompras = compras.filter((row) => !stepflowClosedPhase(row.fase)).slice(0, 12);
+  const openDilig = diligenciamentos.filter((row) => !stepflowClosedPhase(row.fase)).slice(0, 10);
+
+  return (
+    <div className="source-block stepflow-block">
+      <div className="source-block-head">
+        <strong>STEP Flow · Processos vinculados à BSP</strong>
+        <span>{data.generated_at ? 'Leitura ' + fmtDate(data.generated_at) : 'Somente leitura'}</span>
+      </div>
+
+      <div className="stepflow-kpis">
+        <div><span>Compras</span><strong>{data.summary?.compras ?? compras.length}</strong><small>{data.summary?.compras_abertas ?? 0} aberta(s)</small></div>
+        <div><span>Diligenciamentos</span><strong>{data.summary?.diligenciamentos ?? diligenciamentos.length}</strong><small>{data.summary?.diligenciamentos_abertos ?? 0} aberto(s)</small></div>
+        <div><span>Itens de RM</span><strong>{data.summary?.rm_itens ?? 0}</strong><small>{data.summary?.rm_pendentes ?? 0} pendente(s)</small></div>
+        <div><span>Materiais alugados</span><strong>{data.summary?.materiais_alugados ?? rentals.length}</strong><small>vínculo por BSP</small></div>
+      </div>
+
+      {rmStatus.length > 0 && (
+        <div className="stepflow-status-strip">
+          {rmStatus.slice(0, 8).map((row, index) => (
+            <span key={String(row.status || index)}>
+              <strong>{textField(row, 'items', '0')}</strong> {textField(row, 'status')}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {openCompras.length > 0 && (
+        <div className="stepflow-subsection">
+          <div className="stepflow-subhead"><strong>Compras em andamento</strong><span>{openCompras.length} exibida(s)</span></div>
+          <div className="stepflow-list">
+            {openCompras.map((row, index) => (
+              <div className="stepflow-row" key={String(row.id || index)}>
+                <div>
+                  <strong>{textField(row, 'fase')}</strong>
+                  <small>RM {textField(row, 'numero_rm')} · Cotação {textField(row, 'numero_cotacao')}</small>
+                </div>
+                <div><span>Material</span><strong>{textField(row, 'classe_material')}</strong></div>
+                <div><span>Comprador</span><strong>{textField(row, 'comprador_responsavel', textField(row, 'pm_responsavel'))}</strong></div>
+                <div><span>PO / Entrega</span><strong>{textField(row, 'numero_po')}</strong><small>{textField(row, 'data_entrega_po', textField(row, 'previsao_entrega'))}</small></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {openDilig.length > 0 && (
+        <div className="stepflow-subsection">
+          <div className="stepflow-subhead"><strong>Diligenciamento em aberto</strong><span>{openDilig.length} exibido(s)</span></div>
+          <div className="stepflow-list">
+            {openDilig.map((row, index) => (
+              <div className="stepflow-row" key={String(row.id || index)}>
+                <div>
+                  <strong>{textField(row, 'fase')}</strong>
+                  <small>RM {textField(row, 'numero_rm')} · OCM/PO {textField(row, 'numero_ocm')}</small>
+                </div>
+                <div><span>Fornecedor</span><strong>{textField(row, 'fornecedor_nome')}</strong></div>
+                <div><span>Programado</span><strong>{textField(row, 'data_programada')}</strong></div>
+                <div><span>Recebimento</span><strong>{textField(row, 'data_recebimento')}</strong></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!openCompras.length && !openDilig.length && (
+        <div className="drawing-attachments-empty">Nenhum processo aberto do STEP Flow encontrado para esta BSP.</div>
+      )}
+    </div>
+  );
+}
+
 function RealSourcesPanel({ detail, loading, iso }: {
   detail: Awaited<ReturnType<typeof loadHubProject>> | null;
   loading: boolean;
@@ -1427,6 +1526,7 @@ function RealSourcesPanel({ detail, loading, iso }: {
         <div><span>PDFs Drawing</span><strong>{attachmentsLoading ? '…' : drawingAttachments?.attachment_count ?? 0}</strong></div>
         <div><span>Dimensional</span><strong>{dimensional.length}</strong></div>
         <div><span>Logística</span><strong>{logistics.length}</strong></div>
+        <div><span>STEP Flow</span><strong>{detail.stepflow?.summary ? (detail.stepflow.summary.compras + detail.stepflow.summary.diligenciamentos) : 0}</strong></div>
       </div>
 
       {project && (
@@ -1445,6 +1545,8 @@ function RealSourcesPanel({ detail, loading, iso }: {
           <SummaryField label="Atualização consolidada" value={fmtDate(project.data_updated_at || undefined)} />
         </div>
       )}
+
+      <StepFlowProjectBlock data={detail.stepflow} error={detail.stepflow_error} />
 
       {drawings.length === 0 && (
         <div className="source-block">
