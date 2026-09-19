@@ -252,10 +252,11 @@ export interface HubDrawingAttachments {
   attachment_count: number;
 }
 
-export async function loadHubDrawingAttachments(projectKey: string): Promise<HubDrawingAttachments> {
+export async function loadHubDrawingAttachments(projectKey: string, iso = ''): Promise<HubDrawingAttachments> {
   const response = await requestHub<{ ok: true; data: HubDrawingAttachments }>({
     action: 'drawing_attachments',
     projectKey,
+    iso,
   });
   return response.data;
 }

@@ -1215,9 +1215,25 @@ function DrawingPdfModal({
   );
 }
 
-function RealSourcesPanel({ detail, loading }: {
+function isoNumberFromValue(value: unknown) {
+  const compact = String(value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const match = compact.match(/ISO0*([0-9]+)/);
+  return match?.[1] ? String(Number(match[1])) : '';
+}
+
+function drawingMatchesIso(row: Record<string, unknown>, iso: string) {
+  const selectedIso = isoNumberFromValue(iso);
+  if (!selectedIso) return false;
+  const rowIso = isoNumberFromValue(
+    String(row.drawing_number ?? '') + ' ' + String(row.document_title ?? '')
+  );
+  return rowIso === selectedIso;
+}
+
+function RealSourcesPanel({ detail, loading, iso }: {
   detail: Awaited<ReturnType<typeof loadHubProject>> | null;
   loading: boolean;
+  iso: string;
 }) {
   const projectKey = detail?.project?.project_key || '';
   const [drawingAttachments, setDrawingAttachments] = useState<HubDrawingAttachments | null>(null);
@@ -1240,7 +1256,7 @@ function RealSourcesPanel({ detail, loading }: {
     setAttachmentsLoading(true);
     setAttachmentError('');
 
-    loadHubDrawingAttachments(projectKey)
+    loadHubDrawingAttachments(projectKey, iso)
       .then((data) => {
         if (active) setDrawingAttachments(data);
       })
@@ -1257,7 +1273,7 @@ function RealSourcesPanel({ detail, loading }: {
     return () => {
       active = false;
     };
-  }, [projectKey]);
+  }, [projectKey, iso]);
 
   async function openDrawingPdf(attachment: HubDrawingAttachment) {
     if (!projectKey || pdfLoadingId !== null) return;
@@ -1288,8 +1304,11 @@ function RealSourcesPanel({ detail, loading }: {
 
   const project = detail.project;
   const wip = asRecords(detail.wip);
-  const drawings = asRecords(detail.drawings);
-  const revisions = asRecords(detail.drawing_revisions);
+  const allDrawings = asRecords(detail.drawings);
+  const drawings = allDrawings.filter((row) => drawingMatchesIso(row, iso));
+  const drawingRowIds = new Set(drawings.map((row) => String(row.source_row_id ?? '')));
+  const revisions = asRecords(detail.drawing_revisions)
+    .filter((revision) => drawingRowIds.has(String(revision.drawing_row_id ?? '')));
   const jobs = asRecords(detail.job_orders);
   const dimensional = asRecords(detail.dimensional);
   const logistics = asRecords(detail.logistics);
@@ -1320,8 +1339,19 @@ function RealSourcesPanel({ detail, loading }: {
           <SummaryField label="Valor da PO" value={money(project.po_value)} />
           <SummaryField label="Faturado" value={money(project.billed_value)} />
           <SummaryField label="Saldo contratual" value={money(project.contractual_balance)} />
-          <SummaryField label="Última revisão desenho" value={project.latest_drawing_revision || '—'} />
+          <SummaryField label="Revisão do ISO" value={
+            drawings.length
+              ? drawings.map((row) => textField(row, 'current_revision', '')).filter(Boolean).join(' / ') || '—'
+              : '—'
+          } />
           <SummaryField label="Atualização consolidada" value={fmtDate(project.data_updated_at || undefined)} />
+        </div>
+      )}
+
+      {drawings.length === 0 && (
+        <div className="source-block">
+          <div className="source-block-head"><strong>Drawing / FCB</strong><span>ISO {iso}</span></div>
+          <div className="drawing-attachments-empty">Nenhum Drawing vinculado especificamente a este ISO.</div>
         </div>
       )}
 
@@ -2004,7 +2034,7 @@ function DemandDetail(props: {
           )}
 
           {demand.source === 'hub_readonly' && (
-            <RealSourcesPanel detail={props.hubDetail} loading={props.detailLoading} />
+            <RealSourcesPanel detail={props.hubDetail} loading={props.detailLoading} iso={demand.iso} />
           )}
 
           <div className="section-card">

@@ -233,6 +233,7 @@ Deno.serve(async (request: Request) => {
 
   if (action === "drawing_attachments") {
     const projectKey = String(body.projectKey || "").trim();
+    const iso = String(body.iso || "").trim();
     if (!projectKey) return json({ ok: false, error: "projectKey é obrigatório." }, 400);
 
     const smartsheetToken = Deno.env.get("SMARTSHEET_ACCESS_TOKEN");
@@ -244,7 +245,20 @@ Deno.serve(async (request: Request) => {
     );
 
     if (drawingsError) return json({ ok: false, error: drawingsError.message }, 500);
-    const drawingRows = Array.isArray(drawingRowsRaw) ? drawingRowsRaw : [];
+    const allDrawingRows = Array.isArray(drawingRowsRaw) ? drawingRowsRaw : [];
+
+    const extractIso = (value: unknown) => {
+      const compact = String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const match = compact.match(/ISO0*([0-9]+)/);
+      return match?.[1] ? String(Number(match[1])) : "";
+    };
+    const requestedIso = extractIso(iso);
+    const drawingRows = requestedIso
+      ? allDrawingRows.filter((row: Record<string, unknown>) => {
+          const rowIso = extractIso(String(row.drawing_number || "") + " " + String(row.document_title || ""));
+          return rowIso === requestedIso;
+        })
+      : allDrawingRows;
 
     const DRAWING_SHEET_ID = 2580648465590148;
     const API = "https://api.smartsheet.com/2.0";
@@ -300,6 +314,7 @@ Deno.serve(async (request: Request) => {
       ok: true,
       data: {
         project_key: projectKey,
+        iso,
         sheet_id: DRAWING_SHEET_ID,
         rows: groups,
         attachment_count: groups.reduce((sum, row: any) => sum + (row.attachments?.length || 0), 0),
