@@ -1,12 +1,13 @@
 export type SectorKey =
   | 'engenharia'
-  | 'pcp'
   | 'suprimentos'
   | 'caldeiraria'
   | 'solda'
   | 'qualidade'
   | 'pintura'
-  | 'expedicao';
+  | 'expedicao'
+  | 'on_hold'
+  | 'nao_classificado';
 
 export type DemandStatus =
   | 'new'

@@ -2,7 +2,6 @@ import type { Sector, SectorKey, StageDefinition } from './types';
 
 export const sectors: Sector[] = [
   { key: 'engenharia', name: 'Engenharia', shortName: 'ENG' },
-  { key: 'pcp', name: 'PCP', shortName: 'PCP' },
   { key: 'suprimentos', name: 'Suprimentos', shortName: 'SUP' },
   { key: 'caldeiraria', name: 'Caldeiraria', shortName: 'CAL' },
   { key: 'solda', name: 'Solda', shortName: 'SOL' },
@@ -13,7 +12,7 @@ export const sectors: Sector[] = [
 
 export const workflowStages: StageDefinition[] = [
   { key: 'engineering_release', label: 'Liberação de Engenharia', sector: 'engenharia', slaMinutes: 480, photoPolicy: 'none', usesPointing: false },
-  { key: 'pcp_planning', label: 'Planejamento / Sequenciamento', sector: 'pcp', slaMinutes: 240, photoPolicy: 'none', usesPointing: false },
+  { key: 'stock_check', label: 'Verificação de Estoque', sector: 'suprimentos', slaMinutes: 240, photoPolicy: 'none', usesPointing: false },
   { key: 'material_separation', label: 'Separação de Material', sector: 'suprimentos', slaMinutes: 360, photoPolicy: 'none', usesPointing: false },
   { key: 'cutting', label: 'Corte e Preparação', sector: 'caldeiraria', slaMinutes: 300, photoPolicy: 'required_start_finish', usesPointing: true },
   { key: 'fitup', label: 'Caldeiraria / Fit-up', sector: 'caldeiraria', slaMinutes: 360, photoPolicy: 'required_start_finish', usesPointing: true },
@@ -45,10 +44,14 @@ export function getPreviousStage(key: string) {
 }
 
 export function sectorName(key?: SectorKey) {
+  if (key === 'on_hold') return 'On Hold';
+  if (key === 'nao_classificado') return 'Não classificado';
   return sectors.find((sector) => sector.key === key)?.name ?? '—';
 }
 
 export function sectorShortName(key?: SectorKey) {
+  if (key === 'on_hold') return 'HLD';
+  if (key === 'nao_classificado') return 'N/C';
   return sectors.find((sector) => sector.key === key)?.shortName ?? '—';
 }
 

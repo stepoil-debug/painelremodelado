@@ -14,8 +14,7 @@ type StageMap = {
 };
 
 const originBySector: Partial<Record<SectorKey, SectorKey>> = {
-  pcp: 'engenharia',
-  suprimentos: 'pcp',
+  suprimentos: 'engenharia',
   caldeiraria: 'suprimentos',
   solda: 'caldeiraria',
   qualidade: 'solda',
@@ -42,15 +41,40 @@ function normalize(value?: string | null) {
     .trim();
 }
 
+function stageMapFromTrackingKey(stageKey?: string | null, label?: string | null): StageMap | null {
+  const key = normalize(stageKey);
+  if (!key) return null;
+
+  if (key === 'drawing') return { stageKey: 'engineering_release', sector: 'engenharia', label: label || 'Engenharia / Drawing' };
+  if (key === 'stock') return { stageKey: 'stock_check', sector: 'suprimentos', label: label || 'Verificação de Estoque' };
+  if (key === 'material') return { stageKey: 'material_separation', sector: 'suprimentos', label: label || 'Separação de Material' };
+  if (key === 'preassembly') return { stageKey: 'fitup', sector: 'caldeiraria', label: label || 'Pré-Montagem / Fit-up' };
+  if (key === 'welding') return { stageKey: 'welding', sector: 'solda', label: label || 'Solda' };
+  if (key === 'scan-initial') return { stageKey: 'quality_dimensional', sector: 'qualidade', label: label || '3D Scan Inicial' };
+  if (key === 'nde') return { stageKey: 'quality_visual', sector: 'qualidade', label: label || 'Aguardando END' };
+  if (key === 'scan-final') return { stageKey: 'quality_dimensional', sector: 'qualidade', label: label || '3D Scan Final' };
+  if (key === 'hydro') return { stageKey: 'hydro_test', sector: 'qualidade', label: label || 'TH' };
+  if (key === 'painting') return { stageKey: 'painting', sector: 'pintura', label: label || 'Pintura' };
+  if (key === 'final-inspection') return { stageKey: 'final_inspection', sector: 'qualidade', label: label || 'Unitização e Inspeção' };
+  if (key === 'package') return { stageKey: 'dispatch', sector: 'expedicao', label: label || 'Preparado para envio' };
+
+  return null;
+}
+
 function stageMap(row: HubDemandRow): StageMap {
   const group = normalize(row.current_stage);
   const status = normalize(row.current_status);
+
+  if (row.hh_status === 'open') {
+    const hhStage = stageMapFromTrackingKey(row.hh_tracking_stage_key, row.hh_tracking_stage_name || row.hh_activity_name);
+    if (hhStage) return hhStage;
+  }
 
   if (group.includes('engenharia')) {
     return { stageKey: 'engineering_release', sector: 'engenharia', label: row.current_status || 'Engenharia' };
   }
   if (group.includes('pcp')) {
-    return { stageKey: 'pcp_planning', sector: 'pcp', label: row.current_status || 'PCP' };
+    return { stageKey: 'stock_check', sector: 'suprimentos', label: row.current_status || 'Verificação de Estoque' };
   }
   if (group.includes('suprimentos')) {
     return { stageKey: 'material_separation', sector: 'suprimentos', label: row.current_status || 'Suprimentos' };
@@ -62,7 +86,7 @@ function stageMap(row: HubDemandRow): StageMap {
     return { stageKey: 'welding', sector: 'solda', label: row.current_status || 'Solda' };
   }
   if (group.includes('on hold')) {
-    return { stageKey: 'pcp_planning', sector: 'pcp', label: 'On Hold' };
+    return { stageKey: 'on_hold', sector: 'on_hold', label: 'On Hold' };
   }
   if (group.includes('producao')) {
     if (status.includes('solda')) return { stageKey: 'welding', sector: 'solda', label: row.current_status || 'Solda' };
@@ -86,7 +110,7 @@ function stageMap(row: HubDemandRow): StageMap {
     return { stageKey: 'dispatch', sector: 'expedicao', label: 'Enviado' };
   }
 
-  return { stageKey: 'pcp_planning', sector: 'pcp', label: row.current_status || row.current_stage || 'Planejamento' };
+  return { stageKey: 'unclassified', sector: 'nao_classificado', label: row.current_status || row.current_stage || 'Etapa não classificada' };
 }
 
 function compactIso(row: HubDemandRow) {
@@ -107,6 +131,10 @@ function statusFor(row: HubDemandRow): DemandStatus {
   const group = normalize(row.current_stage);
   const status = normalize(row.current_status);
   const progress = Number(row.overall_progress || 0);
+
+  if (row.hh_status === 'open') {
+    return normalize(row.hh_work_state).includes('pause') ? 'waiting' : 'in_progress';
+  }
 
   if (
     group.includes('enviado')
@@ -133,7 +161,9 @@ function priorityFor(row: HubDemandRow, status: DemandStatus): Priority {
 }
 
 function progressFor(row: HubDemandRow) {
-  const raw = Number(row.overall_progress || 0);
+  const raw = row.hh_status === 'open' && row.hh_progress_percent != null
+    ? Number(row.hh_progress_percent)
+    : Number(row.overall_progress || 0);
   if (!Number.isFinite(raw)) return 0;
   return Math.max(0, Math.min(100, Math.round(raw * 10) / 10));
 }
@@ -142,7 +172,9 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
   const demands: Demand[] = rows.map((row) => {
     const mapped = stageMap(row);
     const status = statusFor(row);
-    const enteredAt = row.source_updated_at || row.synced_at || new Date().toISOString();
+    const enteredAt = row.hh_status === 'open'
+      ? (row.hh_start_at || row.hh_execution_updated_at || row.source_updated_at || row.synced_at || new Date().toISOString())
+      : (row.source_updated_at || row.synced_at || new Date().toISOString());
     const progress = progressFor(row);
     const vessel = row.vessel ? ' · ' + row.vessel : '';
     const sourceStatus = [row.current_stage, row.current_status].filter(Boolean).join(' / ');
@@ -159,20 +191,31 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       stage: mapped.label,
       sector: mapped.sector,
       originSector: originBySector[mapped.sector],
-      assignedTo: row.pm ? 'PM · ' + row.pm : undefined,
+      assignedTo: row.hh_status === 'open'
+        ? (row.hh_progress_updated_by_name || row.hh_created_by_name || row.hh_activity_name || 'Apontamento')
+        : (row.pm ? 'PM · ' + row.pm : undefined),
       priority: priorityFor(row, status),
       status,
       enteredAt,
-      startedAt: row.fabrication_start ? dateAtEndOfDay(row.fabrication_start) : undefined,
+      startedAt: row.hh_status === 'open'
+        ? (row.hh_start_at || undefined)
+        : (row.fabrication_start ? dateAtEndOfDay(row.fabrication_start) : undefined),
       completedAt: status === 'completed' ? enteredAt : undefined,
       slaDueAt: dateAtEndOfDay(row.replanned_finish || row.planned_finish),
       progress,
+      hhMinutes: row.hh_total_hh != null ? Math.round(Number(row.hh_total_hh) * 60) : undefined,
+      activityKey: row.hh_activity_key || undefined,
       source: 'hub_readonly',
       archived: Boolean(row.archived),
       archiveSource: row.archive_source || undefined,
       onHold: normalize(row.project_status) === 'on hold',
       note: [
         row.archived ? 'Arquivo histórico: ' + (row.archive_source || 'OLD') : '',
+        row.hh_status === 'open'
+          ? 'Apontamento em execução: ' + (row.hh_activity_name || row.hh_tracking_stage_name || 'atividade')
+            + ' · ' + (row.hh_progress_percent ?? 0) + '%'
+            + (row.hh_total_workers ? ' · equipe ' + row.hh_total_workers : '')
+          : '',
         sourceStatus ? 'Tracking: ' + sourceStatus : '',
         row.line_number ? 'Linha: ' + row.line_number : '',
         row.project_type ? 'Tipo: ' + row.project_type : '',

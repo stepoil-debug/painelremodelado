@@ -515,11 +515,71 @@ Deno.serve(async (request: Request) => {
       ? { p_region: region, p_search: search, p_limit: limit }
       : { p_region: region, p_limit: limit };
 
-    const { data, error } = await admin.rpc(rpcName, rpcArgs);
+    const [{ data, error }, { data: executionOverlay, error: executionError }] = await Promise.all([
+      admin.rpc(rpcName, rpcArgs),
+      admin.rpc("ops_panel_get_execution_overlay"),
+    ]);
+
     if (error) return json({ ok: false, error: error.message }, 500);
+    if (executionError) console.error("execution overlay error:", executionError.message);
+
+    const compact = (value: unknown) =>
+      String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+    const overlayRows = Array.isArray(executionOverlay) ? executionOverlay : [];
+    const overlayMap = new Map<string, Record<string, unknown>>();
+
+    for (const item of overlayRows) {
+      const row = item as Record<string, unknown>;
+      const projectRowId = String(row.project_row_id || "");
+      const projectKey = compact(row.project_key || row.bsp_number);
+      const isoNorm = compact(row.iso_norm || row.iso);
+
+      if (projectRowId && isoNorm) overlayMap.set("row:" + projectRowId + ":" + isoNorm, row);
+      if (projectKey && isoNorm) overlayMap.set("project:" + projectKey + ":" + isoNorm, row);
+    }
+
+    const merged = (Array.isArray(data) ? data : []).map((item: Record<string, unknown>) => {
+      const projectRowId = String(item.project_row_id || "");
+      const projectKey = compact(item.project_number);
+      const isoNorm = compact(item.drawing || item.iso);
+      const execution =
+        overlayMap.get("row:" + projectRowId + ":" + isoNorm)
+        || overlayMap.get("project:" + projectKey + ":" + isoNorm);
+
+      if (!execution) return item;
+
+      return {
+        ...item,
+        hh_session_id: execution.session_id || null,
+        hh_status: execution.hh_status || null,
+        hh_activity_key: execution.activity_key || null,
+        hh_activity_name: execution.activity_name || null,
+        hh_progress_percent: execution.progress_percent ?? null,
+        hh_progress_status: execution.progress_status || null,
+        hh_progress_stage_key: execution.progress_stage_key || null,
+        hh_progress_sector: execution.progress_sector || null,
+        hh_work_state: execution.work_state || null,
+        hh_start_at: execution.start_at || null,
+        hh_end_at: execution.end_at || null,
+        hh_finish_status: execution.finish_status || null,
+        hh_total_workers: execution.total_workers ?? null,
+        hh_total_hh: execution.total_hh ?? null,
+        hh_created_by_name: execution.created_by_name || null,
+        hh_finished_by_name: execution.finished_by_name || null,
+        hh_progress_updated_by_name: execution.progress_updated_by_name || null,
+        hh_execution_updated_at: execution.execution_updated_at || null,
+        hh_tracking_stage_key: execution.tracking_stage_key || null,
+        hh_tracking_stage_name: execution.tracking_stage_name || null,
+        hh_tracking_stage_order: execution.tracking_stage_order ?? null,
+        hh_source_progress_column: execution.source_progress_column || null,
+        hh_source_actual_column: execution.source_actual_column || null,
+      };
+    });
+
     return json({
       ok: true,
-      data: Array.isArray(data) ? data : [],
+      data: merged,
       search,
       generatedAt: new Date().toISOString(),
     });

@@ -115,7 +115,7 @@ export const seedDemands: Demand[] = [
   demand({ id:'dem-008', bsp:'DEMO-26-008', iso:'ISO-008', stageKey:'cutting', status:'new', priority:'low', enteredMinutesAgo:18 }),
   demand({ id:'dem-009', bsp:'DEMO-26-009', iso:'ISO-014', stageKey:'painting', status:'in_progress', priority:'normal', enteredMinutesAgo:120, progress:50, assignedTo:'Equipe Pintura', evidenceMode:'start' }),
   demand({ id:'dem-010', bsp:'DEMO-26-010', iso:'ISO-005', stageKey:'material_separation', status:'in_progress', priority:'high', enteredMinutesAgo:210, progress:70, assignedTo:'Suprimentos', note:'Separação física em andamento.' }),
-  demand({ id:'dem-011', bsp:'DEMO-26-011', iso:'ISO-002', stageKey:'pcp_planning', status:'new', priority:'normal', enteredMinutesAgo:27 }),
+  demand({ id:'dem-011', bsp:'DEMO-26-011', iso:'ISO-002', stageKey:'stock_check', status:'new', priority:'normal', enteredMinutesAgo:27 }),
   demand({ id:'dem-012', bsp:'DEMO-26-012', iso:'ISO-009', stageKey:'engineering_release', status:'in_progress', priority:'critical', enteredMinutesAgo:390, progress:80, assignedTo:'Engenharia' }),
   demand({ id:'dem-013', bsp:'DEMO-26-013', iso:'ISO-001', stageKey:'dispatch', status:'new', priority:'high', enteredMinutesAgo:66 }),
   demand({ id:'dem-014', bsp:'DEMO-26-014', iso:'ISO-015', stageKey:'final_inspection', status:'in_progress', priority:'normal', enteredMinutesAgo:52, progress:60, assignedTo:'Qualidade' }),

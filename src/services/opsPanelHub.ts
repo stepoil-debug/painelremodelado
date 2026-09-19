@@ -211,6 +211,29 @@ export interface HubDemandRow {
   archived?: boolean | null;
   archive_source?: string | null;
   archive_rank?: number | null;
+  hh_session_id?: string | null;
+  hh_status?: string | null;
+  hh_activity_key?: string | null;
+  hh_activity_name?: string | null;
+  hh_progress_percent?: number | null;
+  hh_progress_status?: string | null;
+  hh_progress_stage_key?: string | null;
+  hh_progress_sector?: string | null;
+  hh_work_state?: string | null;
+  hh_start_at?: string | null;
+  hh_end_at?: string | null;
+  hh_finish_status?: string | null;
+  hh_total_workers?: number | null;
+  hh_total_hh?: number | null;
+  hh_created_by_name?: string | null;
+  hh_finished_by_name?: string | null;
+  hh_progress_updated_by_name?: string | null;
+  hh_execution_updated_at?: string | null;
+  hh_tracking_stage_key?: string | null;
+  hh_tracking_stage_name?: string | null;
+  hh_tracking_stage_order?: number | null;
+  hh_source_progress_column?: string | null;
+  hh_source_actual_column?: string | null;
 }
 
 export async function loadHubDemands(region = 'BR', limit = 2000, search = ''): Promise<HubDemandRow[]> {

@@ -60,8 +60,8 @@ export async function loadHHSessionsReadOnly(): Promise<Demand[]> {
   if (error) throw new Error('Falha na leitura do HH: ' + error.message);
 
   return ((data ?? []) as HhSessionRow[]).map((row) => {
-    const stageKey = activityStageMap[row.activity_key] ?? 'pcp_planning';
-    const stage = getStage(stageKey)!;
+    const stageKey = activityStageMap[row.activity_key] ?? 'unclassified';
+    const stage = getStage(stageKey);
     const next = getNextStage(stageKey);
     const isOpen = row.status === 'open';
     const actor = row.finished_by_name ?? row.created_by_name ?? 'Apontamento HH';
@@ -73,8 +73,8 @@ export async function loadHHSessionsReadOnly(): Promise<Demand[]> {
       project: row.project_key ?? undefined,
       client: row.client ?? undefined,
       stageKey,
-      stage: row.activity_name || stage.label,
-      sector: stage.sector as SectorKey,
+      stage: row.activity_name || stage?.label || 'Etapa de apontamento',
+      sector: (stage?.sector ?? 'nao_classificado') as SectorKey,
       originSector: undefined,
       assignedTo: actor,
       priority: 'normal',

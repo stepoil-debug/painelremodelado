@@ -223,7 +223,6 @@ export default function App() {
     else if (normalized.includes('solda')) setSector('solda');
     else if (normalized.includes('caldeir')) setSector('caldeiraria');
     else if (normalized.includes('engenharia')) setSector('engenharia');
-    else if (normalized.includes('pcp') || normalized.includes('projeto')) setSector('pcp');
     else if (normalized.includes('supr')) setSector('suprimentos');
     else if (normalized.includes('pint')) setSector('pintura');
     else if (normalized.includes('log') || normalized.includes('exped')) setSector('expedicao');
