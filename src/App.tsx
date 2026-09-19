@@ -63,6 +63,7 @@ import {
 
 type PageKey = 'portfolio' | 'live' | 'blocks' | 'notifications' | 'analytics';
 type ListMode = 'table' | 'board';
+type SectorFilter = 'all' | SectorKey;
 
 const statusLabel: Record<DemandStatus, string> = {
   new: 'Nova',
@@ -135,7 +136,7 @@ function createNotification(
 export default function App() {
   const [state, setState] = useState<OperationalState>(() => hubConfigured ? { version: 4, demands: [], notifications: [] } : loadOperationalState());
   const [page, setPage] = useState<PageKey>('portfolio');
-  const [sector, setSector] = useState<SectorKey>('qualidade');
+  const [sector, setSector] = useState<SectorFilter>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [mode, setMode] = useState<ListMode>('table');
@@ -198,7 +199,8 @@ export default function App() {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase();
-    if (normalized.includes('qualidade')) setSector('qualidade');
+    if (normalized === 'all' || normalized.includes('todos')) setSector('all');
+    else if (normalized.includes('qualidade')) setSector('qualidade');
     else if (normalized.includes('solda')) setSector('solda');
     else if (normalized.includes('caldeir')) setSector('caldeiraria');
     else if (normalized.includes('engenharia')) setSector('engenharia');
@@ -559,7 +561,7 @@ export default function App() {
       </main>
 
       <footer className="status-bar">
-        <span>{selected ? 'Arquivo operacional aberto' : sectorName(sector) + ' · visibilidade por responsabilidade atual'}</span>
+        <span>{selected ? 'Arquivo operacional aberto' : (sector === 'all' ? 'Todos os setores · visão completa da etapa atual' : sectorName(sector) + ' · visibilidade por responsabilidade atual')}</span>
         <span>{hubConfigured ? 'Dados reais · Tracking/Smartsheet · somente leitura' : 'Demonstração pública · sem escrita no Apontamento HH'}</span>
       </footer>
     </div>
@@ -811,8 +813,8 @@ function RealSourcesPanel({ detail, loading }: {
 
 function Portfolio(props: {
   demands: Demand[];
-  sector: SectorKey;
-  setSector: (value: SectorKey) => void;
+  sector: SectorFilter;
+  setSector: (value: SectorFilter) => void;
   mode: ListMode;
   setMode: (value: ListMode) => void;
   search: string;
@@ -835,20 +837,22 @@ function Portfolio(props: {
   const filtered = useMemo(() => {
     const term = props.search.trim().toLowerCase();
     return props.demands
-      .filter((d) => d.sector === props.sector)
+      .filter((d) => props.sector === 'all' || d.sector === props.sector)
       .filter((d) => props.statusFilter === 'all' || effectiveStatus(d) === props.statusFilter)
       .filter((d) => !props.priorityOnly || d.priority === 'critical' || d.priority === 'high')
       .filter((d) => !props.lateOnly || effectiveStatus(d) === 'late')
-      .filter((d) => !term || [d.bsp, d.iso, d.stage, d.project, d.client, d.assignedTo].filter(Boolean).some((v) => String(v).toLowerCase().includes(term)))
+      .filter((d) => !term || [d.bsp, d.iso, d.stage, d.project, d.client, d.assignedTo, sectorName(d.sector)].filter(Boolean).some((v) => String(v).toLowerCase().includes(term)))
       .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority] || new Date(a.enteredAt).getTime() - new Date(b.enteredAt).getTime());
   }, [props.demands, props.sector, props.statusFilter, props.priorityOnly, props.lateOnly, props.search]);
 
-  const current = props.demands.filter((d) => d.sector === props.sector);
+  const current = props.sector === 'all' ? props.demands : props.demands.filter((d) => d.sector === props.sector);
   const active = current.filter((d) => d.status !== 'completed');
   const late = current.filter((d) => effectiveStatus(d) === 'late').length;
   const blocked = current.filter((d) => d.status === 'blocked').length;
   const avg = active.length ? Math.round(active.reduce((sum, d) => sum + d.progress, 0) / active.length) : 0;
-  const incoming = props.demands.filter((d) => d.status !== 'completed' && d.sector !== props.sector && getNextStage(d.stageKey)?.sector === props.sector).length;
+  const incoming = props.sector === 'all'
+    ? new Set(active.map((d) => d.sector)).size
+    : props.demands.filter((d) => d.status !== 'completed' && d.sector !== props.sector && getNextStage(d.stageKey)?.sector === props.sector).length;
 
   return (
     <>
@@ -869,21 +873,21 @@ function Portfolio(props: {
       <section className="overview-strip">
         <div className="overview-icon"><BarChart3 size={25} /></div>
         <div className="overview-copy">
-          <strong>Visão geral da caixa · {sectorName(props.sector)}</strong>
-          <span>Responsabilidade atual do setor e carga prevista pelo fluxo.</span>
+          <strong>{props.sector === 'all' ? 'Visão geral da carteira · Todos os setores' : 'Visão geral da caixa · ' + sectorName(props.sector)}</strong>
+          <span>{props.sector === 'all' ? 'Veja onde cada BSP / ISO está no fluxo operacional completo.' : 'Responsabilidade atual do setor e carga prevista pelo fluxo.'}</span>
         </div>
         <Metric value={active.length} label="Na caixa" />
         <Metric value={late} label="Atrasadas" danger={late > 0} />
         <Metric value={blocked} label="Bloqueadas" warning={blocked > 0} />
         <Metric value={avg + '%'} label="Avanço médio" />
-        <Metric value={incoming} label="Próximas" />
+        <Metric value={incoming} label={props.sector === 'all' ? 'Setores ativos' : 'Próximas'} />
       </section>
 
       <section className="portfolio-title-row">
         <div>
           <span className="eyebrow">Sua operação</span>
           <h2>Demandas alocadas</h2>
-          <p>{filtered.length} registro(s) · clique na linha para expandir; abra o arquivo para ver todas as fases.</p>
+          <p>{filtered.length} registro(s) · {props.sector === 'all' ? 'carteira completa por etapa atual; ' : ''}clique na linha para expandir; abra o arquivo para ver todas as fases.</p>
         </div>
         <div className="mode-toggle">
           <button className={props.mode === 'table' ? 'active' : ''} onClick={() => props.setMode('table')}><List size={14} /> Tabela</button>
@@ -893,7 +897,7 @@ function Portfolio(props: {
 
       <section className="filters-bar">
         <label className="filter-field search-field"><Search size={15} /><input value={props.search} onChange={(e) => props.setSearch(e.target.value)} placeholder="Buscar BSP, ISO, projeto, etapa..." /></label>
-        <label className="filter-field"><span>Setor</span><select value={props.sector} onChange={(e) => props.setSector(e.target.value as SectorKey)}>{sectors.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}</select></label>
+        <label className="filter-field"><span>Setor</span><select value={props.sector} onChange={(e) => props.setSector(e.target.value as SectorFilter)}><option value="all">Todos os setores</option>{sectors.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}</select></label>
         <label className="filter-field"><span>Status</span><select value={props.statusFilter} onChange={(e) => props.setStatusFilter(e.target.value as 'all' | DemandStatus)}><option value="all">Todos</option><option value="new">Novas</option><option value="in_progress">Em execução</option><option value="waiting">Aguardando</option><option value="blocked">Bloqueadas</option><option value="late">Atrasadas</option><option value="completed">Concluídas</option></select></label>
         <button className={'flag-filter ' + (props.lateOnly ? 'active danger' : '')} onClick={() => props.setLateOnly(!props.lateOnly)}><AlertTriangle size={14} /> Só atrasadas</button>
         <button className={'flag-filter ' + (props.priorityOnly ? 'active' : '')} onClick={() => props.setPriorityOnly(!props.priorityOnly)}><CircleDot size={14} /> Prioridade</button>
