@@ -137,6 +137,35 @@ export async function loadHubHealth() {
   return requestHub<HubHealth>({ action: 'health' });
 }
 
+export interface HubSyncSourceStatus {
+  source_key: string;
+  sheet_name: string;
+  last_status: string;
+  last_synced_at?: string | null;
+  current_version?: number | null;
+  last_synced_version?: number | null;
+  row_count?: number | null;
+}
+
+export interface HubSyncStatus {
+  last_synced_at?: string | null;
+  sources: HubSyncSourceStatus[];
+}
+
+export async function loadHubSyncStatus(): Promise<HubSyncStatus> {
+  const response = await requestHub<{ ok: true; data: HubSyncStatus }>({
+    action: 'sync_status',
+  });
+  return response.data;
+}
+
+export async function triggerHubSync(): Promise<{ request_id: number; started_at: string; mode: string }> {
+  const response = await requestHub<{ ok: true; data: { request_id: number; started_at: string; mode: string } }>({
+    action: 'sync_now',
+  });
+  return response.data;
+}
+
 export async function loadHubSnapshot(): Promise<HubSnapshot> {
   const response = await requestHub<{ ok: true; data: HubSnapshot }>({ action: 'snapshot' });
   return response.data;

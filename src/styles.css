@@ -1465,3 +1465,21 @@ h1,h2,h3,p { margin-top: 0; }
 .drawing-pdf-fallback span {
   font-size: 9px;
 }
+
+
+/* Database sync status */
+.db-sync-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.db-sync-state small {
+  color: #7B8FA2;
+  font: 7px 'IBM Plex Mono', monospace;
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .db-sync-state { align-items: flex-start; }
+  .db-sync-state small { white-space: normal; }
+}

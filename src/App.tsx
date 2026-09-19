@@ -38,6 +38,8 @@ import {
   loadHubDrawingAttachmentPdf,
   loadHubEvidence,
   loadHubProject,
+  loadHubSyncStatus,
+  triggerHubSync,
   type HubDrawingAttachment,
   type HubDrawingAttachments,
   type HubHHEvidence,
@@ -158,6 +160,8 @@ export default function App() {
   const [lateOnly, setLateOnly] = useState(false);
   const [loadingHH, setLoadingHH] = useState(!hubConfigured && liveHHReadOnlyEnabled);
   const [loadingHub, setLoadingHub] = useState(false);
+  const [manualSyncing, setManualSyncing] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [hubError, setHubError] = useState<string | null>(null);
   const [panelUser, setPanelUser] = useState<PanelUser | null>(null);
   const [authLoading, setAuthLoading] = useState(hubConfigured);
@@ -255,6 +259,9 @@ export default function App() {
   useEffect(() => {
     if (!hubConfigured || !panelUser) return;
     void refreshHub(false, '');
+    void loadHubSyncStatus()
+      .then((status) => setLastSyncAt(status.last_synced_at || null))
+      .catch(() => undefined);
   }, [panelUser]);
 
   useEffect(() => {
@@ -510,9 +517,40 @@ export default function App() {
     setAuthError('');
   }
 
+  async function manualRefreshDatabase() {
+    if (!hubConfigured || !panelUser || manualSyncing) return;
+
+    setManualSyncing(true);
+    setHubError(null);
+    setBanner('Atualização do banco iniciada. Verificando versões no Smartsheet...');
+
+    try {
+      await triggerHubSync();
+      await new Promise((resolve) => window.setTimeout(resolve, 2500));
+
+      let latestStatus = await loadHubSyncStatus();
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const stillSyncing = latestStatus.sources.some((source) => source.last_status === 'syncing');
+        if (!stillSyncing) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 2500));
+        latestStatus = await loadHubSyncStatus();
+      }
+
+      setLastSyncAt(latestStatus.last_synced_at || new Date().toISOString());
+      await refreshHub(false, search);
+      setBanner('Banco atualizado. Dados do painel recarregados.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Não foi possível atualizar o banco.';
+      setHubError(message);
+      setBanner(message);
+    } finally {
+      setManualSyncing(false);
+    }
+  }
+
   function resetDemo() {
     if (hubConfigured) {
-      void refreshHub(true);
+      void manualRefreshDatabase();
       return;
     }
     if (!window.confirm('Restaurar a demonstração para o estado inicial?')) return;
@@ -592,6 +630,8 @@ export default function App() {
             onReset={resetDemo}
             liveData={hubConfigured}
             loading={loadingHub}
+            syncing={manualSyncing}
+            lastSyncAt={lastSyncAt}
             error={hubError}
           />
         ) : page === 'live' ? (
@@ -607,7 +647,7 @@ export default function App() {
 
       <footer className="status-bar">
         <span>{selected ? 'Arquivo operacional aberto' : (sector === 'all' ? 'Todos os setores · visão completa da etapa atual' : sectorName(sector) + ' · visibilidade por responsabilidade atual')}</span>
-        <span>{hubConfigured ? 'Dados reais · Tracking/Smartsheet · somente leitura' : 'Demonstração pública · sem escrita no Apontamento HH'}</span>
+        <span>{hubConfigured ? 'Dados reais · banco operacional · atualização diária + manual' : 'Demonstração pública · sem escrita no Apontamento HH'}</span>
       </footer>
     </div>
   );
@@ -1708,6 +1748,8 @@ function Portfolio(props: {
   onReset: () => void;
   liveData: boolean;
   loading: boolean;
+  syncing: boolean;
+  lastSyncAt: string | null;
   error: string | null;
 }) {
   const filtered = useMemo(() => {
@@ -1741,8 +1783,14 @@ function Portfolio(props: {
           <p>Demandas alocadas ao setor, com avanço, responsável, histórico e arquivo operacional de cada BSP / ISO.</p>
         </div>
         <div className="head-actions">
-          <span className="sync-chip"><i /> {props.liveData ? 'Dados reais · leitura' : 'Ambiente isolado'}</span>
-          <button className="soft-btn" onClick={props.onReset} disabled={props.loading}><RefreshCcw size={15} /> {props.loading ? 'Sincronizando...' : props.liveData ? 'Atualizar dados' : 'Restaurar demo'}</button>
+          <div className="db-sync-state">
+            <span className="sync-chip"><i /> {props.liveData ? 'Banco operacional · leitura' : 'Ambiente isolado'}</span>
+            {props.liveData && <small>{props.lastSyncAt ? 'Última atualização: ' + fmtDate(props.lastSyncAt) : 'Aguardando primeira sincronização'}</small>}
+          </div>
+          <button className="soft-btn" onClick={props.onReset} disabled={props.syncing}>
+            <RefreshCcw size={15} className={props.syncing ? 'spin' : ''} />
+            {props.syncing ? 'Atualizando banco...' : props.liveData ? 'Atualizar dados' : 'Restaurar demo'}
+          </button>
         </div>
       </section>
 

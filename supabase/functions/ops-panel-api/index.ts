@@ -109,6 +109,30 @@ Deno.serve(async (request: Request) => {
     });
   }
 
+
+  if (action === "sync_status") {
+    const { data, error } = await admin.rpc("ops_panel_sync_status");
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
+  if (action === "sync_now") {
+    const { data: requestId, error } = await admin.rpc("ops_panel_dispatch_sync", {
+      p_force: false,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+
+    return json({
+      ok: true,
+      data: {
+        request_id: requestId,
+        started_at: new Date().toISOString(),
+        mode: "version_check",
+      },
+      message: "Atualização solicitada. Somente fontes com nova versão serão recarregadas.",
+    });
+  }
+
   if (action === "snapshot") {
     const { data, error } = await admin.rpc("ops_panel_get_snapshot");
     if (error) return json({ ok: false, error: error.message }, 500);

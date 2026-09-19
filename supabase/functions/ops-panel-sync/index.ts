@@ -320,8 +320,12 @@ function deriveTrackingArchive(source: Source, cells: Map<string, any>) {
     project_finished: isFinished,
     status_text: statusText,
     project_finish_date: raw(cells, "Project Finish Date"),
+    fabrication_start: raw(cells, "Fabrication Start Date"),
+    weight_kg: raw(cells, "Kilos"),
+    m2: raw(cells, "M2 Painting"),
     source_archive: String(source.config?.archive_label ?? source.sheet_name),
     archive_rank: Number(source.config?.archive_rank ?? 0),
+    archived_source: Boolean(source.config?.archive ?? false),
     is_detail: isDetail,
   };
 }
@@ -364,7 +368,7 @@ function derive(source: Source, cells: Map<string, any>, cellDisplay: Record<str
       data = deriveProductionPt(cells);
       break;
     default:
-      data = source.source_key.startsWith("tracking_old_")
+      data = (source.source_key === "tracking" || source.source_key.startsWith("tracking_old_"))
         ? deriveTrackingArchive(source, cells)
         : {};
   }

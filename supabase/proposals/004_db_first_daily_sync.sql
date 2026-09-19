@@ -1,0 +1,6 @@
+-- Applied migration: DB-first Tracking plus daily synchronization.
+-- Tracking current and OLD archives are stored in ops_panel.source_rows.
+-- Default portfolio reads only active, non-finished Tracking rows from the DB.
+-- Search reads current + historical OLDs and uses inactive Tracking snapshots as a safety net.
+-- Scheduled sync: 09:00 UTC (06:00 America/Sao_Paulo), once per day.
+-- Manual refresh is exposed through ops-panel-api action sync_now.
