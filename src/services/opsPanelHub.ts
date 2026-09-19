@@ -158,3 +158,66 @@ export async function loadHubDemands(region = 'BR', limit = 2000): Promise<HubDe
   });
   return Array.isArray(response.data) ? response.data : [];
 }
+
+
+export interface HubHHWorker {
+  id: string;
+  session_id: string;
+  worker_name: string;
+  worker_registration?: string | null;
+  worker_role?: string | null;
+  participation_type?: string | null;
+  joined_at?: string | null;
+  left_at?: string | null;
+  hh_minutes?: number | null;
+  hh_value?: number | null;
+}
+
+export interface HubHHSession {
+  id: string;
+  status: string;
+  bsp_number: string;
+  iso: string;
+  activity_key?: string | null;
+  activity_name?: string | null;
+  start_at?: string | null;
+  end_at?: string | null;
+  elapsed_minutes?: number | null;
+  total_hh?: number | null;
+  finish_status?: string | null;
+  created_by_name?: string | null;
+  finished_by_name?: string | null;
+  created_at?: string | null;
+  workers: HubHHWorker[];
+}
+
+export interface HubHHEvidencePhoto {
+  id: string;
+  session_id: string;
+  photo_type: 'start' | 'finish' | 'extra' | string;
+  caption?: string | null;
+  taken_at?: string | null;
+  visible_to_client?: boolean | null;
+  content_type?: string | null;
+  file_size_bytes?: number | null;
+  metadata?: Record<string, unknown> | null;
+  uploaded_by_name?: string | null;
+  signed_url: string;
+}
+
+export interface HubHHEvidence {
+  bsp: string;
+  iso: string;
+  sessions: HubHHSession[];
+  photos: HubHHEvidencePhoto[];
+  generatedAt?: string;
+}
+
+export async function loadHubEvidence(bsp: string, iso: string): Promise<HubHHEvidence> {
+  const response = await requestHub<{ ok: true; data: HubHHEvidence }>({
+    action: 'evidence',
+    bsp,
+    iso,
+  });
+  return response.data;
+}

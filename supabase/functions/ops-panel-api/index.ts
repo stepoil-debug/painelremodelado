@@ -125,6 +125,111 @@ Deno.serve(async (request: Request) => {
     return json({ ok: true, data, generatedAt: new Date().toISOString() });
   }
 
+
+  if (action === "evidence") {
+    const bsp = String(body.bsp || "").trim();
+    const iso = String(body.iso || "").trim();
+    if (!bsp || !iso) return json({ ok: false, error: "BSP e ISO são obrigatórios." }, 400);
+
+    const compact = (value: unknown) => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const bspKey = compact(bsp);
+    const isoKey = compact(iso);
+    const safeBspSearch = bsp.replace(/[%_]/g, "").slice(0, 80);
+
+    const { data: sessionRows, error: sessionsError } = await admin
+      .from("hh_sessions")
+      .select("id,status,bsp_number,iso,activity_key,activity_name,start_at,end_at,elapsed_minutes,total_hh,finish_status,created_by_name,finished_by_name,created_at")
+      .ilike("bsp_number", "%" + safeBspSearch + "%")
+      .order("start_at", { ascending: false })
+      .limit(120);
+
+    if (sessionsError) return json({ ok: false, error: sessionsError.message }, 500);
+
+    const sessions = (sessionRows || []).filter((session: Record<string, unknown>) => {
+      const sessionBsp = compact(session.bsp_number);
+      const sessionIso = compact(session.iso);
+      const sameBsp = sessionBsp === bspKey || sessionBsp.endsWith(bspKey) || bspKey.endsWith(sessionBsp);
+      const sameIso = sessionIso === isoKey || sessionIso.endsWith(isoKey) || isoKey.endsWith(sessionIso);
+      return sameBsp && sameIso;
+    });
+
+    if (!sessions.length) {
+      return json({
+        ok: true,
+        data: { bsp, iso, sessions: [], photos: [], generatedAt: new Date().toISOString() },
+      });
+    }
+
+    const sessionIds = sessions.map((session: Record<string, unknown>) => String(session.id));
+
+    const [{ data: photoRows, error: photosError }, { data: workerRows, error: workersError }] = await Promise.all([
+      admin
+        .from("hh_session_photos")
+        .select("id,session_id,photo_type,storage_bucket,storage_path,public_url,caption,taken_at,visible_to_client,content_type,file_size_bytes,metadata,uploaded_by_name,created_at")
+        .in("session_id", sessionIds)
+        .order("taken_at", { ascending: true })
+        .limit(200),
+      admin
+        .from("hh_session_workers")
+        .select("id,session_id,worker_name,worker_registration,worker_role,participation_type,joined_at,left_at,hh_minutes,hh_value")
+        .in("session_id", sessionIds)
+        .order("joined_at", { ascending: true })
+        .limit(300),
+    ]);
+
+    if (photosError) return json({ ok: false, error: photosError.message }, 500);
+    if (workersError) return json({ ok: false, error: workersError.message }, 500);
+
+    const photos = await Promise.all((photoRows || []).map(async (photo: Record<string, unknown>) => {
+      let signedUrl = typeof photo.public_url === "string" ? photo.public_url : "";
+      const bucket = String(photo.storage_bucket || "hh-photos");
+      const path = String(photo.storage_path || "");
+
+      if (path) {
+        const { data: signed, error: signedError } = await admin.storage
+          .from(bucket)
+          .createSignedUrl(path, 4 * 60 * 60);
+        if (!signedError && signed?.signedUrl) signedUrl = signed.signedUrl;
+      }
+
+      return {
+        id: photo.id,
+        session_id: photo.session_id,
+        photo_type: photo.photo_type,
+        caption: photo.caption,
+        taken_at: photo.taken_at || photo.created_at,
+        visible_to_client: photo.visible_to_client,
+        content_type: photo.content_type,
+        file_size_bytes: photo.file_size_bytes,
+        metadata: photo.metadata,
+        uploaded_by_name: photo.uploaded_by_name,
+        signed_url: signedUrl,
+      };
+    }));
+
+    const workersBySession = new Map<string, Record<string, unknown>[]>();
+    for (const worker of workerRows || []) {
+      const sessionId = String(worker.session_id || "");
+      const list = workersBySession.get(sessionId) || [];
+      list.push(worker as Record<string, unknown>);
+      workersBySession.set(sessionId, list);
+    }
+
+    return json({
+      ok: true,
+      data: {
+        bsp,
+        iso,
+        sessions: sessions.map((session: Record<string, unknown>) => ({
+          ...session,
+          workers: workersBySession.get(String(session.id)) || [],
+        })),
+        photos,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
   if (action === "demands") {
     const region = String(body.region || "BR").trim() || "BR";
     const requestedLimit = Number(body.limit || 2000);

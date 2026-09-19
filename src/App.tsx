@@ -31,7 +31,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { liveHHReadOnlyEnabled, loadHHSessionsReadOnly } from './services/hhReadOnly';
-import { hubConfigured, loadHubDemands, loadHubProject } from './services/opsPanelHub';
+import { hubConfigured, loadHubDemands, loadHubEvidence, loadHubProject, type HubHHEvidence, type HubHHEvidencePhoto, type HubHHSession } from './services/opsPanelHub';
 import { hubRowsToOperationalState } from './services/hubDemandAdapter';
 import {
   clearPanelSession,
@@ -151,7 +151,9 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(hubConfigured);
   const [authError, setAuthError] = useState('');
   const [projectDetail, setProjectDetail] = useState<Awaited<ReturnType<typeof loadHubProject>> | null>(null);
+  const [hhEvidence, setHhEvidence] = useState<HubHHEvidence | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [clock, setClock] = useState(new Date());
 
@@ -243,12 +245,16 @@ export default function App() {
   useEffect(() => {
     if (!hubConfigured || !panelUser || !selected || selected.source !== 'hub_readonly') {
       setProjectDetail(null);
+      setHhEvidence(null);
       setDetailLoading(false);
+      setEvidenceLoading(false);
       return;
     }
 
     let active = true;
     setDetailLoading(true);
+    setEvidenceLoading(true);
+
     loadHubProject(selected.bsp)
       .then((detail) => {
         if (active) setProjectDetail(detail);
@@ -258,6 +264,17 @@ export default function App() {
       })
       .finally(() => {
         if (active) setDetailLoading(false);
+      });
+
+    loadHubEvidence(selected.bsp, selected.iso)
+      .then((evidence) => {
+        if (active) setHhEvidence(evidence);
+      })
+      .catch(() => {
+        if (active) setHhEvidence(null);
+      })
+      .finally(() => {
+        if (active) setEvidenceLoading(false);
       });
 
     return () => {
@@ -463,6 +480,7 @@ export default function App() {
     setSelectedId(null);
     setExpandedId(null);
     setProjectDetail(null);
+    setHhEvidence(null);
     setHubError(null);
     setAuthError('');
   }
@@ -523,7 +541,9 @@ export default function App() {
             onEvidence={(type) => addEvidence(selected.id, type)}
             onComplete={() => completeDemand(selected.id)}
             hubDetail={projectDetail}
+            hhEvidence={hhEvidence}
             detailLoading={detailLoading}
+            evidenceLoading={evidenceLoading}
           />
         ) : page === 'portfolio' ? (
           <Portfolio
@@ -685,6 +705,113 @@ function money(value: unknown) {
   const number = Number(value);
   if (!Number.isFinite(number)) return '—';
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(number);
+}
+
+function photoMoment(photo: HubHHEvidencePhoto): 'start' | 'finish' | 'extra' {
+  const metadataMoment = String(photo.metadata?.moment || '').toLowerCase();
+  const type = String(photo.photo_type || '').toLowerCase();
+  const caption = String(photo.caption || '').toLowerCase();
+
+  if (metadataMoment === 'start' || type === 'start') return 'start';
+  if (metadataMoment === 'finish' || type === 'finish' || caption.includes('fim da etapa')) return 'finish';
+  return 'extra';
+}
+
+function photoLabel(photo: HubHHEvidencePhoto) {
+  const moment = photoMoment(photo);
+  if (moment === 'start') return 'Início';
+  if (moment === 'finish') return 'Fim da etapa';
+  return 'Evidência';
+}
+
+function sessionPhotos(evidence: HubHHEvidence, sessionId: string) {
+  return evidence.photos.filter((photo) => photo.session_id === sessionId);
+}
+
+function HHEvidenceGallery({ evidence, loading }: {
+  evidence: HubHHEvidence | null;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="section-card hh-evidence-card">
+        <div className="real-source-loading"><RefreshCcw size={18} className="spin" /> Buscando fotos privadas do Apontamento HH...</div>
+      </div>
+    );
+  }
+
+  if (!evidence || (!evidence.sessions.length && !evidence.photos.length)) {
+    return (
+      <div className="section-card hh-evidence-card">
+        <div className="section-card-head">
+          <div><span className="section-mono">Apontamento HH</span><h2>Evidências fotográficas</h2></div>
+          <span className="count-ref">0</span>
+        </div>
+        <div className="hh-empty-evidence">
+          <ImagePlus size={22} />
+          <div><strong>Nenhuma foto encontrada para este ISO/SPL.</strong><span>O vínculo é feito por BSP + ISO/SPL sem alterar o apontamento.</span></div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="section-card hh-evidence-card">
+      <div className="section-card-head">
+        <div><span className="section-mono">Apontamento HH</span><h2>Evidências fotográficas reais</h2></div>
+        <span className="live-source-badge"><i /> {evidence.photos.length} FOTO(S)</span>
+      </div>
+
+      <div className="hh-evidence-sessions">
+        {evidence.sessions.map((session: HubHHSession) => {
+          const photos = sessionPhotos(evidence, session.id);
+          const workers = session.workers || [];
+          return (
+            <section className="hh-session-group" key={session.id}>
+              <div className="hh-session-head">
+                <div>
+                  <span>{session.activity_name || session.activity_key || 'Apontamento HH'}</span>
+                  <strong>{session.status === 'open' ? 'Sessão aberta' : 'Sessão finalizada'}</strong>
+                </div>
+                <div className="hh-session-stats">
+                  <span><Clock3 size={13} /> {session.total_hh ? Number(session.total_hh).toFixed(2) + ' HH' : session.elapsed_minutes ? session.elapsed_minutes + ' min' : '—'}</span>
+                  <span><Users size={13} /> {workers.length} pessoa(s)</span>
+                  <span>{fmtDate(session.start_at || undefined)}</span>
+                </div>
+              </div>
+
+              {workers.length > 0 && (
+                <div className="hh-workers-line">
+                  <strong>Equipe:</strong> {workers.map((worker) => worker.worker_name).join(', ')}
+                </div>
+              )}
+
+              {photos.length > 0 ? (
+                <div className="hh-photo-grid">
+                  {photos.map((photo) => (
+                    <a className="hh-photo-card" href={photo.signed_url} target="_blank" rel="noreferrer" key={photo.id}>
+                      <div className="hh-photo-frame">
+                        {photo.signed_url
+                          ? <img src={photo.signed_url} alt={photoLabel(photo)} loading="lazy" />
+                          : <div className="hh-photo-missing"><ImagePlus size={20} /> Imagem indisponível</div>}
+                        <span className={'hh-photo-badge ' + photoMoment(photo)}>{photoLabel(photo)}</span>
+                      </div>
+                      <div className="hh-photo-meta">
+                        <strong>{photo.caption && !/\.jpg$/i.test(photo.caption) ? photo.caption : photoLabel(photo)}</strong>
+                        <span>{fmtDate(photo.taken_at || undefined)}{photo.uploaded_by_name ? ' · ' + photo.uploaded_by_name : ''}</span>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <div className="hh-session-no-photo">Sessão encontrada, mas sem foto vinculada.</div>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function RealSourcesPanel({ detail, loading }: {
@@ -1221,7 +1348,9 @@ function DemandDetail(props: {
   onEvidence: (type: EvidenceType) => void;
   onComplete: () => void;
   hubDetail: Awaited<ReturnType<typeof loadHubProject>> | null;
+  hhEvidence: HubHHEvidence | null;
   detailLoading: boolean;
+  evidenceLoading: boolean;
 }) {
   const { demand } = props;
   const status = effectiveStatus(demand);
@@ -1231,8 +1360,15 @@ function DemandDetail(props: {
   const phaseIndex = getStageIndex(phase.key);
   const isCurrent = phase.key === demand.stageKey;
   const next = getNextStage(demand.stageKey);
-  const hasStart = demand.evidences.some((e) => e.type === 'start');
-  const hasFinish = demand.evidences.some((e) => e.type === 'finish');
+  const hhPhotos = props.hhEvidence?.photos ?? [];
+  const hhSessions = props.hhEvidence?.sessions ?? [];
+  const hhStartPhotos = hhPhotos.filter((photo) => photoMoment(photo) === 'start');
+  const hhFinishPhotos = hhPhotos.filter((photo) => photoMoment(photo) === 'finish');
+  const hhExtraPhotos = hhPhotos.filter((photo) => photoMoment(photo) === 'extra');
+  const hasStart = demand.evidences.some((e) => e.type === 'start') || hhStartPhotos.length > 0;
+  const hasFinish = demand.evidences.some((e) => e.type === 'finish') || hhFinishPhotos.length > 0;
+  const totalEvidence = demand.evidences.length + hhPhotos.length;
+  const hhTotal = hhSessions.reduce((sum, session) => sum + Number(session.total_hh || 0), 0);
   const readOnly = demand.source !== 'demo';
 
   useEffect(() => setPhaseKey(demand.stageKey), [demand.stageKey]);
@@ -1252,8 +1388,8 @@ function DemandDetail(props: {
           <SummaryField label="Responsável" value={demand.assignedTo ?? 'Não atribuída'} />
           <SummaryField label="Entrada no setor" value={fmtDate(demand.enteredAt)} />
           <SummaryField label="SLA da etapa" value={fmtDate(demand.slaDueAt)} />
-          <SummaryField label="Evidências" value={String(demand.evidences.length)} />
-          <SummaryField label="HH / duração" value={demand.hhMinutes ? demand.hhMinutes + ' min' : '—'} />
+          <SummaryField label="Evidências" value={props.evidenceLoading ? '...' : String(totalEvidence)} />
+          <SummaryField label="HH / duração" value={hhTotal > 0 ? hhTotal.toFixed(2) + ' HH' : demand.hhMinutes ? demand.hhMinutes + ' min' : '—'} />
         </div>
       </section>
 
@@ -1292,9 +1428,9 @@ function DemandDetail(props: {
                 <div className="detail-progress-block"><div><span>Avanço da etapa</span><strong>{demand.progress}%</strong></div><div className="detail-progress"><i style={{ width: demand.progress + '%' }} /></div></div>
                 {demand.blocker && <div className="reference-warning"><AlertTriangle size={17} /><div><strong>Bloqueio ativo</strong><p>{demand.blocker.note}</p></div></div>}
                 <div className="evidence-reference">
-                  <div className={hasStart ? 'ready' : ''}><ImagePlus size={16} /><span>Foto inicial</span><strong>{hasStart ? 'Disponível' : 'Pendente'}</strong></div>
-                  <div className={hasFinish ? 'ready' : ''}><ImagePlus size={16} /><span>Foto final</span><strong>{hasFinish ? 'Disponível' : 'Pendente'}</strong></div>
-                  <div><FileText size={16} /><span>Extras</span><strong>{demand.evidences.filter((e) => e.type === 'extra').length}</strong></div>
+                  <div className={hasStart ? 'ready' : ''}><ImagePlus size={16} /><span>Foto inicial</span><strong>{props.evidenceLoading ? '...' : hasStart ? hhStartPhotos.length + ' disponível(is)' : 'Pendente'}</strong></div>
+                  <div className={hasFinish ? 'ready' : ''}><ImagePlus size={16} /><span>Foto final</span><strong>{props.evidenceLoading ? '...' : hasFinish ? hhFinishPhotos.length + ' disponível(is)' : 'Pendente'}</strong></div>
+                  <div><FileText size={16} /><span>Extras</span><strong>{props.evidenceLoading ? '...' : hhExtraPhotos.length + demand.evidences.filter((e) => e.type === 'extra').length}</strong></div>
                 </div>
 
                 {!readOnly && demand.status !== 'completed' && (
@@ -1312,6 +1448,10 @@ function DemandDetail(props: {
               </>
             )}
           </div>
+
+          {demand.source === 'hub_readonly' && (
+            <HHEvidenceGallery evidence={props.hhEvidence} loading={props.evidenceLoading} />
+          )}
 
           {demand.source === 'hub_readonly' && (
             <RealSourcesPanel detail={props.hubDetail} loading={props.detailLoading} />
@@ -1338,15 +1478,22 @@ function DemandDetail(props: {
               <div><span>Origem</span><strong>{sectorName(demand.originSector)}</strong></div>
               <div><span>Próximo setor</span><strong>{next ? sectorName(next.sector) : 'Encerramento'}</strong></div>
               <div><span>Prioridade</span><strong>{priorityLabel[demand.priority]}</strong></div>
-              <div><span>Fonte</span><strong>{demand.source !== 'demo' ? 'HH · leitura' : 'Demonstração'}</strong></div>
+              <div><span>Fonte</span><strong>{demand.source === 'hub_readonly' ? 'Tracking + Apontamento HH' : demand.source === 'hh_readonly' ? 'HH · leitura' : 'Demonstração'}</strong></div>
             </div>
           </div>
 
           <div className="side-section">
             <span className="section-mono">Evidências e anexos</span>
             <div className="docs-list">
+              {hhPhotos.slice(0, 6).map((photo) => (
+                <a className="side-photo-link" href={photo.signed_url} target="_blank" rel="noreferrer" key={photo.id}>
+                  <img src={photo.signed_url} alt={photoLabel(photo)} loading="lazy" />
+                  <div><strong>{photoLabel(photo)}</strong><small>{fmtDate(photo.taken_at || undefined)}</small></div>
+                </a>
+              ))}
               {demand.evidences.map((e) => <div key={e.id}><span>IMG</span><div><strong>{e.label}</strong><small>{fmtDate(e.at)}</small></div></div>)}
-              {!demand.evidences.length && <p className="muted-side">Nenhuma evidência nesta etapa.</p>}
+              {!props.evidenceLoading && !hhPhotos.length && !demand.evidences.length && <p className="muted-side">Nenhuma evidência vinculada a este ISO/SPL.</p>}
+              {props.evidenceLoading && <p className="muted-side">Buscando imagens do Apontamento HH...</p>}
             </div>
           </div>
 
