@@ -73,9 +73,6 @@ function stageMap(row: HubDemandRow): StageMap {
   if (group.includes('engenharia')) {
     return { stageKey: 'engineering_release', sector: 'engenharia', label: row.current_status || 'Engenharia' };
   }
-  if (group.includes('pcp')) {
-    return { stageKey: 'stock_check', sector: 'suprimentos', label: row.current_status || 'Verificação de Estoque' };
-  }
   if (group.includes('suprimentos')) {
     return { stageKey: 'material_separation', sector: 'suprimentos', label: row.current_status || 'Suprimentos' };
   }
