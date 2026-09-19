@@ -811,6 +811,90 @@ function RealSourcesPanel({ detail, loading }: {
   );
 }
 
+type BspGroup = {
+  key: string;
+  bsp: string;
+  demands: Demand[];
+};
+
+function groupDemandsByBsp(demands: Demand[]): BspGroup[] {
+  const map = new Map<string, Demand[]>();
+
+  for (const demand of demands) {
+    const normalizedBsp = demand.bsp.trim().toUpperCase();
+    const key = normalizedBsp || demand.bsp || demand.id;
+    const items = map.get(key) ?? [];
+    items.push(demand);
+    map.set(key, items);
+  }
+
+  return [...map.entries()]
+    .map(([key, items]) => ({
+      key,
+      bsp: items[0]?.bsp ?? key,
+      demands: [...items].sort((a, b) =>
+        a.iso.localeCompare(b.iso, 'pt-BR', { numeric: true, sensitivity: 'base' })
+      ),
+    }))
+    .sort((a, b) => {
+      const aPriority = Math.max(...a.demands.map((d) => priorityWeight[d.priority]));
+      const bPriority = Math.max(...b.demands.map((d) => priorityWeight[d.priority]));
+      if (bPriority !== aPriority) return bPriority - aPriority;
+
+      const aOldest = Math.min(...a.demands.map((d) => new Date(d.enteredAt).getTime()));
+      const bOldest = Math.min(...b.demands.map((d) => new Date(d.enteredAt).getTime()));
+      if (aOldest !== bOldest) return aOldest - bOldest;
+
+      return a.bsp.localeCompare(b.bsp, 'pt-BR', { numeric: true, sensitivity: 'base' });
+    });
+}
+
+function groupStatus(demands: Demand[]): DemandStatus {
+  const rank: Record<DemandStatus, number> = {
+    blocked: 7,
+    late: 6,
+    waiting: 5,
+    in_progress: 4,
+    new: 3,
+    completed: 1,
+  };
+
+  return demands
+    .map(effectiveStatus)
+    .sort((a, b) => rank[b] - rank[a])[0] ?? 'new';
+}
+
+function groupPriority(demands: Demand[]): Priority {
+  return [...demands]
+    .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority])[0]?.priority ?? 'normal';
+}
+
+function groupProgress(demands: Demand[]) {
+  if (!demands.length) return 0;
+  return Math.round(demands.reduce((sum, demand) => sum + demand.progress, 0) / demands.length);
+}
+
+function groupStageLabel(demands: Demand[]) {
+  const stages = [...new Set(demands.map((d) => d.stage).filter(Boolean))];
+  if (!stages.length) return 'Etapa não informada';
+  if (stages.length === 1) return stages[0];
+  return stages.length + ' etapas ativas';
+}
+
+function groupSectorLabel(demands: Demand[]) {
+  const sectorKeys = [...new Set(demands.map((d) => d.sector))];
+  if (!sectorKeys.length) return '—';
+  if (sectorKeys.length === 1) return sectorName(sectorKeys[0]);
+  return sectorKeys.length + ' setores';
+}
+
+function groupOwnerLabel(demands: Demand[]) {
+  const owners = [...new Set(demands.map((d) => d.assignedTo).filter((value): value is string => Boolean(value)))];
+  if (!owners.length) return 'Não atribuída';
+  if (owners.length === 1) return owners[0];
+  return owners.length + ' responsáveis';
+}
+
 function Portfolio(props: {
   demands: Demand[];
   sector: SectorFilter;
@@ -845,10 +929,13 @@ function Portfolio(props: {
       .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority] || new Date(a.enteredAt).getTime() - new Date(b.enteredAt).getTime());
   }, [props.demands, props.sector, props.statusFilter, props.priorityOnly, props.lateOnly, props.search]);
 
+  const grouped = useMemo(() => groupDemandsByBsp(filtered), [filtered]);
   const current = props.sector === 'all' ? props.demands : props.demands.filter((d) => d.sector === props.sector);
+  const currentGroups = groupDemandsByBsp(current);
   const active = current.filter((d) => d.status !== 'completed');
-  const late = current.filter((d) => effectiveStatus(d) === 'late').length;
-  const blocked = current.filter((d) => d.status === 'blocked').length;
+  const activeGroups = currentGroups.filter((group) => group.demands.some((d) => d.status !== 'completed'));
+  const late = currentGroups.filter((group) => group.demands.some((d) => effectiveStatus(d) === 'late')).length;
+  const blocked = currentGroups.filter((group) => group.demands.some((d) => d.status === 'blocked')).length;
   const avg = active.length ? Math.round(active.reduce((sum, d) => sum + d.progress, 0) / active.length) : 0;
   const incoming = props.sector === 'all'
     ? new Set(active.map((d) => d.sector)).size
@@ -876,7 +963,7 @@ function Portfolio(props: {
           <strong>{props.sector === 'all' ? 'Visão geral da carteira · Todos os setores' : 'Visão geral da caixa · ' + sectorName(props.sector)}</strong>
           <span>{props.sector === 'all' ? 'Veja onde cada BSP / ISO está no fluxo operacional completo.' : 'Responsabilidade atual do setor e carga prevista pelo fluxo.'}</span>
         </div>
-        <Metric value={active.length} label="Na caixa" />
+        <Metric value={activeGroups.length} label="BSPs na caixa" />
         <Metric value={late} label="Atrasadas" danger={late > 0} />
         <Metric value={blocked} label="Bloqueadas" warning={blocked > 0} />
         <Metric value={avg + '%'} label="Avanço médio" />
@@ -887,7 +974,7 @@ function Portfolio(props: {
         <div>
           <span className="eyebrow">Sua operação</span>
           <h2>Demandas alocadas</h2>
-          <p>{filtered.length} registro(s) · {props.sector === 'all' ? 'carteira completa por etapa atual; ' : ''}clique na linha para expandir; abra o arquivo para ver todas as fases.</p>
+          <p>{grouped.length} BSP(s) · {filtered.length} ISO/SPL(s) · {props.sector === 'all' ? 'carteira completa por etapa atual; ' : ''}expanda a BSP para visualizar a árvore de itens.</p>
         </div>
         <div className="mode-toggle">
           <button className={props.mode === 'table' ? 'active' : ''} onClick={() => props.setMode('table')}><List size={14} /> Tabela</button>
@@ -908,17 +995,16 @@ function Portfolio(props: {
           <div className="table-head">
             <span>BSP / ISO</span><span>Projeto / Cliente</span><span>Etapa atual</span><span>Responsável</span><span>Avanço</span><span>Status</span><span />
           </div>
-          {filtered.map((d) => (
-            <DemandRow
-              key={d.id}
-              demand={d}
-              expanded={props.expandedId === d.id}
-              onToggle={() => props.setExpandedId(props.expandedId === d.id ? null : d.id)}
-              onOpen={() => props.onOpen(d.id)}
-              onAssume={() => props.onAssume(d.id)}
+          {grouped.map((group) => (
+            <BspTreeRow
+              key={group.key}
+              group={group}
+              expanded={props.expandedId === group.key}
+              onToggle={() => props.setExpandedId(props.expandedId === group.key ? null : group.key)}
+              onOpen={props.onOpen}
             />
           ))}
-          {!filtered.length && <div className="empty-reference">{props.loading ? <RefreshCcw size={28} /> : <CheckCircle2 size={28} />}<strong>{props.loading ? 'Sincronizando dados reais...' : 'Nenhuma demanda nesta visão.'}</strong><span>{props.loading ? 'Consultando o hub operacional.' : 'Altere os filtros ou selecione outro setor.'}</span></div>}
+          {!grouped.length && <div className="empty-reference">{props.loading ? <RefreshCcw size={28} /> : <CheckCircle2 size={28} />}<strong>{props.loading ? 'Sincronizando dados reais...' : 'Nenhuma demanda nesta visão.'}</strong><span>{props.loading ? 'Consultando o hub operacional.' : 'Altere os filtros ou selecione outro setor.'}</span></div>}
         </div>
       ) : (
         <BoardMode demands={filtered} onOpen={props.onOpen} />
@@ -931,45 +1017,96 @@ function Metric({ value, label, danger, warning }: { value: string | number; lab
   return <div className="overview-metric"><strong className={danger ? 'danger' : warning ? 'warning' : ''}>{value}</strong><span>{label}</span></div>;
 }
 
-function DemandRow({ demand, expanded, onToggle, onOpen, onAssume }: { demand: Demand; expanded: boolean; onToggle: () => void; onOpen: () => void; onAssume: () => void }) {
-  const status = effectiveStatus(demand);
-  const latest = [...demand.history].reverse().slice(0, 3);
-  const next = getNextStage(demand.stageKey);
+function BspTreeRow({
+  group,
+  expanded,
+  onToggle,
+  onOpen,
+}: {
+  group: BspGroup;
+  expanded: boolean;
+  onToggle: () => void;
+  onOpen: (id: string) => void;
+}) {
+  const first = group.demands[0];
+  const status = groupStatus(group.demands);
+  const priority = groupPriority(group.demands);
+  const progress = groupProgress(group.demands);
+  const stageLabel = groupStageLabel(group.demands);
+  const sectorLabel = groupSectorLabel(group.demands);
+  const ownerLabel = groupOwnerLabel(group.demands);
+  const differentStages = new Set(group.demands.map((d) => d.stage)).size > 1;
 
   return (
-    <article className={'reference-row ' + (expanded ? 'expanded' : '')}>
-      <button className="row-main" onClick={onToggle}>
+    <article className={'reference-row bsp-tree-row ' + (expanded ? 'expanded' : '')}>
+      <button className="row-main bsp-parent-row" onClick={onToggle}>
         <div className="bsp-cell">
           <div className="bsp-orb">BSP</div>
-          <div><strong>{demand.bsp}</strong><span>{demand.iso}</span></div>
+          <div>
+            <strong>{group.bsp}</strong>
+            <span>{group.demands.length} ISO/SPL {group.demands.length === 1 ? 'vinculado' : 'vinculados'}</span>
+          </div>
         </div>
-        <div className="project-cell"><strong>{demand.project ?? 'Projeto'}</strong><span>{demand.client ?? 'Cliente'}</span></div>
-        <div className="stage-ref"><strong>{demand.stage}</strong><span>{sectorName(demand.sector)} · há {elapsedLabel(demand.enteredAt)}</span></div>
-        <div className="owner-ref"><strong>{demand.assignedTo ?? 'Não atribuída'}</strong><span>{demand.assignedTo ? 'Responsável atual' : 'Aguardando aceite'}</span></div>
-        <div className="progress-ref"><strong>{demand.progress}%</strong><div><i style={{ width: demand.progress + '%' }} /></div></div>
-        <div><StatusPill status={status} /><PriorityPill priority={demand.priority} /></div>
+        <div className="project-cell">
+          <strong>{first?.project ?? 'Projeto'}</strong>
+          <span>{first?.client ?? 'Cliente'}</span>
+        </div>
+        <div className="stage-ref">
+          <strong>{stageLabel}</strong>
+          <span>{differentStages ? 'Itens distribuídos em ' + sectorLabel : sectorLabel}</span>
+        </div>
+        <div className="owner-ref">
+          <strong>{ownerLabel}</strong>
+          <span>{group.demands.length} item(ns) na árvore</span>
+        </div>
+        <div className="progress-ref">
+          <strong>{progress}%</strong>
+          <div><i style={{ width: progress + '%' }} /></div>
+        </div>
+        <div><StatusPill status={status} /><PriorityPill priority={priority} /></div>
         <ChevronDown className={expanded ? 'rotate' : ''} size={17} />
       </button>
 
       {expanded && (
-        <div className="row-expanded">
-          <div className="expanded-updates">
-            <span className="section-mono">Últimas atualizações</span>
-            {latest.map((u) => <div className="mini-update" key={u.id}><i /><div><strong>{u.title}</strong><p>{u.description}</p><span>{fmtDate(u.at)} · {u.actor}</span></div></div>)}
+        <div className="bsp-tree-children">
+          <div className="bsp-tree-heading">
+            <span>Árvore da BSP</span>
+            <strong>{group.demands.length} ISO/SPL</strong>
           </div>
-          <div className="expanded-steps">
-            <span className="section-mono">Fluxo da demanda</span>
-            <div className="mini-flow"><div><span>Origem</span><strong>{sectorName(demand.originSector)}</strong></div><ChevronRight size={14} /><div className="current"><span>Agora</span><strong>{sectorName(demand.sector)}</strong></div><ChevronRight size={14} /><div><span>Próximo</span><strong>{next ? sectorName(next.sector) : 'Encerramento'}</strong></div></div>
-            <div className="expanded-kpis">
-              <div><span>Evidências</span><strong>{demand.evidences.length}</strong></div>
-              <div><span>HH</span><strong>{demand.hhMinutes ? demand.hhMinutes + ' min' : '—'}</strong></div>
-              <div><span>SLA</span><strong>{fmtDate(demand.slaDueAt)}</strong></div>
-            </div>
-          </div>
-          <div className="expanded-actions">
-            {demand.status === 'new' && demand.source === 'demo' && <button className="soft-btn" onClick={(e) => { e.stopPropagation(); onAssume(); }}><UserCheck size={14} /> Assumir</button>}
-            <button className="primary-ref" onClick={(e) => { e.stopPropagation(); onOpen(); }}>Abrir arquivo operacional <ChevronRight size={14} /></button>
-          </div>
+          {group.demands.map((demand, index) => {
+            const childStatus = effectiveStatus(demand);
+            return (
+              <div className="bsp-child-row" key={demand.id}>
+                <div className="tree-rail" aria-hidden="true">
+                  <i className={index === group.demands.length - 1 ? 'last' : ''} />
+                  <b />
+                </div>
+                <button className="bsp-child-main" onClick={() => onOpen(demand.id)}>
+                  <div className="bsp-child-iso">
+                    <span>ISO / SPL</span>
+                    <strong>{demand.iso}</strong>
+                  </div>
+                  <div className="stage-ref">
+                    <strong>{demand.stage}</strong>
+                    <span>{sectorName(demand.sector)} · há {elapsedLabel(demand.enteredAt)}</span>
+                  </div>
+                  <div className="owner-ref">
+                    <strong>{demand.assignedTo ?? 'Não atribuída'}</strong>
+                    <span>Responsável atual</span>
+                  </div>
+                  <div className="progress-ref">
+                    <strong>{demand.progress}%</strong>
+                    <div><i style={{ width: demand.progress + '%' }} /></div>
+                  </div>
+                  <div className="bsp-child-status">
+                    <StatusPill status={childStatus} />
+                    <PriorityPill priority={demand.priority} />
+                  </div>
+                  <span className="open-child">Abrir arquivo <ChevronRight size={14} /></span>
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
     </article>
@@ -977,8 +1114,32 @@ function DemandRow({ demand, expanded, onToggle, onOpen, onAssume }: { demand: D
 }
 
 function BoardMode({ demands, onOpen }: { demands: Demand[]; onOpen: (id: string) => void }) {
-  const groups = sectors.map((s) => ({ sector: s, items: demands.filter((d) => d.sector === s.key) })).filter((g) => g.items.length);
-  return <div className="board-reference">{groups.map((g) => <section key={g.sector.key}><div className="board-group-head"><strong>{g.sector.name}</strong><i /><span>{g.items.length} demanda(s)</span></div><div className="board-grid">{g.items.map((d) => <button key={d.id} className="board-card" onClick={() => onOpen(d.id)}><div><strong>{d.bsp}</strong><span>{d.iso}</span></div><h3>{d.stage}</h3><p>{d.project} · {d.client}</p><div className="board-progress"><i style={{ width: d.progress + '%' }} /></div><footer><StatusPill status={effectiveStatus(d)} /><span>{d.progress}%</span></footer></button>)}</div></section>)}</div>;
+  const bspGroups = groupDemandsByBsp(demands);
+
+  return (
+    <div className="board-reference">
+      <section>
+        <div className="board-group-head">
+          <strong>BSPs</strong><i /><span>{bspGroups.length} BSP(s) · {demands.length} ISO/SPL(s)</span>
+        </div>
+        <div className="board-grid">
+          {bspGroups.map((group) => {
+            const first = group.demands[0];
+            const progress = groupProgress(group.demands);
+            return (
+              <button key={group.key} className="board-card" onClick={() => first && onOpen(first.id)}>
+                <div><strong>{group.bsp}</strong><span>{group.demands.length} ISO/SPL</span></div>
+                <h3>{groupStageLabel(group.demands)}</h3>
+                <p>{first?.project} · {first?.client}</p>
+                <div className="board-progress"><i style={{ width: progress + '%' }} /></div>
+                <footer><StatusPill status={groupStatus(group.demands)} /><span>{progress}%</span></footer>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function DemandDetail(props: {
