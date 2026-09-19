@@ -1905,7 +1905,7 @@ function ProjectOverviewGrid({ overview }: { overview: HubProjectOverview }) {
       </div>
       <div className="legacy-kpi-grid">
         {cards.map((card) => (
-          <div className={'legacy-kpi-card ' + (card.tone || '')} key={card.label}>
+          <div className={'legacy-kpi-card ' + ('tone' in card ? card.tone : '')} key={card.label}>
             <span>{card.label}</span>
             <strong>{card.value}</strong>
             <small>{card.note}</small>
