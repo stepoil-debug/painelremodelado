@@ -82,7 +82,9 @@ export async function loadHHSessionsReadOnly(): Promise<Demand[]> {
       enteredAt: row.start_at,
       startedAt: row.start_at,
       completedAt: row.end_at ?? undefined,
-      slaDueAt: new Date(new Date(row.start_at).getTime() + stage.slaMinutes * 60_000).toISOString(),
+      slaDueAt: stage
+        ? new Date(new Date(row.start_at).getTime() + stage.slaMinutes * 60_000).toISOString()
+        : undefined,
       progress: isOpen ? 50 : 100,
       hhMinutes: row.elapsed_minutes ?? undefined,
       source: 'hh_readonly',
@@ -96,7 +98,7 @@ export async function loadHHSessionsReadOnly(): Promise<Demand[]> {
         description: row.activity_name + ' registrada pelo aplicativo de apontamento.',
         at: row.end_at ?? row.start_at,
         actor,
-        sector: stage.sector,
+        sector: (stage?.sector ?? 'nao_classificado') as SectorKey,
       }],
     } satisfies Demand;
   });
