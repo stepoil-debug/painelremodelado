@@ -200,6 +200,7 @@ h1,h2,h3,p { margin-top: 0; }
 .status-ref.new { background: #EAF1FD; color: #1355C2; }
 .status-ref.in_progress { background: #EAF4FE; color: #1487C1; }
 .status-ref.waiting { background: #F1F4F8; color: #55677A; }
+.status-ref.on_hold { background: #FFF2DF; color: #AE6800; }
 .status-ref.blocked { background: #FFF5D6; color: #9A6500; }
 .status-ref.late { background: #FDECEA; color: #D93B3B; }
 .status-ref.completed { background: #E9F7F1; color: #0F8A6A; }

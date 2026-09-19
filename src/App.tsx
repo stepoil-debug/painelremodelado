@@ -1851,7 +1851,6 @@ function Portfolio(props: {
             <option value="all">Todos</option>
             <option value="new">Novas</option>
             <option value="in_progress">Em execução</option>
-            <option value="waiting">Aguardando</option>
             <option value="on_hold">On Hold</option>
             <option value="blocked">Bloqueadas</option>
             <option value="late">Atrasadas</option>
@@ -1903,6 +1902,7 @@ function BspTreeRow({
 }) {
   const first = group.demands[0];
   const status = groupStatus(group.demands);
+  const groupOnHold = group.demands.some((d) => d.onHold === true);
   const priority = groupPriority(group.demands);
   const progress = groupProgress(group.demands);
   const stageLabel = groupStageLabel(group.demands);
@@ -1936,7 +1936,7 @@ function BspTreeRow({
           <strong>{progress}%</strong>
           <div><i style={{ width: progress + '%' }} /></div>
         </div>
-        <div><StatusPill status={status} /><PriorityPill priority={priority} /></div>
+        <div><StatusPill status={status} onHold={groupOnHold} /><PriorityPill priority={priority} /></div>
         <ChevronDown className={expanded ? 'rotate' : ''} size={17} />
       </button>
 
@@ -1972,7 +1972,7 @@ function BspTreeRow({
                     <div><i style={{ width: demand.progress + '%' }} /></div>
                   </div>
                   <div className="bsp-child-status">
-                    <StatusPill status={childStatus} />
+                    <StatusPill status={childStatus} onHold={demand.onHold === true} />
                     <PriorityPill priority={demand.priority} />
                   </div>
                   <span className="open-child">Abrir arquivo <ChevronRight size={14} /></span>
@@ -2005,7 +2005,7 @@ function BoardMode({ demands, onOpen }: { demands: Demand[]; onOpen: (id: string
                 <h3>{groupStageLabel(group.demands)}</h3>
                 <p>{first?.project} · {first?.client}</p>
                 <div className="board-progress"><i style={{ width: progress + '%' }} /></div>
-                <footer><StatusPill status={groupStatus(group.demands)} /><span>{progress}%</span></footer>
+                <footer><StatusPill status={groupStatus(group.demands)} onHold={group.demands.some((d) => d.onHold === true)} /><span>{progress}%</span></footer>
               </button>
             );
           })}
@@ -2091,7 +2091,7 @@ function DemandDetail(props: {
         <div className="detail-title-row">
           <div className="detail-bsp"><span>BSP / ISO</span><strong>{demand.bsp}</strong><em>{demand.iso}</em></div>
           <div className="detail-title-copy"><h1>{demand.project}</h1><p>{demand.client} · {sectorName(demand.sector)}</p></div>
-          <StatusPill status={status} />
+          <StatusPill status={status} onHold={demand.onHold === true} />
           <PriorityPill priority={demand.priority} />
         </div>
         <div className="detail-summary-grid">
@@ -2230,7 +2230,8 @@ function SummaryField({ label, value }: { label: string; value: string }) {
   return <div className="summary-field"><span>{label}</span><strong>{value}</strong></div>;
 }
 
-function StatusPill({ status }: { status: DemandStatus }) {
+function StatusPill({ status, onHold = false }: { status: DemandStatus; onHold?: boolean }) {
+  if (onHold) return <span className="status-ref on_hold"><i />On Hold</span>;
   return <span className={'status-ref ' + status}><i />{statusLabel[status]}</span>;
 }
 

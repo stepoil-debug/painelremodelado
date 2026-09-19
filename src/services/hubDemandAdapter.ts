@@ -149,7 +149,7 @@ function statusFor(row: HubDemandRow): DemandStatus {
   const progress = Number(row.overall_progress || 0);
 
   if (row.hh_status === 'open') {
-    return normalize(row.hh_work_state).includes('pause') ? 'waiting' : 'in_progress';
+    return 'in_progress';
   }
 
   if (
@@ -158,7 +158,9 @@ function statusFor(row: HubDemandRow): DemandStatus {
     || normalize(row.project_status).includes('finished')
     || normalize(row.project_status).includes('enviado')
   ) return 'completed';
-  if (group.includes('on hold') || status.includes('on hold') || status.startsWith('aguardando')) return 'waiting';
+  if (group.includes('on hold') || status.includes('on hold')) {
+    return progress > 0 || row.fabrication_start ? 'in_progress' : 'new';
+  }
 
   const finish = row.replanned_finish || row.planned_finish;
   if (finish) {
