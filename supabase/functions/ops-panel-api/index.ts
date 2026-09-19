@@ -247,16 +247,34 @@ Deno.serve(async (request: Request) => {
     if (drawingsError) return json({ ok: false, error: drawingsError.message }, 500);
     const allDrawingRows = Array.isArray(drawingRowsRaw) ? drawingRowsRaw : [];
 
-    const extractIso = (value: unknown) => {
-      const compact = String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-      const match = compact.match(/ISO0*([0-9]+)/);
-      return match?.[1] ? String(Number(match[1])) : "";
+    const compact = (value: unknown) =>
+      String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+    const itemSuffix = (value: unknown) => {
+      let normalized = compact(value);
+      normalized = normalized.replace(/^(BSP|BEP|BPP|B3D)/, "");
+
+      const projectCompact = compact(projectKey).replace(/^(BSP|BEP|BPP|B3D)/, "");
+      if (projectCompact && normalized.startsWith(projectCompact)) {
+        normalized = normalized.slice(projectCompact.length);
+      }
+
+      return normalized;
     };
-    const requestedIso = extractIso(iso);
-    const drawingRows = requestedIso
+
+    const requestedItem = itemSuffix(iso);
+    const drawingRows = requestedItem
       ? allDrawingRows.filter((row: Record<string, unknown>) => {
-          const rowIso = extractIso(String(row.drawing_number || "") + " " + String(row.document_title || ""));
-          return rowIso === requestedIso;
+          const candidates = [
+            itemSuffix(row.drawing_number),
+            itemSuffix(row.document_title),
+          ].filter(Boolean);
+
+          return candidates.some((candidate) =>
+            candidate === requestedItem
+            || requestedItem.startsWith(candidate)
+            || candidate.startsWith(requestedItem)
+          );
         })
       : allDrawingRows;
 

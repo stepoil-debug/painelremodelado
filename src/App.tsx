@@ -1222,19 +1222,39 @@ function DrawingPdfModal({
   );
 }
 
-function isoNumberFromValue(value: unknown) {
-  const compact = String(value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const match = compact.match(/ISO0*([0-9]+)/);
-  return match?.[1] ? String(Number(match[1])) : '';
+function compactDrawingIdentity(value: unknown) {
+  return String(value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
-function drawingMatchesIso(row: Record<string, unknown>, iso: string) {
-  const selectedIso = isoNumberFromValue(iso);
-  if (!selectedIso) return false;
-  const rowIso = isoNumberFromValue(
-    String(row.drawing_number ?? '') + ' ' + String(row.document_title ?? '')
+function drawingItemSuffix(value: unknown, projectKey: string) {
+  let normalized = compactDrawingIdentity(value).replace(/^(BSP|BEP|BPP|B3D)/, '');
+  const project = compactDrawingIdentity(projectKey).replace(/^(BSP|BEP|BPP|B3D)/, '');
+
+  if (project && normalized.startsWith(project)) {
+    normalized = normalized.slice(project.length);
+  }
+
+  return normalized;
+}
+
+function drawingMatchesItem(
+  row: Record<string, unknown>,
+  selectedItem: string,
+  projectKey: string,
+) {
+  const selectedSuffix = drawingItemSuffix(selectedItem, projectKey);
+  if (!selectedSuffix) return false;
+
+  const candidates = [
+    drawingItemSuffix(row.drawing_number, projectKey),
+    drawingItemSuffix(row.document_title, projectKey),
+  ].filter(Boolean);
+
+  return candidates.some((candidate) =>
+    candidate === selectedSuffix
+    || selectedSuffix.startsWith(candidate)
+    || candidate.startsWith(selectedSuffix)
   );
-  return rowIso === selectedIso;
 }
 
 function RealSourcesPanel({ detail, loading, iso }: {
@@ -1330,7 +1350,7 @@ function RealSourcesPanel({ detail, loading, iso }: {
   const project = detail.project;
   const wip = asRecords(detail.wip);
   const allDrawings = asRecords(detail.drawings);
-  const drawings = allDrawings.filter((row) => drawingMatchesIso(row, iso));
+  const drawings = allDrawings.filter((row) => drawingMatchesItem(row, iso, projectKey));
   const drawingRowIds = new Set(drawings.map((row) => String(row.source_row_id ?? '')));
   const revisions = asRecords(detail.drawing_revisions)
     .filter((revision) => drawingRowIds.has(String(revision.drawing_row_id ?? '')));
