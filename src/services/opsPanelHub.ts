@@ -137,38 +137,6 @@ export async function loadHubHealth() {
   return requestHub<HubHealth>({ action: 'health' });
 }
 
-export interface HubProjectOverview {
-  totalProjects: number;
-  startedProjects: number;
-  startedTags: number;
-  notStartedProjects: number;
-  notStartedTags: number;
-  onHoldProjects: number;
-  onHoldTags: number;
-  productionProjects: number;
-  productionTags: number;
-  qualityProjects: number;
-  qualityTags: number;
-  paintingProjects: number;
-  paintingTags: number;
-  readyProjects: number;
-  readyTags: number;
-  sentProjects: number;
-  programmedWeightKg: number;
-  weldedWeightKg: number;
-  sentWeightKg: number;
-  pendingWeightKg: number;
-  sourceUpdatedAt?: string | null;
-  sourceVersion?: string | null;
-}
-
-export async function loadHubProjectOverview(): Promise<HubProjectOverview> {
-  const response = await requestHub<{ ok: true; data: HubProjectOverview }>({
-    action: 'overview',
-  });
-  return response.data;
-}
-
 export interface HubSyncSourceStatus {
   source_key: string;
   sheet_name: string;

@@ -110,6 +110,12 @@ Deno.serve(async (request: Request) => {
   }
 
 
+  if (action === "overview") {
+    const { data, error } = await admin.rpc("ops_panel_project_overview");
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
   if (action === "sync_status") {
     const { data, error } = await admin.rpc("ops_panel_sync_status");
     if (error) return json({ ok: false, error: error.message }, 500);
@@ -117,9 +123,12 @@ Deno.serve(async (request: Request) => {
   }
 
   if (action === "sync_now") {
-    const { data: requestId, error } = await admin.rpc("ops_panel_dispatch_sync", {
-      p_force: false,
-    });
+    const [{ data: normalized, error: normalizedError }, { data: requestId, error }] = await Promise.all([
+      admin.rpc("sync_tracking_normalized_if_needed", { p_region: "BR" }),
+      admin.rpc("ops_panel_dispatch_sync", { p_force: false }),
+    ]);
+
+    if (normalizedError) return json({ ok: false, error: normalizedError.message }, 500);
     if (error) return json({ ok: false, error: error.message }, 500);
 
     return json({
@@ -127,9 +136,10 @@ Deno.serve(async (request: Request) => {
       data: {
         request_id: requestId,
         started_at: new Date().toISOString(),
-        mode: "version_check",
+        mode: "canonical_tracking_plus_integrations",
+        tracking: normalized,
       },
-      message: "Atualização solicitada. Somente fontes com nova versão serão recarregadas.",
+      message: "Atualização solicitada. Tracking normalizado e integrações serão verificadas por versão.",
     });
   }
 

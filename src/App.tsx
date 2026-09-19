@@ -38,7 +38,6 @@ import {
   loadHubDrawingAttachmentPdf,
   loadHubEvidence,
   loadHubProject,
-  loadHubProjectOverview,
   loadHubSyncStatus,
   triggerHubSync,
   type HubDrawingAttachment,
@@ -46,7 +45,6 @@ import {
   type HubHHEvidence,
   type HubHHEvidencePhoto,
   type HubHHSession,
-  type HubProjectOverview,
 } from './services/opsPanelHub';
 import { hubRowsToOperationalState } from './services/hubDemandAdapter';
 import {
@@ -164,7 +162,6 @@ export default function App() {
   const [loadingHub, setLoadingHub] = useState(false);
   const [manualSyncing, setManualSyncing] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
-  const [projectOverview, setProjectOverview] = useState<HubProjectOverview | null>(null);
   const [hubError, setHubError] = useState<string | null>(null);
   const [panelUser, setPanelUser] = useState<PanelUser | null>(null);
   const [authLoading, setAuthLoading] = useState(hubConfigured);
@@ -265,9 +262,6 @@ export default function App() {
     void loadHubSyncStatus()
       .then((status) => setLastSyncAt(status.last_synced_at || null))
       .catch(() => undefined);
-    void loadHubProjectOverview()
-      .then((overview) => setProjectOverview(overview))
-      .catch(() => setProjectOverview(null));
   }, [panelUser]);
 
   useEffect(() => {
@@ -543,11 +537,7 @@ export default function App() {
       }
 
       setLastSyncAt(latestStatus.last_synced_at || new Date().toISOString());
-      const [overview] = await Promise.all([
-        loadHubProjectOverview().catch(() => null),
-        refreshHub(false, search),
-      ]);
-      if (overview) setProjectOverview(overview);
+      await refreshHub(false, search);
       setBanner('Banco atualizado. Dados do painel recarregados.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Não foi possível atualizar o banco.';
@@ -639,7 +629,6 @@ export default function App() {
             onAssume={assumeDemand}
             onReset={resetDemo}
             liveData={hubConfigured}
-            projectOverview={projectOverview}
             loading={loadingHub}
             syncing={manualSyncing}
             lastSyncAt={lastSyncAt}
@@ -1759,7 +1748,6 @@ function Portfolio(props: {
   onAssume: (id: string) => void;
   onReset: () => void;
   liveData: boolean;
-  projectOverview: HubProjectOverview | null;
   loading: boolean;
   syncing: boolean;
   lastSyncAt: string | null;
@@ -1808,10 +1796,6 @@ function Portfolio(props: {
       </section>
 
       {props.error && <div className="reference-warning"><AlertTriangle size={17} /><div><strong>Falha na leitura do hub</strong><p>{props.error}</p></div></div>}
-
-      {props.liveData && props.sector === 'all' && props.projectOverview && (
-        <ProjectOverviewGrid overview={props.projectOverview} />
-      )}
 
       <section className="overview-strip">
         <div className="overview-icon"><BarChart3 size={25} /></div>
@@ -1875,49 +1859,6 @@ function Portfolio(props: {
         <BoardMode demands={filtered} onOpen={props.onOpen} />
       )}
     </>
-  );
-}
-
-function formatWhole(value: number) {
-  return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(value || 0);
-}
-
-function ProjectOverviewGrid({ overview }: { overview: HubProjectOverview }) {
-  const cards = [
-    { label: 'Total de projetos', value: overview.totalProjects, note: 'Tracking atual' },
-    { label: 'Projetos iniciados', value: overview.startedProjects, note: 'Tags ' + overview.startedTags },
-    { label: 'Projetos não iniciados', value: overview.notStartedProjects, note: 'Tags ' + overview.notStartedTags },
-    { label: 'Projetos em On Hold', value: overview.onHoldProjects, note: 'Tags ' + overview.onHoldTags, tone: 'warning' },
-    { label: 'Projetos em produção', value: overview.productionProjects, note: 'Tags ' + overview.productionTags },
-    { label: 'Projetos em qualidade', value: overview.qualityProjects, note: 'Tags ' + overview.qualityTags },
-    { label: 'Projetos em pintura', value: overview.paintingProjects, note: 'Tags ' + overview.paintingTags },
-    { label: 'Preparados para envio', value: overview.readyProjects, note: 'Aguardando envio · Tags ' + overview.readyTags },
-  ] as const;
-
-  return (
-    <section className="legacy-overview-wrap">
-      <div className="legacy-overview-head">
-        <div>
-          <span className="eyebrow">Resumo consolidado do Tracking</span>
-          <strong>Mesma regra de contagem do Painel Operacional atual</strong>
-        </div>
-        <span>{overview.sourceUpdatedAt ? 'Fonte: ' + fmtDate(overview.sourceUpdatedAt) : 'Fonte: banco operacional'}</span>
-      </div>
-      <div className="legacy-kpi-grid">
-        {cards.map((card) => (
-          <div className={'legacy-kpi-card ' + ('tone' in card ? card.tone : '')} key={card.label}>
-            <span>{card.label}</span>
-            <strong>{card.value}</strong>
-            <small>{card.note}</small>
-          </div>
-        ))}
-      </div>
-      <div className="legacy-weight-grid">
-        <div><span>Peso total programado</span><strong>{formatWhole(overview.programmedWeightKg)} kg</strong></div>
-        <div><span>Peso total soldado</span><strong>{formatWhole(overview.weldedWeightKg)} kg</strong><small>Enviado {formatWhole(overview.sentWeightKg)} kg</small></div>
-        <div><span>Peso pendente de produção</span><strong>{formatWhole(overview.pendingWeightKg)} kg</strong></div>
-      </div>
-    </section>
   );
 }
 

@@ -108,7 +108,12 @@ function statusFor(row: HubDemandRow): DemandStatus {
   const status = normalize(row.current_status);
   const progress = Number(row.overall_progress || 0);
 
-  if (group.includes('enviado') || status.includes('finalizado') || progress >= 100) return 'completed';
+  if (
+    group.includes('enviado')
+    || status.includes('finalizado')
+    || normalize(row.project_status).includes('finished')
+    || normalize(row.project_status).includes('enviado')
+  ) return 'completed';
   if (group.includes('on hold') || status.includes('on hold') || status.startsWith('aguardando')) return 'waiting';
 
   const finish = row.replanned_finish || row.planned_finish;
