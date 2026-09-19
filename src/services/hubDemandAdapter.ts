@@ -61,11 +61,30 @@ function stageMapFromTrackingKey(stageKey?: string | null, label?: string | null
   return null;
 }
 
+function hhStageMappingIsReliable(row: HubDemandRow) {
+  if (row.hh_status !== 'open') return false;
+
+  const activity = normalize(row.hh_activity_name);
+  const key = normalize(row.hh_tracking_stage_key);
+
+  if (!activity || !key) return false;
+  if (activity === 'montagem' && key === 'preassembly') return true;
+  if (activity === 'solda' && key === 'welding') return true;
+  if ((activity.includes('hydro') || activity === 'th') && key === 'hydro') return true;
+  if (activity.includes('pintura') && key === 'painting') return true;
+  if (
+    (activity.includes('qualidade') || activity.includes('inspecao'))
+    && ['scan-initial', 'nde', 'scan-final', 'hydro', 'final-inspection'].includes(key)
+  ) return true;
+
+  return false;
+}
+
 function stageMap(row: HubDemandRow): StageMap {
   const group = normalize(row.current_stage);
   const status = normalize(row.current_status);
 
-  if (row.hh_status === 'open') {
+  if (hhStageMappingIsReliable(row)) {
     const hhStage = stageMapFromTrackingKey(row.hh_tracking_stage_key, row.hh_tracking_stage_name || row.hh_activity_name);
     if (hhStage) return hhStage;
   }
@@ -158,7 +177,7 @@ function priorityFor(row: HubDemandRow, status: DemandStatus): Priority {
 }
 
 function progressFor(row: HubDemandRow) {
-  const raw = row.hh_status === 'open' && row.hh_progress_percent != null
+  const raw = hhStageMappingIsReliable(row) && row.hh_progress_percent != null
     ? Number(row.hh_progress_percent)
     : Number(row.overall_progress || 0);
   if (!Number.isFinite(raw)) return 0;
@@ -210,7 +229,7 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
         row.archived ? 'Arquivo histórico: ' + (row.archive_source || 'OLD') : '',
         row.hh_status === 'open'
           ? 'Apontamento em execução: ' + (row.hh_activity_name || row.hh_tracking_stage_name || 'atividade')
-            + ' · ' + (row.hh_progress_percent ?? 0) + '%'
+            + (hhStageMappingIsReliable(row) ? ' · ' + (row.hh_progress_percent ?? 0) + '%' : ' · etapa em validação')
             + (row.hh_total_workers ? ' · equipe ' + row.hh_total_workers : '')
           : '',
         sourceStatus ? 'Tracking: ' + sourceStatus : '',
