@@ -84,6 +84,7 @@ export interface Demand {
   source: DemandSource;
   archived?: boolean;
   archiveSource?: string;
+  onHold?: boolean;
   activityKey?: string;
   note?: string;
   blocker?: DemandBlocker;

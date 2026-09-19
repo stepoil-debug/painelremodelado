@@ -1769,7 +1769,7 @@ function Portfolio(props: {
   const active = current.filter((d) => d.status !== 'completed');
   const activeGroups = currentGroups.filter((group) => group.demands.some((d) => d.status !== 'completed'));
   const late = currentGroups.filter((group) => group.demands.some((d) => effectiveStatus(d) === 'late')).length;
-  const blocked = currentGroups.filter((group) => group.demands.some((d) => d.status === 'blocked')).length;
+  const onHold = currentGroups.filter((group) => group.demands.some((d) => d.onHold === true)).length;
   const avg = active.length ? Math.round(active.reduce((sum, d) => sum + d.progress, 0) / active.length) : 0;
   const incoming = props.sector === 'all'
     ? new Set(active.map((d) => d.sector)).size
@@ -1808,7 +1808,7 @@ function Portfolio(props: {
           label={props.sector === 'all' ? 'BSPs no Tracking' : 'BSPs na caixa'}
         />
         <Metric value={late} label="Atrasadas" danger={late > 0} />
-        <Metric value={blocked} label="Bloqueadas" warning={blocked > 0} />
+        <Metric value={onHold} label="On Hold" warning={onHold > 0} />
         <Metric value={avg + '%'} label="Avanço médio" />
         <Metric value={incoming} label={props.sector === 'all' ? 'Setores ativos' : 'Próximas'} />
       </section>

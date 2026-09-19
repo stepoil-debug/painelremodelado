@@ -170,6 +170,7 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       source: 'hub_readonly',
       archived: Boolean(row.archived),
       archiveSource: row.archive_source || undefined,
+      onHold: normalize(row.project_status) === 'on hold',
       note: [
         row.archived ? 'Arquivo histórico: ' + (row.archive_source || 'OLD') : '',
         sourceStatus ? 'Tracking: ' + sourceStatus : '',
