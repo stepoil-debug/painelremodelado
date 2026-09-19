@@ -63,6 +63,7 @@ export interface DemandBlocker {
 export interface Demand {
   id: string;
   bsp: string;
+  projectGroupKey?: string;
   iso: string;
   project?: string;
   client?: string;

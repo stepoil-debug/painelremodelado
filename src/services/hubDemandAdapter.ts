@@ -146,6 +146,7 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
     return {
       id: 'hub-' + String(row.region || 'BR') + '-' + String(row.iso_key || bsp),
       bsp,
+      projectGroupKey: String(row.project_row_id || bsp),
       iso: compactIso(row),
       project: row.project_display || ('BSP ' + bsp),
       client: row.client || '—',
