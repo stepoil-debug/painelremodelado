@@ -102,6 +102,37 @@ async function requestHub<T>(payload: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
+async function requestHubBlob(payload: Record<string, unknown>): Promise<Blob> {
+  if (!proxyUrl) throw new Error('Hub operacional não configurado neste ambiente.');
+
+  const response = await fetch(proxyUrl, {
+    method: 'POST',
+    credentials: proxyUrl === directEdgeApi ? 'omit' : 'include',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(getPanelToken() ? { Authorization: 'Bearer ' + getPanelToken() } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const data = await response.json().catch(() => ({})) as { error?: string };
+      throw new Error(data.error || 'Não foi possível carregar o PDF.');
+    }
+    throw new Error('Não foi possível carregar o PDF.');
+  }
+
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/pdf')) {
+    throw new Error('O arquivo recebido não é um PDF válido.');
+  }
+
+  return response.blob();
+}
+
 export async function loadHubHealth() {
   return requestHub<HubHealth>({ action: 'health' });
 }
@@ -259,6 +290,17 @@ export async function loadHubDrawingAttachments(projectKey: string, iso = ''): P
     iso,
   });
   return response.data;
+}
+
+export async function loadHubDrawingAttachmentPdf(
+  projectKey: string,
+  attachmentId: number,
+): Promise<Blob> {
+  return requestHubBlob({
+    action: 'drawing_attachment_pdf',
+    projectKey,
+    attachmentId,
+  });
 }
 
 export async function loadHubDrawingAttachmentUrl(

@@ -323,6 +323,77 @@ Deno.serve(async (request: Request) => {
     });
   }
 
+
+  if (action === "drawing_attachment_pdf") {
+    const projectKey = String(body.projectKey || "").trim();
+    const attachmentId = Number(body.attachmentId || 0);
+    if (!projectKey || !attachmentId) {
+      return json({ ok: false, error: "projectKey e attachmentId são obrigatórios." }, 400);
+    }
+
+    const smartsheetToken = Deno.env.get("SMARTSHEET_ACCESS_TOKEN");
+    if (!smartsheetToken) {
+      return json({ ok: false, error: "Integração Smartsheet não configurada." }, 503);
+    }
+
+    const DRAWING_SHEET_ID = 2580648465590148;
+    const metadataResponse = await fetch(
+      "https://api.smartsheet.com/2.0/sheets/" + DRAWING_SHEET_ID + "/attachments/" + attachmentId,
+      {
+        headers: {
+          Authorization: "Bearer " + smartsheetToken,
+          "Content-Type": "application/json",
+          "smartsheet-integration-source": "APPLICATION,STEP Oil & Gas,Painel Operacional Remodelado",
+        },
+      }
+    );
+
+    const metadataRaw = await metadataResponse.text();
+    if (!metadataResponse.ok) {
+      return json({ ok: false, error: "Não foi possível localizar o PDF no Smartsheet." }, 502);
+    }
+
+    const attachment = JSON.parse(metadataRaw) as Record<string, unknown>;
+    const parentId = Number(attachment.parentId || 0);
+
+    const { data: allowedRow, error: rowError } = await admin.rpc(
+      "ops_panel_drawing_attachment_parent_allowed",
+      { p_project_key: projectKey, p_parent_id: parentId }
+    );
+
+    if (rowError || allowedRow !== true) {
+      return json({ ok: false, error: "Este anexo não pertence ao projeto selecionado." }, 403);
+    }
+
+    const sourceUrl = String(attachment.url || "");
+    if (!sourceUrl) {
+      return json({ ok: false, error: "O Smartsheet não retornou URL temporária para este PDF." }, 502);
+    }
+
+    const pdfResponse = await fetch(sourceUrl, {
+      redirect: "follow",
+      headers: { "Accept": "application/pdf,*/*;q=0.8" },
+    });
+
+    if (!pdfResponse.ok) {
+      return json({ ok: false, error: "Não foi possível carregar o conteúdo do PDF." }, 502);
+    }
+
+    const bytes = await pdfResponse.arrayBuffer();
+    const name = String(attachment.name || "drawing.pdf").replace(/[\r\n"]/g, "_");
+
+    return new Response(bytes, {
+      status: 200,
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/pdf",
+        "Content-Disposition": 'inline; filename="' + name + '"',
+        "Cache-Control": "private, no-store, max-age=0",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
+  }
+
   if (action === "drawing_attachment_url") {
     const projectKey = String(body.projectKey || "").trim();
     const attachmentId = Number(body.attachmentId || 0);

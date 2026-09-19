@@ -35,7 +35,7 @@ import {
   hubConfigured,
   loadHubDemands,
   loadHubDrawingAttachments,
-  loadHubDrawingAttachmentUrl,
+  loadHubDrawingAttachmentPdf,
   loadHubEvidence,
   loadHubProject,
   type HubDrawingAttachment,
@@ -1204,11 +1204,18 @@ function DrawingPdfModal({
           </div>
           <div className="drawing-pdf-actions">
             <a href={url} target="_blank" rel="noreferrer"><Eye size={14} /> Abrir em nova aba</a>
+            <a href={url} download={name}><FileText size={14} /> Baixar PDF</a>
             <button type="button" onClick={onClose}><XCircle size={20} /></button>
           </div>
         </header>
         <div className="drawing-pdf-frame-wrap">
-          <iframe src={url} title={name} className="drawing-pdf-frame" />
+          <object data={url} type="application/pdf" className="drawing-pdf-frame" aria-label={name}>
+            <div className="drawing-pdf-fallback">
+              <FileText size={28} />
+              <strong>O navegador não conseguiu renderizar o PDF.</strong>
+              <span>Use “Abrir em nova aba” ou “Baixar PDF”.</span>
+            </div>
+          </object>
         </div>
       </div>
     </div>
@@ -1247,6 +1254,12 @@ function RealSourcesPanel({ detail, loading, iso }: {
   const [pdfLoadingId, setPdfLoadingId] = useState<number | null>(null);
 
   useEffect(() => {
+    return () => {
+      if (pdfViewer?.url?.startsWith('blob:')) URL.revokeObjectURL(pdfViewer.url);
+    };
+  }, [pdfViewer]);
+
+  useEffect(() => {
     if (!projectKey) {
       setDrawingAttachments(null);
       return;
@@ -1280,17 +1293,29 @@ function RealSourcesPanel({ detail, loading, iso }: {
     setPdfLoadingId(attachment.id);
     setAttachmentError('');
     try {
-      const result = await loadHubDrawingAttachmentUrl(projectKey, attachment.id);
-      setPdfViewer({
-        name: result.name || attachment.name,
-        revision: attachment.revision || '',
-        url: result.url,
+      const blob = await loadHubDrawingAttachmentPdf(projectKey, attachment.id);
+      const blobUrl = URL.createObjectURL(blob);
+
+      setPdfViewer((current) => {
+        if (current?.url?.startsWith('blob:')) URL.revokeObjectURL(current.url);
+        return {
+          name: attachment.name,
+          revision: attachment.revision || '',
+          url: blobUrl,
+        };
       });
     } catch (error) {
       setAttachmentError(error instanceof Error ? error.message : 'Não foi possível abrir o PDF.');
     } finally {
       setPdfLoadingId(null);
     }
+  }
+
+  function closeDrawingPdf() {
+    setPdfViewer((current) => {
+      if (current?.url?.startsWith('blob:')) URL.revokeObjectURL(current.url);
+      return null;
+    });
   }
 
   if (loading) {
@@ -1478,7 +1503,7 @@ function RealSourcesPanel({ detail, loading, iso }: {
           name={pdfViewer.name}
           revision={pdfViewer.revision}
           url={pdfViewer.url}
-          onClose={() => setPdfViewer(null)}
+          onClose={closeDrawingPdf}
         />
       )}
     </div>
