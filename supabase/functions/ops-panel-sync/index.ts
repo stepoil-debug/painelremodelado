@@ -206,6 +206,126 @@ function deriveLogistics(cells: Map<string, any>) {
   };
 }
 
+function pctValue(cells: Map<string, any>, title: string): number | null {
+  const value = (raw(cells, title) || display(cells, title)).trim();
+  if (!value) return null;
+  const normalized = value.replace("%", "").replace(",", ".").trim().toUpperCase();
+  if (["N/A","NA","#N/A"].includes(normalized)) return 100;
+  const number = Number(normalized);
+  if (!Number.isFinite(number)) return null;
+  if (value.includes("%")) return Math.max(0, Math.min(100, number));
+  if (number >= 0 && number <= 1.0001) return Math.max(0, Math.min(100, number * 100));
+  return Math.max(0, Math.min(100, number));
+}
+
+function truthySheet(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return ["true","1","yes","sim","complete","completed","finished","project finished","finished and delivered"].includes(normalized);
+}
+
+function deriveTrackingArchive(source: Source, cells: Map<string, any>) {
+  const projectKey = raw(cells, "Project") || display(cells, "Project");
+  const drawing = display(cells, "Drawing");
+  const item = display(cells, "Item");
+  const projectType = display(cells, "Project Type");
+  const statusText = [
+    display(cells, "Status"),
+    display(cells, "Spool Process Status"),
+    display(cells, "Job Process Status"),
+    display(cells, "Overall Project Status"),
+    display(cells, "PROJECT STATUS"),
+    display(cells, "FABRICATION STATUS"),
+  ].filter(Boolean).join(" · ");
+
+  const packagePct = pctValue(cells, "Package and Delivered");
+  const finalInspectionPct = pctValue(cells, "Final Inspection");
+  const overallPct = pctValue(cells, "% Individual Progress")
+    ?? pctValue(cells, "% Complete - Advance")
+    ?? pctValue(cells, "% Overall Progress")
+    ?? 0;
+
+  const finishedFlag = display(cells, "Project Finished?");
+  const isFinished =
+    truthySheet(finishedFlag)
+    || /project finished|finished and delivered|conclu[ií]d|delivered/i.test(statusText)
+    || packagePct === 100;
+
+  const isHold = /\bon\s*hold\b|\bhold\b/i.test(statusText);
+
+  const stageDefs = [
+    ["Drawing Execution Advance%", "Engenharia", "Liberação de Engenharia"],
+    ["Procuremnt Status %", "Suprimentos", "Procurement"],
+    ["Material Separation", "Suprimentos", "Separação de Material"],
+    ["Material Release to Fabrication", "Suprimentos", "Liberação para Fabricação"],
+    ["Withdrew Material", "Caldeiraria", "Retirada de Material"],
+    ["Welding Preparation", "Caldeiraria", "Preparação para Solda"],
+    ["Spool Assemble and tack weld", "Caldeiraria", "Caldeiraria / Fit-up"],
+    ["Full welding execution", "Solda", "Soldagem"],
+    ["Initial Dimensional Inspection/3D", "Qualidade", "Inspeção Dimensional Inicial / 3D"],
+    ["Final Dimensional Inpection/3D (QC)", "Qualidade", "Inspeção Dimensional Final / 3D"],
+    ["Non Destructive Examination (QC)", "Qualidade", "END"],
+    ["Hydro Test Pressure (QC)", "Qualidade", "Hydro Test"],
+    ["HDG", "Pintura", "HDG"],
+    ["FBE", "Pintura", "FBE"],
+    ["HDG / FBE.  (PAINT)", "Pintura", "HDG / FBE"],
+    ["Surface preparation and/or coating", "Pintura", "Pintura / Revestimento"],
+    ["Final Inspection", "Qualidade", "Inspeção Final"],
+    ["Package and Delivered", "Expedição", "Liberação / Expedição"],
+  ] as const;
+
+  let currentStage = "PCP";
+  let currentStatus = "Planejamento / Sequenciamento";
+  for (const [column, stage, label] of stageDefs) {
+    const pct = pctValue(cells, column);
+    if (pct == null) continue;
+    if (pct < 100) {
+      currentStage = stage;
+      currentStatus = label;
+      break;
+    }
+    currentStage = stage;
+    currentStatus = label;
+  }
+
+  if (isHold) {
+    currentStage = "On Hold";
+    currentStatus = statusText || "On Hold";
+  } else if (isFinished) {
+    currentStage = "Enviado";
+    currentStatus = "Projeto finalizado / arquivado";
+  } else if (finalInspectionPct === 100 && packagePct !== 100) {
+    currentStage = "Expedição";
+    currentStatus = "Aguardando Expedição";
+  }
+
+  const genericDrawing = /^(ISO|DRAWING|LINE NUM|N\/A|NA)$/i.test(drawing.trim());
+  const isDetail = Boolean(drawing && !genericDrawing);
+
+  return {
+    project_key: projectKey,
+    item,
+    client: display(cells, "Client"),
+    vessel: display(cells, "Vessel"),
+    start_date: raw(cells, "Start Date"),
+    finish_date: raw(cells, "Finish Date"),
+    project_type: projectType,
+    drawing,
+    line_number: display(cells, "Line Nº"),
+    observations: display(cells, "OBSERVATIONS") || display(cells, "Observations"),
+    pm: display(cells, "PM"),
+    priority: display(cells, "Priority"),
+    current_stage: currentStage,
+    current_status: currentStatus,
+    overall_progress: isFinished ? 100 : overallPct,
+    project_finished: isFinished,
+    status_text: statusText,
+    project_finish_date: raw(cells, "Project Finish Date"),
+    source_archive: String(source.config?.archive_label ?? source.sheet_name),
+    archive_rank: Number(source.config?.archive_rank ?? 0),
+    is_detail: isDetail,
+  };
+}
+
 function deriveProductionPt(cells: Map<string, any>) {
   return {
     project_key: raw(cells, "Project") || display(cells, "Project"),
@@ -244,7 +364,9 @@ function derive(source: Source, cells: Map<string, any>, cellDisplay: Record<str
       data = deriveProductionPt(cells);
       break;
     default:
-      data = {};
+      data = source.source_key.startsWith("tracking_old_")
+        ? deriveTrackingArchive(source, cells)
+        : {};
   }
   return {
     ...data,

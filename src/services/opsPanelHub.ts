@@ -179,13 +179,17 @@ export interface HubDemandRow {
   pm?: string | null;
   project_status?: string | null;
   replanned_finish?: string | null;
+  archived?: boolean | null;
+  archive_source?: string | null;
+  archive_rank?: number | null;
 }
 
-export async function loadHubDemands(region = 'BR', limit = 2000): Promise<HubDemandRow[]> {
+export async function loadHubDemands(region = 'BR', limit = 2000, search = ''): Promise<HubDemandRow[]> {
   const response = await requestHub<{ ok: true; data: HubDemandRow[] }>({
     action: 'demands',
     region,
     limit,
+    search,
   });
   return Array.isArray(response.data) ? response.data : [];
 }

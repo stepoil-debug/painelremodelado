@@ -81,6 +81,8 @@ export interface Demand {
   progress: number;
   hhMinutes?: number;
   source: DemandSource;
+  archived?: boolean;
+  archiveSource?: string;
   activityKey?: string;
   note?: string;
   blocker?: DemandBlocker;

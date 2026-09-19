@@ -224,17 +224,20 @@ export default function App() {
     else if (normalized.includes('log') || normalized.includes('exped')) setSector('expedicao');
   }, [panelUser]);
 
-  async function refreshHub(showBanner = false) {
+  async function refreshHub(showBanner = false, searchQuery = '') {
     if (!hubConfigured || !panelUser) return;
     setLoadingHub(true);
     setHubError(null);
     try {
       const region = panelUser.operationRegion || 'BR';
-      const rows = await loadHubDemands(region, 3000);
+      const query = searchQuery.trim();
+      const rows = await loadHubDemands(region, query ? 1200 : 3000, query);
       setState(hubRowsToOperationalState(rows));
       setSelectedId(null);
       setExpandedId(null);
-      if (showBanner) setBanner(rows.length + ' itens reais carregados do Tracking.');
+      if (showBanner) setBanner(
+        rows.length + (searchQuery.trim() ? ' item(ns) encontrados no Tracking atual + arquivos OLD.' : ' itens reais carregados do Tracking atual.')
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Falha ao carregar dados reais.';
       setHubError(message);
@@ -251,8 +254,18 @@ export default function App() {
 
   useEffect(() => {
     if (!hubConfigured || !panelUser) return;
-    void refreshHub(false);
+    void refreshHub(false, '');
   }, [panelUser]);
+
+  useEffect(() => {
+    if (!hubConfigured || !panelUser) return;
+
+    const timer = window.setTimeout(() => {
+      void refreshHub(false, search);
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [search, panelUser]);
 
   useEffect(() => {
     if (!hubConfigured || !panelUser || !selected || selected.source !== 'hub_readonly') {
@@ -1875,7 +1888,7 @@ function BspTreeRow({
                   </div>
                   <div className="stage-ref">
                     <strong>{demand.stage}</strong>
-                    <span>{sectorName(demand.sector)} · há {elapsedLabel(demand.enteredAt)}</span>
+                    <span>{demand.archived ? (demand.archiveSource || 'Arquivo OLD') + ' · histórico' : sectorName(demand.sector) + ' · há ' + elapsedLabel(demand.enteredAt)}</span>
                   </div>
                   <div className="owner-ref">
                     <strong>{demand.assignedTo ?? 'Não atribuída'}</strong>
@@ -2103,7 +2116,7 @@ function DemandDetail(props: {
               <div><span>Origem</span><strong>{sectorName(demand.originSector)}</strong></div>
               <div><span>Próximo setor</span><strong>{next ? sectorName(next.sector) : 'Encerramento'}</strong></div>
               <div><span>Prioridade</span><strong>{priorityLabel[demand.priority]}</strong></div>
-              <div><span>Fonte</span><strong>{demand.source === 'hub_readonly' ? 'Tracking + Apontamento HH' : demand.source === 'hh_readonly' ? 'HH · leitura' : 'Demonstração'}</strong></div>
+              <div><span>Fonte</span><strong>{demand.archived ? 'Tracking histórico · ' + (demand.archiveSource || 'OLD') : demand.source === 'hub_readonly' ? 'Tracking + Apontamento HH' : demand.source === 'hh_readonly' ? 'HH · leitura' : 'Demonstração'}</strong></div>
             </div>
           </div>
 

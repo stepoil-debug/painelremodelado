@@ -138,7 +138,10 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       slaDueAt: dateAtEndOfDay(row.replanned_finish || row.planned_finish),
       progress,
       source: 'hub_readonly',
+      archived: Boolean(row.archived),
+      archiveSource: row.archive_source || undefined,
       note: [
+        row.archived ? 'Arquivo histórico: ' + (row.archive_source || 'OLD') : '',
         sourceStatus ? 'Tracking: ' + sourceStatus : '',
         row.line_number ? 'Linha: ' + row.line_number : '',
         row.project_type ? 'Tipo: ' + row.project_type : '',
@@ -158,7 +161,7 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
         title: status === 'completed' ? 'Item finalizado no Tracking' : 'Tracking sincronizado',
         description: (sourceStatus || 'Registro atualizado') + vessel + ' · avanço ' + progress + '%.',
         at: enteredAt,
-        actor: 'Tracking · Smartsheet',
+        actor: row.archived ? 'Tracking histórico · ' + (row.archive_source || 'OLD') : 'Tracking · Smartsheet',
         sector: mapped.sector,
       }],
     };

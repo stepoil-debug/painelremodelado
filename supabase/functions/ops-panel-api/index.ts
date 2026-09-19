@@ -470,16 +470,25 @@ Deno.serve(async (request: Request) => {
 
   if (action === "demands") {
     const region = String(body.region || "BR").trim() || "BR";
+    const search = String(body.search || "").trim();
     const requestedLimit = Number(body.limit || 2000);
     const limit = Number.isFinite(requestedLimit)
-      ? Math.max(1, Math.min(Math.trunc(requestedLimit), 5000))
+      ? Math.max(1, Math.min(Math.trunc(requestedLimit), search ? 2000 : 5000))
       : 2000;
-    const { data, error } = await admin.rpc("ops_panel_get_demands", {
-      p_region: region,
-      p_limit: limit,
-    });
+
+    const rpcName = search ? "ops_panel_search_demands" : "ops_panel_get_demands";
+    const rpcArgs = search
+      ? { p_region: region, p_search: search, p_limit: limit }
+      : { p_region: region, p_limit: limit };
+
+    const { data, error } = await admin.rpc(rpcName, rpcArgs);
     if (error) return json({ ok: false, error: error.message }, 500);
-    return json({ ok: true, data: Array.isArray(data) ? data : [], generatedAt: new Date().toISOString() });
+    return json({
+      ok: true,
+      data: Array.isArray(data) ? data : [],
+      search,
+      generatedAt: new Date().toISOString(),
+    });
   }
 
   return json({ ok: false, error: "Ação inválida." }, 400);
