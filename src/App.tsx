@@ -77,6 +77,7 @@ import {
 
 type PageKey = 'portfolio' | 'live' | 'blocks' | 'notifications' | 'analytics';
 type ListMode = 'table' | 'board';
+type PortfolioStatusFilter = 'all' | DemandStatus | 'on_hold';
 type SectorFilter = 'all' | SectorKey;
 
 const statusLabel: Record<DemandStatus, string> = {
@@ -155,7 +156,7 @@ export default function App() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [mode, setMode] = useState<ListMode>('table');
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | DemandStatus>('all');
+  const [statusFilter, setStatusFilter] = useState<PortfolioStatusFilter>('all');
   const [priorityOnly, setPriorityOnly] = useState(false);
   const [lateOnly, setLateOnly] = useState(false);
   const [loadingHH, setLoadingHH] = useState(!hubConfigured && liveHHReadOnlyEnabled);
@@ -1736,8 +1737,8 @@ function Portfolio(props: {
   setMode: (value: ListMode) => void;
   search: string;
   setSearch: (value: string) => void;
-  statusFilter: 'all' | DemandStatus;
-  setStatusFilter: (value: 'all' | DemandStatus) => void;
+  statusFilter: PortfolioStatusFilter;
+  setStatusFilter: (value: PortfolioStatusFilter) => void;
   priorityOnly: boolean;
   setPriorityOnly: (value: boolean) => void;
   lateOnly: boolean;
@@ -1756,7 +1757,10 @@ function Portfolio(props: {
   const filtered = useMemo(() => {
     return props.demands
       .filter((d) => props.sector === 'all' || d.sector === props.sector)
-      .filter((d) => props.statusFilter === 'all' || effectiveStatus(d) === props.statusFilter)
+      .filter((d) =>
+        props.statusFilter === 'all'
+        || (props.statusFilter === 'on_hold' ? d.onHold === true : effectiveStatus(d) === props.statusFilter)
+      )
       .filter((d) => !props.priorityOnly || d.priority === 'critical' || d.priority === 'high')
       .filter((d) => !props.lateOnly || effectiveStatus(d) === 'late')
       .filter((d) => matchesDemandSearch(d, props.search))
@@ -1835,10 +1839,28 @@ function Portfolio(props: {
           />
           {props.search && <button type="button" className="search-clear" onClick={() => props.setSearch('')}>Limpar</button>}
         </label>
-        <label className="filter-field"><span>Setor</span><select value={props.sector} onChange={(e) => props.setSector(e.target.value as SectorFilter)}><option value="all">Todos os setores</option>{sectors.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}</select></label>
-        <label className="filter-field"><span>Status</span><select value={props.statusFilter} onChange={(e) => props.setStatusFilter(e.target.value as 'all' | DemandStatus)}><option value="all">Todos</option><option value="new">Novas</option><option value="in_progress">Em execução</option><option value="waiting">Aguardando</option><option value="blocked">Bloqueadas</option><option value="late">Atrasadas</option><option value="completed">Concluídas</option></select></label>
-        <button className={'flag-filter ' + (props.lateOnly ? 'active danger' : '')} onClick={() => props.setLateOnly(!props.lateOnly)}><AlertTriangle size={14} /> Só atrasadas</button>
-        <button className={'flag-filter ' + (props.priorityOnly ? 'active' : '')} onClick={() => props.setPriorityOnly(!props.priorityOnly)}><CircleDot size={14} /> Prioridade</button>
+        <label className="filter-field select-filter sector-filter">
+          <span>Setor</span>
+          <select value={props.sector} onChange={(e) => props.setSector(e.target.value as SectorFilter)}>
+            <option value="all">Todos os setores</option>
+            {sectors.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}
+          </select>
+        </label>
+        <label className="filter-field select-filter status-filter">
+          <span>Status</span>
+          <select value={props.statusFilter} onChange={(e) => props.setStatusFilter(e.target.value as PortfolioStatusFilter)}>
+            <option value="all">Todos</option>
+            <option value="new">Novas</option>
+            <option value="in_progress">Em execução</option>
+            <option value="waiting">Aguardando</option>
+            <option value="on_hold">On Hold</option>
+            <option value="blocked">Bloqueadas</option>
+            <option value="late">Atrasadas</option>
+            <option value="completed">Concluídas</option>
+          </select>
+        </label>
+        <button className={'flag-filter late-filter ' + (props.lateOnly ? 'active danger' : '')} onClick={() => props.setLateOnly(!props.lateOnly)}><AlertTriangle size={14} /> Só atrasadas</button>
+        <button className={'flag-filter priority-filter ' + (props.priorityOnly ? 'active' : '')} onClick={() => props.setPriorityOnly(!props.priorityOnly)}><CircleDot size={14} /> Prioridade</button>
         {props.search && <div className="search-feedback"><strong>{grouped.length}</strong> BSP(s) encontrada(s) para <span>“{props.search}”</span></div>}
       </section>
 
