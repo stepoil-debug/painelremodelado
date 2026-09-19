@@ -1110,3 +1110,94 @@ h1,h2,h3,p { margin-top: 0; }
   .evidence-photo-dialog-footer small { display: none; }
   .evidence-photo-dialog-head,.evidence-photo-dialog-footer { padding: 10px 12px; }
 }
+
+
+/* HH evidence grouped by process stage */
+.hh-stage-groups {
+  display: flex;
+  flex-direction: column;
+}
+.hh-stage-group {
+  padding: 15px 17px 18px;
+  border-top: 1px solid #E7EEF6;
+}
+.hh-stage-group:first-child { border-top: 0; }
+.hh-stage-group:nth-child(even) { background: #FBFDFF; }
+.hh-stage-group-head {
+  display: grid;
+  grid-template-columns: 38px minmax(0,1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 9px;
+}
+.hh-stage-number {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #EAF4FD;
+  color: #1355C2;
+  font: 700 9px 'IBM Plex Mono', monospace;
+}
+.hh-stage-title span,
+.hh-stage-title strong {
+  display: block;
+}
+.hh-stage-title span {
+  color: #8B9CAD;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.hh-stage-title strong {
+  margin-top: 2px;
+  color: #0B2340;
+  font-size: 12px;
+}
+.hh-stage-summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.hh-stage-summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 7px;
+  border: 1px solid #E2EBF4;
+  border-radius: 999px;
+  background: #fff;
+  color: #64798D;
+  font: 7px 'IBM Plex Mono', monospace;
+  white-space: nowrap;
+}
+.hh-photo-stage-chip {
+  position: absolute;
+  left: 7px;
+  top: 7px;
+  max-width: calc(100% - 14px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(7,28,48,.78);
+  color: #fff;
+  font-size: 7px;
+  font-weight: 700;
+  backdrop-filter: blur(4px);
+}
+@media (max-width: 760px) {
+  .hh-stage-group { padding: 13px 10px 15px; }
+  .hh-stage-group-head {
+    grid-template-columns: 34px minmax(0,1fr);
+  }
+  .hh-stage-summary {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}

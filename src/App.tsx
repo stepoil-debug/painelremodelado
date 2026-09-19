@@ -728,6 +728,119 @@ function sessionPhotos(evidence: HubHHEvidence, sessionId: string) {
   return evidence.photos.filter((photo) => photo.session_id === sessionId);
 }
 
+type StagedPhoto = {
+  photo: HubHHEvidencePhoto;
+  stage: string;
+  session: HubHHSession | null;
+};
+
+type PhotoStageGroup = {
+  stage: string;
+  photos: StagedPhoto[];
+  sessions: HubHHSession[];
+};
+
+function normalizeStageName(value: string) {
+  const trimmed = value
+    .replace(/^etapa\s*:?\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const aliases: Record<string, string> = {
+    'montagem': 'Montagem',
+    'solda': 'Solda',
+    'controle de qualidade': 'Controle de Qualidade',
+    'controle de qualidade - solda': 'Controle de Qualidade - Solda',
+    'inspecao dimensional': 'Inspeção Dimensional',
+    'inspeção dimensional': 'Inspeção Dimensional',
+    'hydro test': 'Hydro Test',
+    'th': 'Hydro Test',
+    'pintura': 'Pintura',
+  };
+
+  const key = trimmed
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+  return aliases[key] || trimmed || 'Etapa não identificada';
+}
+
+function captionStageInfo(caption?: string | null) {
+  const text = String(caption || '').trim();
+  if (!text) return { stage: '', next: '' };
+
+  const finishMatch = text.match(/fim\s+da\s+etapa\s*:\s*([^·]+?)(?:\s*·|$)/i);
+  const nextMatch = text.match(/pr[oó]xima\s*:\s*(.+)$/i);
+  const startMatch = text.match(/in[ií]cio(?:\s+da\s+etapa)?\s*:\s*([^·]+?)(?:\s*·|$)/i);
+
+  return {
+    stage: normalizeStageName(finishMatch?.[1] || startMatch?.[1] || ''),
+    next: normalizeStageName(nextMatch?.[1] || ''),
+  };
+}
+
+function buildPhotoStageGroups(evidence: HubHHEvidence): PhotoStageGroup[] {
+  const sessionById = new Map(evidence.sessions.map((session) => [session.id, session]));
+  const photos = [...evidence.photos].sort((a, b) => {
+    const aTime = new Date(a.taken_at || 0).getTime();
+    const bTime = new Date(b.taken_at || 0).getTime();
+    return aTime - bTime;
+  });
+
+  const staged: StagedPhoto[] = [];
+  const currentStageBySession = new Map<string, string>();
+
+  for (const photo of photos) {
+    const session = sessionById.get(photo.session_id) || null;
+    const captionInfo = captionStageInfo(photo.caption);
+    const metadataActivity = normalizeStageName(String(photo.metadata?.activity || ''));
+
+    let stage = '';
+    if (metadataActivity && metadataActivity !== 'Etapa não identificada') {
+      stage = metadataActivity;
+    } else if (captionInfo.stage && captionInfo.stage !== 'Etapa não identificada') {
+      stage = captionInfo.stage;
+    } else {
+      stage = currentStageBySession.get(photo.session_id) || '';
+    }
+
+    if (!stage || stage === 'Etapa não identificada') {
+      stage = normalizeStageName(
+        String(session?.activity_name || session?.activity_key || 'Etapa não identificada')
+      );
+    }
+
+    staged.push({ photo, stage, session });
+
+    if (captionInfo.next && captionInfo.next !== 'Etapa não identificada') {
+      currentStageBySession.set(photo.session_id, captionInfo.next);
+    } else if (stage && stage !== 'Etapa não identificada') {
+      currentStageBySession.set(photo.session_id, stage);
+    }
+  }
+
+  const groups = new Map<string, PhotoStageGroup>();
+  for (const item of staged) {
+    const existing = groups.get(item.stage) || { stage: item.stage, photos: [], sessions: [] };
+    existing.photos.push(item);
+    if (item.session && !existing.sessions.some((session) => session.id === item.session?.id)) {
+      existing.sessions.push(item.session);
+    }
+    groups.set(item.stage, existing);
+  }
+
+  return [...groups.values()];
+}
+
+function photoStageLabel(evidence: HubHHEvidence | null, photoId: string) {
+  if (!evidence) return '';
+  for (const group of buildPhotoStageGroups(evidence)) {
+    if (group.photos.some((item) => item.photo.id === photoId)) return group.stage;
+  }
+  return '';
+}
+
 function HHEvidenceGallery({ evidence, loading, onOpenPhoto }: {
   evidence: HubHHEvidence | null;
   loading: boolean;
@@ -756,58 +869,59 @@ function HHEvidenceGallery({ evidence, loading, onOpenPhoto }: {
     );
   }
 
+  const groups = buildPhotoStageGroups(evidence);
+
   return (
     <div className="section-card hh-evidence-card">
       <div className="section-card-head">
-        <div><span className="section-mono">Apontamento HH</span><h2>Evidências fotográficas reais</h2></div>
-        <span className="live-source-badge"><i /> {evidence.photos.length} FOTO(S)</span>
+        <div><span className="section-mono">Apontamento HH</span><h2>Evidências por etapa do processo</h2></div>
+        <span className="live-source-badge"><i /> {evidence.photos.length} FOTO(S) · {groups.length} ETAPA(S)</span>
       </div>
 
-      <div className="hh-evidence-sessions">
-        {evidence.sessions.map((session: HubHHSession) => {
-          const photos = sessionPhotos(evidence, session.id);
-          const workers = session.workers || [];
+      <div className="hh-stage-groups">
+        {groups.map((group, groupIndex) => {
+          const totalHH = group.sessions.reduce((sum, session) => sum + Number(session.total_hh || 0), 0);
+          const workers = [...new Set(group.sessions.flatMap((session) => (session.workers || []).map((worker) => worker.worker_name)))];
+
           return (
-            <section className="hh-session-group" key={session.id}>
-              <div className="hh-session-head">
-                <div>
-                  <span>{session.activity_name || session.activity_key || 'Apontamento HH'}</span>
-                  <strong>{session.status === 'open' ? 'Sessão aberta' : 'Sessão finalizada'}</strong>
+            <section className="hh-stage-group" key={group.stage}>
+              <div className="hh-stage-group-head">
+                <div className="hh-stage-number">{String(groupIndex + 1).padStart(2, '0')}</div>
+                <div className="hh-stage-title">
+                  <span>Etapa</span>
+                  <strong>{group.stage}</strong>
                 </div>
-                <div className="hh-session-stats">
-                  <span><Clock3 size={13} /> {session.total_hh ? Number(session.total_hh).toFixed(2) + ' HH' : session.elapsed_minutes ? session.elapsed_minutes + ' min' : '—'}</span>
-                  <span><Users size={13} /> {workers.length} pessoa(s)</span>
-                  <span>{fmtDate(session.start_at || undefined)}</span>
+                <div className="hh-stage-summary">
+                  <span><ImagePlus size={13} /> {group.photos.length} foto(s)</span>
+                  {totalHH > 0 && <span><Clock3 size={13} /> {totalHH.toFixed(2)} HH</span>}
+                  {workers.length > 0 && <span><Users size={13} /> {workers.length} pessoa(s)</span>}
                 </div>
               </div>
 
               {workers.length > 0 && (
                 <div className="hh-workers-line">
-                  <strong>Equipe:</strong> {workers.map((worker) => worker.worker_name).join(', ')}
+                  <strong>Equipe:</strong> {workers.join(', ')}
                 </div>
               )}
 
-              {photos.length > 0 ? (
-                <div className="hh-photo-grid">
-                  {photos.map((photo) => (
-                    <button className="hh-photo-card" type="button" onClick={() => onOpenPhoto(photo.id)} key={photo.id}>
-                      <div className="hh-photo-frame">
-                        {photo.signed_url
-                          ? <img src={photo.signed_url} alt={photoLabel(photo)} loading="lazy" />
-                          : <div className="hh-photo-missing"><ImagePlus size={20} /> Imagem indisponível</div>}
-                        <span className={'hh-photo-badge ' + photoMoment(photo)}>{photoLabel(photo)}</span>
-                        <span className="hh-photo-open">Ver foto</span>
-                      </div>
-                      <div className="hh-photo-meta">
-                        <strong>{photo.caption && !/\.jpg$/i.test(photo.caption) ? photo.caption : photoLabel(photo)}</strong>
-                        <span>{fmtDate(photo.taken_at || undefined)}{photo.uploaded_by_name ? ' · ' + photo.uploaded_by_name : ''}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="hh-session-no-photo">Sessão encontrada, mas sem foto vinculada.</div>
-              )}
+              <div className="hh-photo-grid">
+                {group.photos.map(({ photo }) => (
+                  <button className="hh-photo-card" type="button" onClick={() => onOpenPhoto(photo.id)} key={photo.id}>
+                    <div className="hh-photo-frame">
+                      {photo.signed_url
+                        ? <img src={photo.signed_url} alt={photoLabel(photo)} loading="lazy" />
+                        : <div className="hh-photo-missing"><ImagePlus size={20} /> Imagem indisponível</div>}
+                      <span className={'hh-photo-badge ' + photoMoment(photo)}>{photoLabel(photo)}</span>
+                      <span className="hh-photo-stage-chip">{group.stage}</span>
+                      <span className="hh-photo-open">Ver foto</span>
+                    </div>
+                    <div className="hh-photo-meta">
+                      <strong>{photo.caption && !/\.jpg$/i.test(photo.caption) ? photo.caption : photoLabel(photo)}</strong>
+                      <span>{fmtDate(photo.taken_at || undefined)}{photo.uploaded_by_name ? ' · ' + photo.uploaded_by_name : ''}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
             </section>
           );
         })}
@@ -818,12 +932,14 @@ function HHEvidenceGallery({ evidence, loading, onOpenPhoto }: {
 
 function EvidencePhotoModal({
   photos,
+  evidence,
   index,
   onClose,
   onPrevious,
   onNext,
 }: {
   photos: HubHHEvidencePhoto[];
+  evidence: HubHHEvidence | null;
   index: number;
   onClose: () => void;
   onPrevious: () => void;
@@ -831,6 +947,7 @@ function EvidencePhotoModal({
 }) {
   const photo = photos[index];
   if (!photo) return null;
+  const stage = photoStageLabel(evidence, photo.id);
 
   return (
     <div className="evidence-photo-modal" role="dialog" aria-modal="true" aria-label="Visualizador de evidências">
@@ -839,7 +956,7 @@ function EvidencePhotoModal({
       <div className="evidence-photo-dialog">
         <header className="evidence-photo-dialog-head">
           <div>
-            <span>{photoLabel(photo)}</span>
+            <span>{stage ? stage + ' · ' + photoLabel(photo) : photoLabel(photo)}</span>
             <strong>{index + 1} de {photos.length}</strong>
           </div>
           <button className="evidence-photo-close" type="button" onClick={onClose} aria-label="Fechar">
@@ -879,7 +996,7 @@ function EvidencePhotoModal({
 
         <footer className="evidence-photo-dialog-footer">
           <div>
-            <strong>{photo.caption && !/\.jpg$/i.test(photo.caption) ? photo.caption : photoLabel(photo)}</strong>
+            <strong>{stage ? stage + ' · ' : ''}{photo.caption && !/\.jpg$/i.test(photo.caption) ? photo.caption : photoLabel(photo)}</strong>
             <span>{fmtDate(photo.taken_at || undefined)}{photo.uploaded_by_name ? ' · ' + photo.uploaded_by_name : ''}</span>
           </div>
           <small>Use ← → para navegar · Esc para fechar</small>
@@ -1717,7 +1834,7 @@ function DemandDetail(props: {
               {hhPhotos.slice(0, 6).map((photo) => (
                 <button className="side-photo-link" type="button" onClick={() => openPhoto(photo.id)} key={photo.id}>
                   <img src={photo.signed_url} alt={photoLabel(photo)} loading="lazy" />
-                  <div><strong>{photoLabel(photo)}</strong><small>{fmtDate(photo.taken_at || undefined)}</small></div>
+                  <div><strong>{photoStageLabel(props.hhEvidence, photo.id) || photoLabel(photo)}</strong><small>{photoLabel(photo)} · {fmtDate(photo.taken_at || undefined)}</small></div>
                 </button>
               ))}
               {demand.evidences.map((e) => <div key={e.id}><span>IMG</span><div><strong>{e.label}</strong><small>{fmtDate(e.at)}</small></div></div>)}
@@ -1733,6 +1850,7 @@ function DemandDetail(props: {
       {photoModalIndex !== null && hhPhotos[photoModalIndex] && (
         <EvidencePhotoModal
           photos={hhPhotos}
+          evidence={props.hhEvidence}
           index={photoModalIndex}
           onClose={() => setPhotoModalIndex(null)}
           onPrevious={() => setPhotoModalIndex((current) => current === null ? null : (current - 1 + hhPhotos.length) % hhPhotos.length)}
