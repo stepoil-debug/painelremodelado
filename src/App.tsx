@@ -728,9 +728,10 @@ function sessionPhotos(evidence: HubHHEvidence, sessionId: string) {
   return evidence.photos.filter((photo) => photo.session_id === sessionId);
 }
 
-function HHEvidenceGallery({ evidence, loading }: {
+function HHEvidenceGallery({ evidence, loading, onOpenPhoto }: {
   evidence: HubHHEvidence | null;
   loading: boolean;
+  onOpenPhoto: (photoId: string) => void;
 }) {
   if (loading) {
     return (
@@ -789,18 +790,19 @@ function HHEvidenceGallery({ evidence, loading }: {
               {photos.length > 0 ? (
                 <div className="hh-photo-grid">
                   {photos.map((photo) => (
-                    <a className="hh-photo-card" href={photo.signed_url} target="_blank" rel="noreferrer" key={photo.id}>
+                    <button className="hh-photo-card" type="button" onClick={() => onOpenPhoto(photo.id)} key={photo.id}>
                       <div className="hh-photo-frame">
                         {photo.signed_url
                           ? <img src={photo.signed_url} alt={photoLabel(photo)} loading="lazy" />
                           : <div className="hh-photo-missing"><ImagePlus size={20} /> Imagem indisponível</div>}
                         <span className={'hh-photo-badge ' + photoMoment(photo)}>{photoLabel(photo)}</span>
+                        <span className="hh-photo-open">Ver foto</span>
                       </div>
                       <div className="hh-photo-meta">
                         <strong>{photo.caption && !/\.jpg$/i.test(photo.caption) ? photo.caption : photoLabel(photo)}</strong>
                         <span>{fmtDate(photo.taken_at || undefined)}{photo.uploaded_by_name ? ' · ' + photo.uploaded_by_name : ''}</span>
                       </div>
-                    </a>
+                    </button>
                   ))}
                 </div>
               ) : (
@@ -809,6 +811,79 @@ function HHEvidenceGallery({ evidence, loading }: {
             </section>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function EvidencePhotoModal({
+  photos,
+  index,
+  onClose,
+  onPrevious,
+  onNext,
+}: {
+  photos: HubHHEvidencePhoto[];
+  index: number;
+  onClose: () => void;
+  onPrevious: () => void;
+  onNext: () => void;
+}) {
+  const photo = photos[index];
+  if (!photo) return null;
+
+  return (
+    <div className="evidence-photo-modal" role="dialog" aria-modal="true" aria-label="Visualizador de evidências">
+      <button className="evidence-photo-backdrop" type="button" aria-label="Fechar visualizador" onClick={onClose} />
+
+      <div className="evidence-photo-dialog">
+        <header className="evidence-photo-dialog-head">
+          <div>
+            <span>{photoLabel(photo)}</span>
+            <strong>{index + 1} de {photos.length}</strong>
+          </div>
+          <button className="evidence-photo-close" type="button" onClick={onClose} aria-label="Fechar">
+            <XCircle size={22} />
+          </button>
+        </header>
+
+        <div className="evidence-photo-stage">
+          <button
+            className="evidence-photo-nav previous"
+            type="button"
+            onClick={onPrevious}
+            disabled={photos.length <= 1}
+            aria-label="Foto anterior"
+          >
+            <ArrowLeft size={21} />
+            <span>Anterior</span>
+          </button>
+
+          <div className="evidence-photo-image-wrap">
+            {photo.signed_url
+              ? <img src={photo.signed_url} alt={photoLabel(photo)} />
+              : <div className="evidence-photo-unavailable"><ImagePlus size={32} /> Imagem indisponível</div>}
+          </div>
+
+          <button
+            className="evidence-photo-nav next"
+            type="button"
+            onClick={onNext}
+            disabled={photos.length <= 1}
+            aria-label="Próxima foto"
+          >
+            <span>Próxima</span>
+            <ChevronRight size={21} />
+          </button>
+        </div>
+
+        <footer className="evidence-photo-dialog-footer">
+          <div>
+            <strong>{photo.caption && !/\.jpg$/i.test(photo.caption) ? photo.caption : photoLabel(photo)}</strong>
+            <span>{fmtDate(photo.taken_at || undefined)}{photo.uploaded_by_name ? ' · ' + photo.uploaded_by_name : ''}</span>
+          </div>
+          <small>Use ← → para navegar · Esc para fechar</small>
+        </footer>
       </div>
     </div>
   );
@@ -1477,6 +1552,7 @@ function DemandDetail(props: {
   const status = effectiveStatus(demand);
   const currentIndex = getStageIndex(demand.stageKey);
   const [phaseKey, setPhaseKey] = useState(demand.stageKey);
+  const [photoModalIndex, setPhotoModalIndex] = useState<number | null>(null);
   const phase = getStage(phaseKey) ?? getStage(demand.stageKey)!;
   const phaseIndex = getStageIndex(phase.key);
   const isCurrent = phase.key === demand.stageKey;
@@ -1493,6 +1569,38 @@ function DemandDetail(props: {
   const readOnly = demand.source !== 'demo';
 
   useEffect(() => setPhaseKey(demand.stageKey), [demand.stageKey]);
+
+  useEffect(() => {
+    if (photoModalIndex === null) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setPhotoModalIndex(null);
+        return;
+      }
+      if (!hhPhotos.length) return;
+      if (event.key === 'ArrowRight') {
+        setPhotoModalIndex((current) => current === null ? null : (current + 1) % hhPhotos.length);
+      }
+      if (event.key === 'ArrowLeft') {
+        setPhotoModalIndex((current) => current === null ? null : (current - 1 + hhPhotos.length) % hhPhotos.length);
+      }
+    }
+
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [photoModalIndex, hhPhotos.length]);
+
+  function openPhoto(photoId: string) {
+    const index = hhPhotos.findIndex((photo) => photo.id === photoId);
+    if (index >= 0) setPhotoModalIndex(index);
+  }
 
   return (
     <>
@@ -1571,7 +1679,7 @@ function DemandDetail(props: {
           </div>
 
           {demand.source === 'hub_readonly' && (
-            <HHEvidenceGallery evidence={props.hhEvidence} loading={props.evidenceLoading} />
+            <HHEvidenceGallery evidence={props.hhEvidence} loading={props.evidenceLoading} onOpenPhoto={openPhoto} />
           )}
 
           {demand.source === 'hub_readonly' && (
@@ -1607,10 +1715,10 @@ function DemandDetail(props: {
             <span className="section-mono">Evidências e anexos</span>
             <div className="docs-list">
               {hhPhotos.slice(0, 6).map((photo) => (
-                <a className="side-photo-link" href={photo.signed_url} target="_blank" rel="noreferrer" key={photo.id}>
+                <button className="side-photo-link" type="button" onClick={() => openPhoto(photo.id)} key={photo.id}>
                   <img src={photo.signed_url} alt={photoLabel(photo)} loading="lazy" />
                   <div><strong>{photoLabel(photo)}</strong><small>{fmtDate(photo.taken_at || undefined)}</small></div>
-                </a>
+                </button>
               ))}
               {demand.evidences.map((e) => <div key={e.id}><span>IMG</span><div><strong>{e.label}</strong><small>{fmtDate(e.at)}</small></div></div>)}
               {!props.evidenceLoading && !hhPhotos.length && !demand.evidences.length && <p className="muted-side">Nenhuma evidência vinculada a este ISO/SPL.</p>}
@@ -1621,6 +1729,16 @@ function DemandDetail(props: {
           <div className="secure-note"><ShieldCheck size={17} /><div><strong>{demand.source === 'hub_readonly' ? 'Dados reais · somente leitura' : 'Ambiente isolado'}</strong><span>{demand.source === 'hub_readonly' ? 'Os dados vêm do hub operacional e esta tela não escreve no Smartsheet.' : 'As ações da demo não escrevem no Apontamento HH.'}</span></div></div>
         </aside>
       </section>
+
+      {photoModalIndex !== null && hhPhotos[photoModalIndex] && (
+        <EvidencePhotoModal
+          photos={hhPhotos}
+          index={photoModalIndex}
+          onClose={() => setPhotoModalIndex(null)}
+          onPrevious={() => setPhotoModalIndex((current) => current === null ? null : (current - 1 + hhPhotos.length) % hhPhotos.length)}
+          onNext={() => setPhotoModalIndex((current) => current === null ? null : (current + 1) % hhPhotos.length)}
+        />
+      )}
     </>
   );
 }
