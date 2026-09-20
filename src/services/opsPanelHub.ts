@@ -399,6 +399,62 @@ export async function refreshCoreRegistration() {
 }
 
 
+export async function materializeCoreCandidate(projectKey: string) {
+  const response = await requestHub<{
+    ok: true;
+    data: Record<string, unknown>;
+    report?: HubCoreValidationReport;
+  }>({
+    action: 'core_materialize_candidate',
+    projectKey,
+  });
+  return response;
+}
+
+export interface HubCoreItemInput {
+  id?: string | null;
+  item_key?: string | null;
+  iso_code?: string | null;
+  spool_code?: string | null;
+  drawing_code?: string | null;
+  item_type?: 'SPOOL' | 'SUPPORT' | 'STRUCTURE' | 'FRAME' | 'OTHER';
+  description?: string | null;
+  line_number?: string | null;
+  material?: string | null;
+  size?: string | null;
+  schedule?: string | null;
+  weight_kg?: number | null;
+  painting_m2?: number | null;
+  quantity?: number | null;
+  joints?: number | null;
+  requires_3d?: boolean | null;
+  requires_assembly_simulation?: boolean | null;
+}
+
+export async function upsertCoreItem(projectKey: string, item: HubCoreItemInput) {
+  const response = await requestHub<{
+    ok: true;
+    data: { ok: true; item: Record<string, unknown> };
+    report?: HubCoreValidationReport;
+  }>({
+    action: 'core_upsert_item',
+    projectKey,
+    item,
+  });
+  return response;
+}
+
+export async function removeCoreItem(projectKey: string, itemId: string, reason = '') {
+  const response = await requestHub<{ ok: true; data: Record<string, unknown> }>({
+    action: 'core_remove_item',
+    projectKey,
+    itemId,
+    reason,
+  });
+  return response.data;
+}
+
+
 export interface HubHHWorker {
   id: string;
   session_id: string;
