@@ -640,6 +640,79 @@ Deno.serve(async (request: Request) => {
     return json({ ok: true, data, generatedAt: new Date().toISOString() });
   }
 
+  if (action === "core_materialize_candidate") {
+    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode criar uma BSP a partir da fila de validação." }, 403);
+    const projectKey = String(body.projectKey || "").trim();
+    if (!projectKey) return json({ ok: false, error: "projectKey é obrigatório." }, 400);
+    const { data, error } = await admin.rpc("ops_core_materialize_candidate", {
+      p_project_key: projectKey,
+      p_actor: actor,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    const { data: report } = await admin.rpc("ops_core_project_validation_report", {
+      p_project_key: projectKey,
+    });
+    return json({ ok: true, data, report, generatedAt: new Date().toISOString() });
+  }
+
+  if (action === "core_upsert_item") {
+    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode editar o cadastro operacional." }, 403);
+    const projectKey = String(body.projectKey || "").trim();
+    if (!projectKey) return json({ ok: false, error: "projectKey é obrigatório." }, 400);
+    const item = body.item && typeof body.item === "object"
+      ? body.item as Record<string, unknown>
+      : {};
+    const numberOrNull = (value: unknown) => {
+      if (value === null || value === undefined || value === "") return null;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const boolOrNull = (value: unknown) =>
+      value === true ? true : value === false ? false : null;
+
+    const { data, error } = await admin.rpc("ops_core_upsert_item", {
+      p_project_key: projectKey,
+      p_item_id: item.id || null,
+      p_item_key: item.item_key || null,
+      p_iso_code: item.iso_code || null,
+      p_spool_code: item.spool_code || null,
+      p_drawing_code: item.drawing_code || null,
+      p_item_type: item.item_type || "SPOOL",
+      p_description: item.description || null,
+      p_line_number: item.line_number || null,
+      p_material: item.material || null,
+      p_size: item.size || null,
+      p_schedule: item.schedule || null,
+      p_weight_kg: numberOrNull(item.weight_kg),
+      p_painting_m2: numberOrNull(item.painting_m2),
+      p_quantity: numberOrNull(item.quantity),
+      p_joints: numberOrNull(item.joints),
+      p_requires_3d: boolOrNull(item.requires_3d),
+      p_requires_assembly_simulation: boolOrNull(item.requires_assembly_simulation),
+      p_actor: actor,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    const { data: report } = await admin.rpc("ops_core_project_validation_report", {
+      p_project_key: projectKey,
+    });
+    return json({ ok: true, data, report, generatedAt: new Date().toISOString() });
+  }
+
+  if (action === "core_remove_item") {
+    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode retirar itens do escopo." }, 403);
+    const projectKey = String(body.projectKey || "").trim();
+    const itemId = String(body.itemId || "").trim();
+    if (!projectKey || !itemId) return json({ ok: false, error: "projectKey e itemId são obrigatórios." }, 400);
+    const { data, error } = await admin.rpc("ops_core_remove_item", {
+      p_project_key: projectKey,
+      p_item_id: itemId,
+      p_reason: String(body.reason || "").trim(),
+      p_actor: actor,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
   if (action === "core_cutover") {
     if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode validar e retirar uma BSP do Tracking." }, 403);
     const projectKey = String(body.projectKey || "").trim();
