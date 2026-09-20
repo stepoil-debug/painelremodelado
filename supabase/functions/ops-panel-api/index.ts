@@ -841,6 +841,41 @@ Deno.serve(async (request: Request) => {
     return json({ ok: true, data, generatedAt: new Date().toISOString() });
   }
 
+
+  if (action === "archive_catalog") {
+    const yearRaw = body.year;
+    const year = yearRaw === null || yearRaw === undefined || yearRaw === "" ? null : Number(yearRaw);
+    const search = String(body.search || "").trim();
+    const requestedLimit = Number(body.limit || 1000);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.max(1, Math.min(Math.trunc(requestedLimit), 5000))
+      : 1000;
+
+    if (year !== null && (!Number.isInteger(year) || year < 2000 || year > 2100)) {
+      return json({ ok: false, error: "Ano inválido." }, 400);
+    }
+
+    const { data, error } = await admin.rpc("ops_core_archive_catalog", {
+      p_year: year,
+      p_search: search || null,
+      p_limit: limit,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data: Array.isArray(data) ? data : [], generatedAt: new Date().toISOString() });
+  }
+
+  if (action === "annual_summary") {
+    const { data, error } = await admin.rpc("ops_core_annual_summary");
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data: Array.isArray(data) ? data : [], generatedAt: new Date().toISOString() });
+  }
+
+  if (action === "history_health") {
+    const { data, error } = await admin.rpc("ops_core_history_health");
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data: data || {}, generatedAt: new Date().toISOString() });
+  }
+
   if (action === "demands") {
     const region = String(body.region || "BR").trim() || "BR";
     const search = String(body.search || "").trim();
