@@ -444,6 +444,61 @@ export async function upsertCoreItem(projectKey: string, item: HubCoreItemInput)
   return response;
 }
 
+
+export type CoreDemandAction = 'accept' | 'start' | 'progress' | 'wait' | 'resume' | 'block' | 'complete';
+
+export async function mutateCoreDemand(
+  itemId: string,
+  operation: CoreDemandAction,
+  options: { progress?: number | null; note?: string } = {},
+) {
+  const response = await requestHub<{ ok: true; data: Record<string, unknown> }>({
+    action: 'core_stage_action',
+    itemId,
+    operation,
+    progress: options.progress ?? null,
+    note: options.note || '',
+  });
+  return response.data;
+}
+
+export interface HubCoreNotification {
+  id: string;
+  project_id?: string | null;
+  item_id?: string | null;
+  handoff_id?: string | null;
+  sector_key?: string | null;
+  recipient_email?: string | null;
+  notification_type: string;
+  title: string;
+  message: string;
+  severity: 'info' | 'warning' | 'danger' | 'success';
+  created_at: string;
+  read_at?: string | null;
+  acknowledged_at?: string | null;
+  resolved_at?: string | null;
+  project_display?: string | null;
+  item_display?: string | null;
+}
+
+export async function loadCoreNotifications(sector = '', user = '', limit = 200): Promise<HubCoreNotification[]> {
+  const response = await requestHub<{ ok: true; data: HubCoreNotification[] }>({
+    action: 'core_notifications',
+    sector,
+    user,
+    limit,
+  });
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+export async function markCoreNotificationRead(notificationId: string) {
+  const response = await requestHub<{ ok: true; data: Record<string, unknown> }>({
+    action: 'core_notification_read',
+    notificationId,
+  });
+  return response.data;
+}
+
 export async function removeCoreItem(projectKey: string, itemId: string, reason = '') {
   const response = await requestHub<{ ok: true; data: Record<string, unknown> }>({
     action: 'core_remove_item',
