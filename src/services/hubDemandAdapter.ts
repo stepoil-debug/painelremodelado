@@ -223,7 +223,10 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       progress,
       hhMinutes: row.hh_total_hh != null ? Math.round(Number(row.hh_total_hh) * 60) : undefined,
       activityKey: row.hh_activity_key || undefined,
-      source: 'hub_readonly',
+      source: row.source_mode === 'ops_core' ? 'ops_core' : 'hub_readonly',
+      sourceMode: row.source_mode || undefined,
+      coreProjectId: row.core_project_id || undefined,
+      coreItemId: row.core_item_id || undefined,
       archived: Boolean(row.archived),
       archiveSource: row.archive_source || undefined,
       onHold: normalize(row.project_status) === 'on hold',
@@ -234,7 +237,7 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
             + (hhStageMappingIsReliable(row) ? ' · ' + (row.hh_progress_percent ?? 0) + '%' : ' · etapa em validação')
             + (row.hh_total_workers ? ' · equipe ' + row.hh_total_workers : '')
           : '',
-        sourceStatus ? 'Tracking: ' + sourceStatus : '',
+        sourceStatus ? (row.source_mode === 'ops_core' ? 'OPS CORE: ' : 'Tracking: ') + sourceStatus : '',
         row.line_number ? 'Linha: ' + row.line_number : '',
         row.project_type ? 'Tipo: ' + row.project_type : '',
         row.source_version ? 'Versão: ' + row.source_version : '',
@@ -242,7 +245,7 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       blocker: normalize(row.current_stage).includes('on hold')
         ? {
             reason: 'other',
-            note: 'Item marcado como ON HOLD no Tracking.',
+            note: row.source_mode === 'ops_core' ? 'Item marcado como ON HOLD no OPS CORE.' : 'Item marcado como ON HOLD no Tracking.',
             createdAt: enteredAt,
           }
         : undefined,
@@ -250,10 +253,14 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       history: [{
         id: 'hub-event-' + row.region + '-' + row.iso_key,
         type: status === 'completed' ? 'completed' : 'progress',
-        title: status === 'completed' ? 'Item finalizado no Tracking' : 'Tracking sincronizado',
+        title: row.source_mode === 'ops_core'
+          ? (status === 'completed' ? 'Item concluído no OPS CORE' : 'OPS CORE atualizado')
+          : (status === 'completed' ? 'Item finalizado no Tracking' : 'Tracking sincronizado'),
         description: (sourceStatus || 'Registro atualizado') + vessel + ' · avanço ' + progress + '%.',
         at: enteredAt,
-        actor: row.archived ? 'Tracking histórico · ' + (row.archive_source || 'OLD') : 'Tracking · Smartsheet',
+        actor: row.source_mode === 'ops_core'
+          ? 'OPS CORE · STEP'
+          : (row.archived ? 'Tracking histórico · ' + (row.archive_source || 'OLD') : 'Tracking · Smartsheet'),
         sector: mapped.sector,
       }],
     };
