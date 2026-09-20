@@ -2,7 +2,10 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
+  ArrowUpDown,
   BarChart3,
   Bell,
   Boxes,
@@ -1983,6 +1986,7 @@ function Portfolio(props: {
   lastSyncAt: string | null;
   error: string | null;
 }) {
+  const [progressSort, setProgressSort] = useState<'none' | 'desc' | 'asc'>('none');
   const filtered = useMemo(() => {
     return props.demands
       .filter((d) => props.sector === 'all' || d.sector === props.sector)
@@ -1996,7 +2000,18 @@ function Portfolio(props: {
       .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority] || new Date(a.enteredAt).getTime() - new Date(b.enteredAt).getTime());
   }, [props.demands, props.sector, props.statusFilter, props.priorityOnly, props.lateOnly, props.search]);
 
-  const grouped = useMemo(() => groupDemandsByBsp(filtered), [filtered]);
+  const grouped = useMemo(() => {
+    const groups = groupDemandsByBsp(filtered);
+    if (progressSort === 'none') return groups;
+
+    return [...groups].sort((a, b) => {
+      const progressDiff = groupProgress(a.demands) - groupProgress(b.demands);
+      if (progressDiff !== 0) {
+        return progressSort === 'asc' ? progressDiff : -progressDiff;
+      }
+      return a.bsp.localeCompare(b.bsp, 'pt-BR', { numeric: true, sensitivity: 'base' });
+    });
+  }, [filtered, progressSort]);
   const current = props.sector === 'all' ? props.demands : props.demands.filter((d) => d.sector === props.sector);
   const currentGroups = groupDemandsByBsp(current);
   const active = current.filter((d) => d.status !== 'completed');
@@ -2095,7 +2110,22 @@ function Portfolio(props: {
       {props.mode === 'table' ? (
         <div className="demand-table">
           <div className="table-head">
-            <span>BSP / ISO</span><span>Projeto / Cliente</span><span>Etapa atual</span><span>Responsável</span><span>Avanço</span><span>Status</span><span />
+            <span>BSP / ISO</span>
+            <span>Projeto / Cliente</span>
+            <span>Etapa atual</span>
+            <span>Responsável</span>
+            <button
+              type="button"
+              className={'table-sort-button ' + (progressSort !== 'none' ? 'active' : '')}
+              onClick={() => setProgressSort((current) => current === 'desc' ? 'asc' : 'desc')}
+              aria-label={progressSort === 'asc' ? 'Ordenar avanço do maior para o menor' : 'Ordenar avanço do menor para o maior'}
+              title={progressSort === 'asc' ? 'Menor → maior. Clique para inverter.' : progressSort === 'desc' ? 'Maior → menor. Clique para inverter.' : 'Ordenar por avanço'}
+            >
+              <span>Avanço</span>
+              {progressSort === 'desc' ? <ArrowDown size={12} /> : progressSort === 'asc' ? <ArrowUp size={12} /> : <ArrowUpDown size={12} />}
+            </button>
+            <span>Status</span>
+            <span />
           </div>
           {grouped.map((group) => (
             <BspTreeRow
