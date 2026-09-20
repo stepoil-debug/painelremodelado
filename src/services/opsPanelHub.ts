@@ -236,7 +236,7 @@ export interface HubDemandRow {
   archived?: boolean | null;
   archive_source?: string | null;
   archive_rank?: number | null;
-  source_mode?: 'legacy_tracking' | 'ops_core' | 'archived' | null;
+  source_mode?: 'legacy_tracking' | 'ops_core' | 'archived' | 'pending_validation' | null;
   core_project_id?: string | null;
   core_item_id?: string | null;
   hh_session_id?: string | null;
@@ -308,7 +308,7 @@ export interface HubRegistrationCandidate {
   discovered_at: string;
   last_seen_at: string;
   validated_project_id?: string | null;
-  source_mode?: 'legacy_tracking' | 'ops_core' | 'archived' | null;
+  source_mode?: 'legacy_tracking' | 'ops_core' | 'archived' | 'pending_validation' | null;
   validation_status?: string | null;
   client?: string | null;
   vessel?: string | null;
