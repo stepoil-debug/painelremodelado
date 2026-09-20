@@ -550,6 +550,14 @@ Deno.serve(async (request: Request) => {
     }
   }
 
+  let drawingDetection: unknown = null;
+  if (results.some((row) => row.source === "drawing" && row.status !== "error")) {
+    const { data: detected, error: detectionError } = await admin.rpc("ops_core_detect_new_drawing_projects");
+    drawingDetection = detectionError
+      ? { ok: false, error: detectionError.message }
+      : detected;
+  }
+
   if (results.some((row) => row.source === "wip" || row.source === "drawing")) {
     await admin.rpc("ops_core_refresh_registration").catch(() => null);
   }
@@ -557,6 +565,7 @@ Deno.serve(async (request: Request) => {
   return json({
     ok: results.every((r) => r.status !== "error"),
     results,
+    drawing_detection: drawingDetection,
     migration_mode: legacyProjects > 0 ? "ops_core_hybrid" : "ops_core_only",
     legacy_projects: legacyProjects,
   });
