@@ -752,6 +752,37 @@ Deno.serve(async (request: Request) => {
     return json({ ok: true, data, generatedAt: new Date().toISOString() });
   }
 
+  if (action === "drawing_sync_now") {
+    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode forçar a atualização do Drawing." }, 403);
+
+    const { data: before, error: beforeError } = await admin.rpc("ops_panel_sync_status");
+    if (beforeError) return json({ ok: false, error: beforeError.message }, 500);
+
+    const { data: requestId, error: dispatchError } = await admin.rpc("ops_panel_dispatch_sync_sources", {
+      p_sources: ["drawing"],
+      p_force: true,
+    });
+    if (dispatchError) return json({ ok: false, error: dispatchError.message }, 500);
+
+    const drawingBefore = Array.isArray((before as any)?.sources)
+      ? (before as any).sources.find((row: any) => row?.source_key === "drawing") || null
+      : null;
+
+    return json({
+      ok: true,
+      data: {
+        request_id: requestId,
+        source: "drawing",
+        forced: true,
+        started_at: new Date().toISOString(),
+        previous_version: drawingBefore?.last_synced_version ?? null,
+        previous_synced_at: drawingBefore?.last_synced_at ?? null,
+      },
+      message: "Atualização manual do Drawing solicitada.",
+      generatedAt: new Date().toISOString(),
+    });
+  }
+
   if (action === "core_refresh_registration") {
     if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode atualizar a fila de validação." }, 403);
     const { data, error } = await admin.rpc("ops_core_refresh_registration");
