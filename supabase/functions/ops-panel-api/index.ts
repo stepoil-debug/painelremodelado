@@ -842,6 +842,19 @@ Deno.serve(async (request: Request) => {
   }
 
 
+
+  if (action === "archive_detail") {
+    const projectCore = String(body.projectCore || "").trim();
+    if (!projectCore) return json({ ok: false, error: "projectCore é obrigatório." }, 400);
+
+    const { data, error } = await admin.rpc("ops_core_archive_detail", {
+      p_project_core: projectCore,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    if (!data || data.ok === false) return json({ ok: false, error: "Projeto arquivado não encontrado.", data }, 404);
+    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
   if (action === "archive_catalog") {
     const yearRaw = body.year;
     const year = yearRaw === null || yearRaw === undefined || yearRaw === "" ? null : Number(yearRaw);
