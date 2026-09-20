@@ -478,7 +478,18 @@ Deno.serve(async (request: Request) => {
   let body: any = {};
   try { body = await request.json(); } catch { body = {}; }
   const force = body.force === true;
-  const requestedKeys = Array.isArray(body.sources) ? new Set(body.sources.map(String)) : null;
+  let requestedKeys = Array.isArray(body.sources) ? new Set(body.sources.map(String)) : null;
+
+  const { data: migration } = await admin.rpc("ops_core_migration_status");
+  const legacyProjects = Number((migration as any)?.projects?.legacy || 0);
+  const nonTrackingSources = new Set(["wip", "drawing", "dimensional", "logistics", "production_pt_2026"]);
+
+  if (legacyProjects === 0) {
+    if (!requestedKeys) requestedKeys = nonTrackingSources;
+    else {
+      requestedKeys = new Set([...requestedKeys].filter((key) => !key.startsWith("tracking")));
+    }
+  }
 
   const { data: sourceData, error: sourceError } = await admin.rpc("ops_panel_sync_sources");
   if (sourceError) return json({ ok: false, error: sourceError.message }, 500);
@@ -539,5 +550,14 @@ Deno.serve(async (request: Request) => {
     }
   }
 
-  return json({ ok: results.every((r) => r.status !== "error"), results });
+  if (results.some((row) => row.source === "wip" || row.source === "drawing")) {
+    await admin.rpc("ops_core_refresh_registration").catch(() => null);
+  }
+
+  return json({
+    ok: results.every((r) => r.status !== "error"),
+    results,
+    migration_mode: legacyProjects > 0 ? "ops_core_hybrid" : "ops_core_only",
+    legacy_projects: legacyProjects,
+  });
 });
