@@ -84,6 +84,17 @@ function stageMap(row: HubDemandRow): StageMap {
   const group = normalize(row.current_stage);
   const status = normalize(row.current_status);
 
+  if (row.source_mode === 'ops_core') {
+    const coreStage = stageMapFromTrackingKey(row.current_stage, row.current_status);
+    if (coreStage) return coreStage;
+    if (group === 'assembly-simulation') {
+      return { stageKey: 'quality_dimensional', sector: 'qualidade', label: row.current_status || 'Simulação de Montagem' };
+    }
+    if (group === 'completed') {
+      return { stageKey: 'dispatch', sector: 'expedicao', label: 'Concluído' };
+    }
+  }
+
   if (hhStageMappingIsReliable(row)) {
     const hhStage = stageMapFromTrackingKey(row.hh_tracking_stage_key, row.hh_tracking_stage_name || row.hh_activity_name);
     if (hhStage) return hhStage;
