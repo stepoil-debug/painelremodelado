@@ -33,6 +33,7 @@ import {
   Users,
   XCircle,
 } from 'lucide-react';
+import ArchivePage from './ArchivePage';
 import CoreMigrationPage from './CoreMigrationPage';
 import { liveHHReadOnlyEnabled, loadHHSessionsReadOnly } from './services/hhReadOnly';
 import {
@@ -82,7 +83,7 @@ import {
   workflowStages,
 } from './workflow';
 
-type PageKey = 'portfolio' | 'live' | 'blocks' | 'notifications' | 'analytics' | 'migration';
+type PageKey = 'portfolio' | 'live' | 'blocks' | 'notifications' | 'analytics' | 'archive' | 'migration';
 type ListMode = 'table' | 'board';
 type PortfolioStatusFilter = 'all' | DemandStatus | 'on_hold';
 type SectorFilter = 'all' | SectorKey;
@@ -404,9 +405,14 @@ export default function App() {
     if (demand.source !== 'ops_core' || !demand.coreItemId) return false;
 
     try {
-      await mutateCoreDemand(demand.coreItemId, operation, options);
+      const result = await mutateCoreDemand(demand.coreItemId, operation, options);
       await refreshHub(false, search, true);
-      setBanner(successMessage);
+      const projectArchive = result && typeof result === 'object'
+        ? (result as { project_archive?: { archived?: boolean } }).project_archive
+        : undefined;
+      setBanner(projectArchive?.archived
+        ? demand.bsp + ' concluída e movida automaticamente para Arquivados.'
+        : successMessage);
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Não foi possível atualizar a demanda.';
@@ -710,6 +716,7 @@ export default function App() {
           <button className={page === 'live' ? 'active' : ''} onClick={() => { setPage('live'); setSelectedId(null); }}>Produção</button>
           <button className={page === 'blocks' ? 'active' : ''} onClick={() => { setPage('blocks'); setSelectedId(null); }}>Bloqueios</button>
           <button className={page === 'analytics' ? 'active' : ''} onClick={() => { setPage('analytics'); setSelectedId(null); }}>Indicadores</button>
+          <button className={page === 'archive' ? 'active' : ''} onClick={() => { setPage('archive'); setSelectedId(null); }}>Arquivados</button>
           <button className={page === 'migration' ? 'active' : ''} onClick={() => { setPage('migration'); setSelectedId(null); }}>Cadastro</button>
         </nav>
         <span className="clock">{clock.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
@@ -771,6 +778,8 @@ export default function App() {
           <NotificationsPage state={state} setState={setState} onOpen={setSelectedId} />
         ) : page === 'migration' ? (
           <CoreMigrationPage />
+        ) : page === 'archive' ? (
+          <ArchivePage />
         ) : (
           <AnalyticsPage demands={demands} />
         )}
