@@ -1987,6 +1987,7 @@ function Portfolio(props: {
   error: string | null;
 }) {
   const [progressSort, setProgressSort] = useState<'none' | 'desc' | 'asc'>('none');
+  const [statusSort, setStatusSort] = useState<'none' | 'desc' | 'asc'>('none');
   const filtered = useMemo(() => {
     return props.demands
       .filter((d) => props.sector === 'all' || d.sector === props.sector)
@@ -2002,16 +2003,40 @@ function Portfolio(props: {
 
   const grouped = useMemo(() => {
     const groups = groupDemandsByBsp(filtered);
-    if (progressSort === 'none') return groups;
 
-    return [...groups].sort((a, b) => {
-      const progressDiff = groupProgress(a.demands) - groupProgress(b.demands);
-      if (progressDiff !== 0) {
-        return progressSort === 'asc' ? progressDiff : -progressDiff;
-      }
-      return a.bsp.localeCompare(b.bsp, 'pt-BR', { numeric: true, sensitivity: 'base' });
-    });
-  }, [filtered, progressSort]);
+    if (statusSort !== 'none') {
+      return [...groups].sort((a, b) => {
+        const statusRank = (group: BspGroup) => {
+          if (group.demands.some((d) => d.onHold === true)) return 7;
+          const rank: Record<DemandStatus, number> = {
+            blocked: 6,
+            late: 5,
+            waiting: 4,
+            in_progress: 3,
+            new: 2,
+            completed: 1,
+          };
+          return rank[groupStatus(group.demands)] ?? 0;
+        };
+
+        const diff = statusRank(a) - statusRank(b);
+        if (diff !== 0) return statusSort === 'asc' ? diff : -diff;
+        return a.bsp.localeCompare(b.bsp, 'pt-BR', { numeric: true, sensitivity: 'base' });
+      });
+    }
+
+    if (progressSort !== 'none') {
+      return [...groups].sort((a, b) => {
+        const progressDiff = groupProgress(a.demands) - groupProgress(b.demands);
+        if (progressDiff !== 0) {
+          return progressSort === 'asc' ? progressDiff : -progressDiff;
+        }
+        return a.bsp.localeCompare(b.bsp, 'pt-BR', { numeric: true, sensitivity: 'base' });
+      });
+    }
+
+    return groups;
+  }, [filtered, progressSort, statusSort]);
   const current = props.sector === 'all' ? props.demands : props.demands.filter((d) => d.sector === props.sector);
   const currentGroups = groupDemandsByBsp(current);
   const active = current.filter((d) => d.status !== 'completed');
@@ -2117,14 +2142,33 @@ function Portfolio(props: {
             <button
               type="button"
               className={'table-sort-button ' + (progressSort !== 'none' ? 'active' : '')}
-              onClick={() => setProgressSort((current) => current === 'desc' ? 'asc' : 'desc')}
+              onClick={() => {
+                setProgressSort((current) => current === 'desc' ? 'asc' : 'desc');
+                setStatusSort('none');
+              }}
               aria-label={progressSort === 'asc' ? 'Ordenar avanço do maior para o menor' : 'Ordenar avanço do menor para o maior'}
               title={progressSort === 'asc' ? 'Menor → maior. Clique para inverter.' : progressSort === 'desc' ? 'Maior → menor. Clique para inverter.' : 'Ordenar por avanço'}
             >
               <span>Avanço</span>
               {progressSort === 'desc' ? <ArrowDown size={12} /> : progressSort === 'asc' ? <ArrowUp size={12} /> : <ArrowUpDown size={12} />}
             </button>
-            <span>Status</span>
+            <button
+              type="button"
+              className={'table-sort-button ' + (statusSort !== 'none' ? 'active' : '')}
+              onClick={() => {
+                setStatusSort((current) => current === 'desc' ? 'asc' : 'desc');
+                setProgressSort('none');
+              }}
+              aria-label={statusSort === 'asc' ? 'Inverter ordenação por status' : 'Ordenar por status operacional'}
+              title={statusSort === 'asc'
+                ? 'Concluído → On Hold. Clique para inverter.'
+                : statusSort === 'desc'
+                  ? 'On Hold → Concluído. Clique para inverter.'
+                  : 'Ordenar por status'}
+            >
+              <span>Status</span>
+              {statusSort === 'desc' ? <ArrowDown size={12} /> : statusSort === 'asc' ? <ArrowUp size={12} /> : <ArrowUpDown size={12} />}
+            </button>
             <span />
           </div>
           {grouped.map((group) => (
