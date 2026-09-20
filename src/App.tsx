@@ -30,6 +30,7 @@ import {
   Users,
   XCircle,
 } from 'lucide-react';
+import CoreMigrationPage from './CoreMigrationPage';
 import { liveHHReadOnlyEnabled, loadHHSessionsReadOnly } from './services/hhReadOnly';
 import {
   hubConfigured,
@@ -75,7 +76,7 @@ import {
   workflowStages,
 } from './workflow';
 
-type PageKey = 'portfolio' | 'live' | 'blocks' | 'notifications' | 'analytics';
+type PageKey = 'portfolio' | 'live' | 'blocks' | 'notifications' | 'analytics' | 'migration';
 type ListMode = 'table' | 'board';
 type PortfolioStatusFilter = 'all' | DemandStatus | 'on_hold';
 type SectorFilter = 'all' | SectorKey;
@@ -240,7 +241,7 @@ export default function App() {
       setSelectedId(null);
       setExpandedId(null);
       if (showBanner) setBanner(
-        rows.length + (searchQuery.trim() ? ' item(ns) encontrados no Tracking atual + arquivos OLD.' : ' itens reais carregados do Tracking atual.')
+        rows.length + (searchQuery.trim() ? ' item(ns) encontrados no banco operacional.' : ' itens reais carregados do OPS CORE + legado em transição.')
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Falha ao carregar dados reais.';
@@ -582,6 +583,7 @@ export default function App() {
           <button className={page === 'live' ? 'active' : ''} onClick={() => { setPage('live'); setSelectedId(null); }}>Produção</button>
           <button className={page === 'blocks' ? 'active' : ''} onClick={() => { setPage('blocks'); setSelectedId(null); }}>Bloqueios</button>
           <button className={page === 'analytics' ? 'active' : ''} onClick={() => { setPage('analytics'); setSelectedId(null); }}>Indicadores</button>
+          <button className={page === 'migration' ? 'active' : ''} onClick={() => { setPage('migration'); setSelectedId(null); }}>Cadastro</button>
         </nav>
         <span className="clock">{clock.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
         <button className="header-bell" onClick={() => { setPage('notifications'); setSelectedId(null); }}><Bell size={16} />{unread > 0 && <b>{unread}</b>}</button>
@@ -640,6 +642,8 @@ export default function App() {
           <BlocksPage demands={demands} onOpen={setSelectedId} onResume={resumeDemand} />
         ) : page === 'notifications' ? (
           <NotificationsPage state={state} setState={setState} onOpen={setSelectedId} />
+        ) : page === 'migration' ? (
+          <CoreMigrationPage />
         ) : (
           <AnalyticsPage demands={demands} />
         )}
@@ -647,7 +651,7 @@ export default function App() {
 
       <footer className="status-bar">
         <span>{selected ? 'Arquivo operacional aberto' : (sector === 'all' ? 'Todos os setores · visão completa da etapa atual' : sectorName(sector) + ' · visibilidade por responsabilidade atual')}</span>
-        <span>{hubConfigured ? 'Dados reais · banco operacional · atualização diária + manual' : 'Demonstração pública · sem escrita no Apontamento HH'}</span>
+        <span>{hubConfigured ? 'OPS CORE · Tracking somente para BSPs ainda não validadas' : 'Demonstração pública · sem escrita no Apontamento HH'}</span>
       </footer>
     </div>
   );
