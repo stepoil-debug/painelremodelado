@@ -48,6 +48,19 @@ async function verifyVercelOidc(token: string) {
   return allowedSubjects.has(subject);
 }
 
+function canManageCore(user: Record<string, unknown> | null) {
+  if (!user) return false;
+  const role = String(user.role || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const sector = String(user.sector || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const modules = Array.isArray(user.allowed_modules) ? user.allowed_modules.map((item) => String(item).toLowerCase()) : [];
+  return (
+    ["admin","administrator","administrador","administradora","superadmin","master","owner","root"].includes(role)
+    || sector === "pcp"
+    || modules.includes("*")
+    || modules.includes("operacoes-projetos:pcp")
+  );
+}
+
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ ok: false, error: "Use POST." }, 405);
@@ -61,10 +74,15 @@ Deno.serve(async (request: Request) => {
   });
 
   let authorized = false;
+  let authorizedByBackend = false;
+  let authorizedByOidc = false;
+  let sessionUser: Record<string, unknown> | null = null;
+
   const backendKey = (request.headers.get("x-step-backend-key") || "").trim();
   if (backendKey) {
     const { data, error } = await admin.rpc("ops_panel_api_auth", { p_candidate: backendKey });
-    authorized = !error && data === true;
+    authorizedByBackend = !error && data === true;
+    authorized = authorizedByBackend;
   }
 
   const auth = request.headers.get("authorization") || "";
@@ -73,24 +91,36 @@ Deno.serve(async (request: Request) => {
   if (!authorized && bearerToken) {
     try {
       const tokenHash = createHash("sha256").update(bearerToken).digest("hex");
-      const { data: sessionUser, error: sessionError } = await admin.rpc("ops_panel_session_validate", {
+      const { data, error: sessionError } = await admin.rpc("ops_panel_session_validate", {
         p_token_hash: tokenHash,
       });
-      authorized = !sessionError && Boolean(sessionUser);
+      sessionUser = !sessionError && data && typeof data === "object"
+        ? data as Record<string, unknown>
+        : null;
+      authorized = Boolean(sessionUser);
     } catch {
       authorized = false;
+      sessionUser = null;
     }
   }
 
   if (!authorized && bearerToken && bearerToken.includes(".")) {
     try {
-      authorized = await verifyVercelOidc(bearerToken);
+      authorizedByOidc = await verifyVercelOidc(bearerToken);
+      authorized = authorizedByOidc;
     } catch {
       authorized = false;
+      authorizedByOidc = false;
     }
   }
 
   if (!authorized) return json({ ok: false, error: "Sessão inválida ou backend não autorizado." }, 401);
+
+  const trustedSystem = authorizedByBackend || authorizedByOidc;
+  const actor = sessionUser
+    ? String(sessionUser.email || sessionUser.username || sessionUser.name || "step-user")
+    : "system-backend";
+  const mayManageCore = trustedSystem || canManageCore(sessionUser);
 
   let body: Record<string, unknown> = {};
   try { body = await request.json(); } catch { body = {}; }
@@ -123,23 +153,51 @@ Deno.serve(async (request: Request) => {
   }
 
   if (action === "sync_now") {
-    const [{ data: normalized, error: normalizedError }, { data: requestId, error }] = await Promise.all([
-      admin.rpc("sync_tracking_normalized_if_needed", { p_region: "BR" }),
-      admin.rpc("ops_panel_dispatch_sync", { p_force: false }),
-    ]);
+    const { data: migration, error: migrationError } = await admin.rpc("ops_core_migration_status");
+    if (migrationError) return json({ ok: false, error: migrationError.message }, 500);
 
-    if (normalizedError) return json({ ok: false, error: normalizedError.message }, 500);
-    if (error) return json({ ok: false, error: error.message }, 500);
+    const legacyProjects = Number((migration as any)?.projects?.legacy || 0);
+    const baseSources = ["wip", "drawing", "dimensional", "logistics", "production_pt_2026"];
+    const sources = legacyProjects > 0 ? [...baseSources, "tracking"] : baseSources;
+
+    const { data: requestId, error: dispatchError } = await admin.rpc("ops_panel_dispatch_sync_sources", {
+      p_sources: sources,
+      p_force: false,
+    });
+    if (dispatchError) return json({ ok: false, error: dispatchError.message }, 500);
+
+    let tracking: unknown = null;
+    let bootstrap: unknown = null;
+    if (legacyProjects > 0) {
+      const { data: normalized, error: normalizedError } = await admin.rpc("sync_tracking_normalized_if_needed", {
+        p_region: "BR",
+      });
+      if (normalizedError) return json({ ok: false, error: normalizedError.message }, 500);
+      tracking = normalized;
+
+      const { data: snapshot, error: snapshotError } = await admin.rpc("ops_core_refresh_legacy_snapshot");
+      if (snapshotError) return json({ ok: false, error: snapshotError.message }, 500);
+      bootstrap = snapshot;
+    }
+
+    const { data: candidates, error: candidatesError } = await admin.rpc("ops_core_refresh_registration");
+    if (candidatesError) return json({ ok: false, error: candidatesError.message }, 500);
 
     return json({
       ok: true,
       data: {
         request_id: requestId,
         started_at: new Date().toISOString(),
-        mode: "canonical_tracking_plus_integrations",
-        tracking: normalized,
+        mode: legacyProjects > 0 ? "ops_core_hybrid" : "ops_core_only",
+        sources,
+        legacy_projects: legacyProjects,
+        tracking,
+        bootstrap,
+        candidates,
       },
-      message: "Atualização solicitada. Tracking normalizado e integrações serão verificadas por versão.",
+      message: legacyProjects > 0
+        ? "Atualização solicitada. Projetos legados continuam sincronizados até o cutover individual."
+        : "Atualização solicitada somente nas fontes operacionais. Tracking está fora do fluxo ativo.",
     });
   }
 
@@ -153,12 +211,18 @@ Deno.serve(async (request: Request) => {
     const projectKey = String(body.projectKey || "").trim();
     if (!projectKey) return json({ ok: false, error: "projectKey é obrigatório." }, 400);
 
-    const [{ data, error }, { data: stepflowConfig, error: stepflowConfigError }] = await Promise.all([
+    const [
+      { data, error },
+      { data: core, error: coreError },
+      { data: stepflowConfig, error: stepflowConfigError },
+    ] = await Promise.all([
       admin.rpc("ops_panel_get_project", { p_project_key: projectKey }),
+      admin.rpc("ops_core_project_detail", { p_project_key: projectKey }),
       admin.rpc("ops_panel_stepflow_config"),
     ]);
 
     if (error) return json({ ok: false, error: error.message }, 500);
+    if (coreError) console.error("ops_core project detail error:", coreError.message);
 
     let stepflow: unknown = null;
     let stepflowError: string | null = null;
@@ -197,6 +261,7 @@ Deno.serve(async (request: Request) => {
       ok: true,
       data: {
         ...(data && typeof data === "object" ? data : {}),
+        core: coreError ? null : core,
         stepflow,
         stepflow_error: stepflowError,
       },
@@ -547,6 +612,80 @@ Deno.serve(async (request: Request) => {
     });
   }
 
+  if (action === "migration_status") {
+    const { data, error } = await admin.rpc("ops_core_migration_status");
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
+  if (action === "registration_candidates") {
+    const status = String(body.status || "validation_required").trim();
+    const requestedLimit = Number(body.limit || 200);
+    const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(Math.trunc(requestedLimit), 1000)) : 200;
+    const { data, error } = await admin.rpc("ops_core_list_candidates", {
+      p_status: status,
+      p_limit: limit,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data: Array.isArray(data) ? data : [], generatedAt: new Date().toISOString() });
+  }
+
+  if (action === "validation_report") {
+    const projectKey = String(body.projectKey || "").trim();
+    if (!projectKey) return json({ ok: false, error: "projectKey é obrigatório." }, 400);
+    const { data, error } = await admin.rpc("ops_core_project_validation_report", {
+      p_project_key: projectKey,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
+  if (action === "core_cutover") {
+    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode validar e retirar uma BSP do Tracking." }, 403);
+    const projectKey = String(body.projectKey || "").trim();
+    if (!projectKey) return json({ ok: false, error: "projectKey é obrigatório." }, 400);
+
+    const { data: report, error: reportError } = await admin.rpc("ops_core_project_validation_report", {
+      p_project_key: projectKey,
+    });
+    if (reportError) return json({ ok: false, error: reportError.message }, 500);
+    if (!(report as any)?.ready_for_cutover) {
+      return json({ ok: false, error: "A BSP ainda possui bloqueios de validação.", report }, 409);
+    }
+
+    const { data, error } = await admin.rpc("ops_core_cutover_project", {
+      p_project_key: projectKey,
+      p_actor: actor,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({
+      ok: true,
+      data,
+      report,
+      message: "BSP validada. A partir deste momento o painel não usa mais o Tracking para este projeto.",
+      generatedAt: new Date().toISOString(),
+    });
+  }
+
+  if (action === "core_revert") {
+    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode reverter uma BSP para o legado." }, 403);
+    const projectKey = String(body.projectKey || "").trim();
+    if (!projectKey) return json({ ok: false, error: "projectKey é obrigatório." }, 400);
+    const { data, error } = await admin.rpc("ops_core_revert_project", {
+      p_project_key: projectKey,
+      p_actor: actor,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
+  if (action === "core_refresh_registration") {
+    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode atualizar a fila de validação." }, 403);
+    const { data, error } = await admin.rpc("ops_core_refresh_registration");
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
   if (action === "demands") {
     const region = String(body.region || "BR").trim() || "BR";
     const search = String(body.search || "").trim();
@@ -555,7 +694,7 @@ Deno.serve(async (request: Request) => {
       ? Math.max(1, Math.min(Math.trunc(requestedLimit), search ? 2000 : 5000))
       : 2000;
 
-    const rpcName = search ? "ops_panel_search_demands" : "ops_panel_get_demands";
+    const rpcName = search ? "ops_core_search_demands" : "ops_core_get_demands";
     const rpcArgs = search
       ? { p_region: region, p_search: search, p_limit: limit }
       : { p_region: region, p_limit: limit };
