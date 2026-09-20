@@ -133,6 +133,24 @@ function elapsedLabel(date: string) {
   return Math.floor(hours / 24) + 'd ' + (hours % 24) + 'h';
 }
 
+function sectorKeyFromValue(value?: string | null): SectorKey {
+  const normalized = (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+  if (normalized.includes('engenharia')) return 'engenharia';
+  if (normalized.includes('supr')) return 'suprimentos';
+  if (normalized.includes('caldeir')) return 'caldeiraria';
+  if (normalized.includes('solda')) return 'solda';
+  if (normalized.includes('qualidade') || normalized.includes('inspec')) return 'qualidade';
+  if (normalized.includes('pint')) return 'pintura';
+  if (normalized.includes('log') || normalized.includes('exped')) return 'expedicao';
+  if (normalized.includes('hold')) return 'on_hold';
+  return 'nao_classificado';
+}
+
 function createNotification(
   sector: SectorKey,
   demand: Demand,
@@ -232,17 +250,36 @@ export default function App() {
     else if (normalized.includes('log') || normalized.includes('exped')) setSector('expedicao');
   }, [panelUser]);
 
-  async function refreshHub(showBanner = false, searchQuery = '') {
+  async function refreshHub(showBanner = false, searchQuery = '', preserveSelection = false) {
     if (!hubConfigured || !panelUser) return;
     setLoadingHub(true);
     setHubError(null);
     try {
       const region = panelUser.operationRegion || 'BR';
       const query = searchQuery.trim();
-      const rows = await loadHubDemands(region, query ? 1200 : 3000, query);
-      setState(hubRowsToOperationalState(rows));
-      setSelectedId(null);
-      setExpandedId(null);
+      const [rows, coreNotifications] = await Promise.all([
+        loadHubDemands(region, query ? 1200 : 3000, query),
+        loadCoreNotifications(panelUser.sector || '', panelUser.email || panelUser.username || '', 300).catch(() => []),
+      ]);
+      const nextState = hubRowsToOperationalState(rows);
+      nextState.notifications = coreNotifications.map((notification) => {
+        const demand = nextState.demands.find((item) => item.coreItemId === notification.item_id);
+        return {
+          id: notification.id,
+          title: notification.title,
+          message: notification.message,
+          sector: sectorKeyFromValue(notification.sector_key),
+          demandId: demand?.id,
+          createdAt: notification.created_at,
+          read: Boolean(notification.read_at),
+          severity: notification.severity || 'info',
+        };
+      });
+      setState(nextState);
+      if (!preserveSelection) {
+        setSelectedId(null);
+        setExpandedId(null);
+      }
       if (showBanner) setBanner(
         rows.length + (searchQuery.trim() ? ' item(ns) encontrados no banco operacional.' : ' itens reais carregados do OPS CORE + legado em transição.')
       );
@@ -279,7 +316,7 @@ export default function App() {
   }, [search, panelUser]);
 
   useEffect(() => {
-    if (!hubConfigured || !panelUser || !selected || selected.source !== 'hub_readonly') {
+    if (!hubConfigured || !panelUser || !selected || !['hub_readonly', 'ops_core'].includes(selected.source)) {
       setProjectDetail(null);
       setHhEvidence(null);
       setDetailLoading(false);
@@ -351,9 +388,46 @@ export default function App() {
     }];
   }
 
-  function assumeDemand(id: string) {
+  async function runCoreAction(
+    demand: Demand,
+    operation: 'accept' | 'start' | 'progress' | 'wait' | 'resume' | 'block' | 'complete',
+    options: { progress?: number | null; note?: string } = {},
+    successMessage = 'Demanda atualizada.',
+  ) {
+    if (demand.source === 'hub_readonly') {
+      setBanner('Esta BSP ainda usa o Tracking legado. Valide o cadastro em Cadastro para habilitar ações operacionais.');
+      return false;
+    }
+    if (demand.source !== 'ops_core' || !demand.coreItemId) return false;
+
+    try {
+      await mutateCoreDemand(demand.coreItemId, operation, options);
+      await refreshHub(false, search, true);
+      setBanner(successMessage);
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Não foi possível atualizar a demanda.';
+      setHubError(message);
+      setBanner(message);
+      return false;
+    }
+  }
+
+  async function assumeDemand(id: string) {
     const demand = demands.find((d) => d.id === id);
-    if (!demand || demand.source !== 'demo') return;
+    if (!demand) return;
+
+    if (demand.source === 'ops_core' || demand.source === 'hub_readonly') {
+      await runCoreAction(
+        demand,
+        'accept',
+        {},
+        demand.bsp + ' assumida pelo setor ' + sectorName(demand.sector) + '.',
+      );
+      return;
+    }
+    if (demand.source !== 'demo') return;
+
     const now = new Date().toISOString();
     updateDemand(id, (d) => ({
       ...d,
@@ -366,10 +440,17 @@ export default function App() {
     setBanner(demand.bsp + ' assumida pelo setor ' + sectorName(demand.sector) + '.');
   }
 
-  function progressDemand(id: string) {
+  async function progressDemand(id: string) {
     const demand = demands.find((d) => d.id === id);
-    if (!demand || demand.source !== 'demo') return;
+    if (!demand) return;
+
     const progress = Math.min(75, Math.max(25, demand.progress + 25));
+    if (demand.source === 'ops_core' || demand.source === 'hub_readonly') {
+      await runCoreAction(demand, 'progress', { progress }, 'Avanço atualizado para ' + progress + '%.');
+      return;
+    }
+    if (demand.source !== 'demo') return;
+
     updateDemand(id, (d) => ({
       ...d,
       progress,
@@ -379,9 +460,16 @@ export default function App() {
     setBanner('Avanço atualizado para ' + progress + '%.');
   }
 
-  function waitDemand(id: string) {
+  async function waitDemand(id: string) {
     const demand = demands.find((d) => d.id === id);
-    if (!demand || demand.source !== 'demo') return;
+    if (!demand) return;
+
+    if (demand.source === 'ops_core' || demand.source === 'hub_readonly') {
+      await runCoreAction(demand, 'wait', {}, demand.bsp + ' movida para Aguardando.');
+      return;
+    }
+    if (demand.source !== 'demo') return;
+
     updateDemand(id, (d) => ({
       ...d,
       status: 'waiting',
@@ -390,9 +478,16 @@ export default function App() {
     setBanner(demand.bsp + ' movida para Aguardando.');
   }
 
-  function resumeDemand(id: string) {
+  async function resumeDemand(id: string) {
     const demand = demands.find((d) => d.id === id);
-    if (!demand || demand.source !== 'demo') return;
+    if (!demand) return;
+
+    if (demand.source === 'ops_core' || demand.source === 'hub_readonly') {
+      await runCoreAction(demand, 'resume', {}, demand.bsp + ' retomada.');
+      return;
+    }
+    if (demand.source !== 'demo') return;
+
     updateDemand(id, (d) => ({
       ...d,
       status: d.assignedTo ? 'in_progress' : 'new',
@@ -402,11 +497,19 @@ export default function App() {
     setBanner(demand.bsp + ' retomada.');
   }
 
-  function blockDemand(id: string) {
+  async function blockDemand(id: string) {
     const demand = demands.find((d) => d.id === id);
-    if (!demand || demand.source !== 'demo') return;
+    if (!demand) return;
+
     const note = window.prompt('Descreva o motivo do bloqueio:', demand.blocker?.note ?? 'Aguardando retorno da Engenharia.');
     if (note === null) return;
+
+    if (demand.source === 'ops_core' || demand.source === 'hub_readonly') {
+      await runCoreAction(demand, 'block', { note }, demand.bsp + ' bloqueada.');
+      return;
+    }
+    if (demand.source !== 'demo') return;
+
     const notification = createNotification(demand.sector, demand, 'Demanda bloqueada', demand.bsp + ' / ' + demand.iso + ' · ' + note, 'warning');
     updateDemand(id, (d) => ({
       ...d,
@@ -419,7 +522,13 @@ export default function App() {
 
   function addEvidence(id: string, type: EvidenceType) {
     const demand = demands.find((d) => d.id === id);
-    if (!demand || demand.source !== 'demo') return;
+    if (!demand) return;
+    if (demand.source === 'ops_core') {
+      setBanner('As evidências das etapas de execução são registradas pelo Apontamento HH para preservar a rastreabilidade.');
+      return;
+    }
+    if (demand.source !== 'demo') return;
+
     const label = type === 'start' ? 'Foto inicial' : type === 'finish' ? 'Foto final' : 'Evidência extra';
     updateDemand(id, (d) => ({
       ...d,
@@ -429,9 +538,21 @@ export default function App() {
     setBanner(label + ' adicionada.');
   }
 
-  function completeDemand(id: string) {
+  async function completeDemand(id: string) {
     const demand = demands.find((d) => d.id === id);
-    if (!demand || demand.source !== 'demo') return;
+    if (!demand) return;
+
+    if (demand.source === 'ops_core' || demand.source === 'hub_readonly') {
+      await runCoreAction(
+        demand,
+        'complete',
+        {},
+        demand.bsp + ' · etapa concluída. O próximo setor foi atualizado automaticamente.',
+      );
+      return;
+    }
+    if (demand.source !== 'demo') return;
+
     const stage = getStage(demand.stageKey);
     if (!stage) return;
 
@@ -2355,7 +2476,7 @@ function LivePage({ demands, loading, onOpen }: { demands: Demand[]; loading: bo
 
 function BlocksPage({ demands, onOpen, onResume }: { demands: Demand[]; onOpen: (id: string) => void; onResume: (id: string) => void }) {
   const blocked = demands.filter((d) => d.status === 'blocked');
-  return <GenericPage title="Bloqueios Operacionais" subtitle="Pendências que impedem a demanda de avançar para o próximo setor."><div className="section-card"><div className="simple-table"><div className="simple-head blocked-head"><span>BSP / ISO</span><span>Setor</span><span>Motivo</span><span>Desde</span><span>Ações</span></div>{blocked.map((d) => <div className="simple-block-row" key={d.id}><span><strong>{d.bsp}</strong><small>{d.iso}</small></span><span>{sectorName(d.sector)}</span><span>{d.blocker?.note ?? 'Bloqueio operacional'}</span><span>{fmtDate(d.blocker?.createdAt)}</span><span><button className="soft-btn" onClick={() => onOpen(d.id)}><Eye size={13} /> Abrir</button>{d.source === 'demo' && <button className="success-ref" onClick={() => onResume(d.id)}><Check size={13} /> Resolver</button>}</span></div>)}</div></div></GenericPage>;
+  return <GenericPage title="Bloqueios Operacionais" subtitle="Pendências que impedem a demanda de avançar para o próximo setor."><div className="section-card"><div className="simple-table"><div className="simple-head blocked-head"><span>BSP / ISO</span><span>Setor</span><span>Motivo</span><span>Desde</span><span>Ações</span></div>{blocked.map((d) => <div className="simple-block-row" key={d.id}><span><strong>{d.bsp}</strong><small>{d.iso}</small></span><span>{sectorName(d.sector)}</span><span>{d.blocker?.note ?? 'Bloqueio operacional'}</span><span>{fmtDate(d.blocker?.createdAt)}</span><span><button className="soft-btn" onClick={() => onOpen(d.id)}><Eye size={13} /> Abrir</button>{(d.source === 'demo' || d.source === 'ops_core') && <button className="success-ref" onClick={() => void onResume(d.id)}><Check size={13} /> Resolver</button>}</span></div>)}</div></div></GenericPage>;
 }
 
 function NotificationsPage({ state, setState, onOpen }: { state: OperationalState; setState: React.Dispatch<React.SetStateAction<OperationalState>>; onOpen: (id: string) => void }) {
