@@ -558,7 +558,17 @@ Deno.serve(async (request: Request) => {
       : detected;
   }
 
-  if (results.some((row) => row.source === "wip" || row.source === "drawing")) {
+  let legacyReconciliation: unknown = null;
+  if (results.some((row) => row.source === "tracking" && row.status !== "error")) {
+    const { data: reconciled, error: reconciliationError } = await admin.rpc("ops_core_sync_legacy_tracking_current_items", {
+      p_region: "BR",
+    });
+    legacyReconciliation = reconciliationError
+      ? { ok: false, error: reconciliationError.message }
+      : reconciled;
+  }
+
+  if (results.some((row) => row.source === "wip" || row.source === "drawing" || row.source === "tracking")) {
     await admin.rpc("ops_core_refresh_registration").catch(() => null);
   }
 
@@ -566,6 +576,7 @@ Deno.serve(async (request: Request) => {
     ok: results.every((r) => r.status !== "error"),
     results,
     drawing_detection: drawingDetection,
+    legacy_reconciliation: legacyReconciliation,
     migration_mode: legacyProjects > 0 ? "ops_core_hybrid" : "ops_core_only",
     legacy_projects: legacyProjects,
   });
