@@ -759,6 +759,78 @@ Deno.serve(async (request: Request) => {
     return json({ ok: true, data, generatedAt: new Date().toISOString() });
   }
 
+
+  if (action === "core_stage_action") {
+    const itemId = String(body.itemId || "").trim();
+    const operation = String(body.operation || "").trim().toLowerCase();
+    const note = String(body.note || "").trim();
+    const progressRaw = body.progress;
+    const progress = progressRaw === null || progressRaw === undefined || progressRaw === ""
+      ? null
+      : Number(progressRaw);
+
+    if (!itemId || !operation) {
+      return json({ ok: false, error: "itemId e operation são obrigatórios." }, 400);
+    }
+    if (progress !== null && !Number.isFinite(progress)) {
+      return json({ ok: false, error: "Progress inválido." }, 400);
+    }
+
+    const actorName = sessionUser
+      ? String(sessionUser.name || sessionUser.username || sessionUser.email || actor)
+      : "system-backend";
+    const actorSector = sessionUser
+      ? String(sessionUser.sector || "")
+      : String(body.actorSector || "");
+
+    const { data, error } = await admin.rpc("ops_core_stage_action", {
+      p_item_id: itemId,
+      p_action: operation,
+      p_actor_email: actor,
+      p_actor_name: actorName,
+      p_actor_sector: actorSector,
+      p_progress: progress,
+      p_note: note || null,
+    });
+    if (error) return json({ ok: false, error: error.message }, 409);
+
+    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
+  if (action === "core_notifications") {
+    const requestedSector = String(body.sector || "").trim();
+    const actorSector = sessionUser ? String(sessionUser.sector || "") : requestedSector;
+    const role = String(sessionUser?.role || "").toLowerCase();
+    const canReadAnySector = trustedSystem || role === "admin" || role === "administrator" || role === "administrador";
+    const sector = canReadAnySector ? (requestedSector || null) : (actorSector || null);
+    const userEmail = sessionUser ? String(sessionUser.email || sessionUser.username || "") : String(body.user || "");
+
+    const requestedLimit = Number(body.limit || 200);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.max(1, Math.min(Math.trunc(requestedLimit), 1000))
+      : 200;
+
+    const { data, error } = await admin.rpc("ops_core_notifications", {
+      p_sector: sector,
+      p_user: userEmail || null,
+      p_limit: limit,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data: Array.isArray(data) ? data : [], generatedAt: new Date().toISOString() });
+  }
+
+  if (action === "core_notification_read") {
+    const notificationId = String(body.notificationId || "").trim();
+    if (!notificationId) return json({ ok: false, error: "notificationId é obrigatório." }, 400);
+
+    const { data, error } = await admin.rpc("ops_core_notification_read", {
+      p_notification_id: notificationId,
+      p_actor: actor,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
   if (action === "demands") {
     const region = String(body.region || "BR").trim() || "BR";
     const search = String(body.search || "").trim();
