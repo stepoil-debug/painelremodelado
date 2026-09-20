@@ -779,8 +779,11 @@ Deno.serve(async (request: Request) => {
     const actorName = sessionUser
       ? String(sessionUser.name || sessionUser.username || sessionUser.email || actor)
       : "system-backend";
+    const actorRole = String(sessionUser?.role || "").toLowerCase();
     const actorSector = sessionUser
-      ? String(sessionUser.sector || "")
+      ? (["admin", "administrator", "administrador"].includes(actorRole)
+        ? "admin"
+        : String(sessionUser.sector || ""))
       : String(body.actorSector || "");
 
     const { data, error } = await admin.rpc("ops_core_stage_action", {
@@ -802,7 +805,14 @@ Deno.serve(async (request: Request) => {
     const actorSector = sessionUser ? String(sessionUser.sector || "") : requestedSector;
     const role = String(sessionUser?.role || "").toLowerCase();
     const canReadAnySector = trustedSystem || role === "admin" || role === "administrator" || role === "administrador";
-    const sector = canReadAnySector ? (requestedSector || null) : (actorSector || null);
+    const requestedSectorNorm = requestedSector
+      .normalize("NFD")
+      .replace(/[\\u0300-\\u036f]/g, "")
+      .toLowerCase();
+    const requestedAll = !requestedSector || ["all", "todos", "all sectors", "todos os setores"].includes(requestedSectorNorm);
+    const sector = canReadAnySector
+      ? (requestedAll ? null : requestedSector)
+      : (actorSector || null);
     const userEmail = sessionUser ? String(sessionUser.email || sessionUser.username || "") : String(body.user || "");
 
     const requestedLimit = Number(body.limit || 200);
