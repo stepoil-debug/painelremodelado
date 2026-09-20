@@ -147,7 +147,7 @@ function ArchiveDetail({ projectCore, onBack }: { projectCore: string; onBack: (
           <div className="section-card-head"><div><span className="section-mono">Disponibilidade</span><h2>Qualidade dos indicadores</h2></div></div>
           <div className="archive-info-list">
             {Object.entries(metrics.data_completeness || {}).map(([key, value]) => (
-              <div key={key}><span>{key.replace(/^has_/, '').replaceAll('_', ' ')}</span><strong>{value ? 'Disponível' : 'Não disponível'}</strong></div>
+              <div key={key}><span>{key.replace(/^has_/, '').split('_').join(' ')}</span><strong>{value ? 'Disponível' : 'Não disponível'}</strong></div>
             ))}
           </div>
         </div>
