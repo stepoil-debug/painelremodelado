@@ -2046,6 +2046,20 @@ function Portfolio(props: {
 
     return groups;
   }, [filtered, progressSort, statusSort]);
+
+  const totalByGroup = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const group of groupDemandsByBsp(props.demands)) {
+      map.set(group.key, group.demands.length);
+    }
+    return map;
+  }, [props.demands]);
+
+  const linkedTotalForVisibleGroups = grouped.reduce(
+    (sum, group) => sum + (totalByGroup.get(group.key) ?? group.demands.length),
+    0,
+  );
+
   const current = props.sector === 'all' ? props.demands : props.demands.filter((d) => d.sector === props.sector);
   const currentGroups = groupDemandsByBsp(current);
   const active = current.filter((d) => d.status !== 'completed');
@@ -2138,7 +2152,10 @@ function Portfolio(props: {
         </label>
         <button className={'flag-filter late-filter ' + (props.lateOnly ? 'active danger' : '')} onClick={() => props.setLateOnly(!props.lateOnly)}><AlertTriangle size={14} /> Só atrasadas</button>
         <button className={'flag-filter priority-filter ' + (props.priorityOnly ? 'active' : '')} onClick={() => props.setPriorityOnly(!props.priorityOnly)}><CircleDot size={14} /> Prioridade</button>
-        {props.search && <div className="search-feedback"><strong>{grouped.length}</strong> BSP(s) encontrada(s) para <span>“{props.search}”</span></div>}
+        {props.search && <div className="search-feedback">
+          <strong>{grouped.length}</strong> BSP(s) encontrada(s) para <span>“{props.search}”</span>
+          {linkedTotalForVisibleGroups > filtered.length && <em>{filtered.length} item(ns) visível(is) de {linkedTotalForVisibleGroups} vinculado(s)</em>}
+        </div>}
       </section>
 
       {props.mode === 'table' ? (
@@ -2184,6 +2201,7 @@ function Portfolio(props: {
             <BspTreeRow
               key={group.key}
               group={group}
+              totalCount={totalByGroup.get(group.key) ?? group.demands.length}
               expanded={props.expandedId === group.key}
               onToggle={() => props.setExpandedId(props.expandedId === group.key ? null : group.key)}
               onOpen={props.onOpen}
@@ -2204,11 +2222,13 @@ function Metric({ value, label, danger, warning }: { value: string | number; lab
 
 function BspTreeRow({
   group,
+  totalCount,
   expanded,
   onToggle,
   onOpen,
 }: {
   group: BspGroup;
+  totalCount: number;
   expanded: boolean;
   onToggle: () => void;
   onOpen: (id: string) => void;
@@ -2230,7 +2250,11 @@ function BspTreeRow({
           <div className="bsp-orb">BSP</div>
           <div>
             <strong>{group.bsp}</strong>
-            <span>{group.demands.length} ISO/SPL {group.demands.length === 1 ? 'vinculado' : 'vinculados'}</span>
+            <span>
+              {totalCount > group.demands.length
+                ? group.demands.length + ' visíveis de ' + totalCount + ' ISO/SPL vinculados'
+                : group.demands.length + ' ISO/SPL ' + (group.demands.length === 1 ? 'vinculado' : 'vinculados')}
+            </span>
           </div>
         </div>
         <div className="project-cell">
@@ -2257,7 +2281,7 @@ function BspTreeRow({
         <div className="bsp-tree-children">
           <div className="bsp-tree-heading">
             <span>Árvore da BSP</span>
-            <strong>{group.demands.length} ISO/SPL</strong>
+            <strong>{totalCount > group.demands.length ? group.demands.length + ' de ' + totalCount + ' ISO/SPL' : group.demands.length + ' ISO/SPL'}</strong>
           </div>
           {group.demands.map((demand, index) => {
             const childStatus = effectiveStatus(demand);
