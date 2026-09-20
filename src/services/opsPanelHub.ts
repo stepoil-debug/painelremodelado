@@ -446,6 +446,46 @@ export async function upsertCoreItem(projectKey: string, item: HubCoreItemInput)
 
 
 
+
+export interface HubArchiveDetail {
+  ok: true;
+  origin: 'LEGACY_TRACKING' | 'OPS_CORE';
+  project: Record<string, unknown>;
+  metrics: {
+    item_count: number;
+    total_weight_kg: number;
+    total_m2: number;
+    project_start_date?: string | null;
+    actual_start_date?: string | null;
+    fabrication_start_date?: string | null;
+    completed_on?: string | null;
+    lead_time_days?: number | null;
+    fabrication_calendar_days?: number | null;
+    hold_days?: number | null;
+    effective_fabrication_days?: number | null;
+    avg_item_fabrication_days?: number | null;
+    weight_per_calendar_day?: number | null;
+    weight_per_effective_day?: number | null;
+    items_per_effective_day?: number | null;
+    total_hh?: number | null;
+    kg_per_hh?: number | null;
+    data_completeness?: Record<string, boolean>;
+  };
+  items: Array<Record<string, unknown>>;
+  hold_periods: Array<Record<string, unknown>>;
+  stage_metrics: Array<Record<string, unknown>>;
+  hh_summary: Array<Record<string, unknown>>;
+  documents: Array<Record<string, unknown>>;
+}
+
+export async function loadArchivedProjectDetail(projectCore: string): Promise<HubArchiveDetail> {
+  const response = await requestHub<{ ok: true; data: HubArchiveDetail }>({
+    action: 'archive_detail',
+    projectCore,
+  });
+  return response.data;
+}
+
 export interface HubArchivedProject {
   origin: 'LEGACY_TRACKING' | 'OPS_CORE';
   project_id?: string | null;
