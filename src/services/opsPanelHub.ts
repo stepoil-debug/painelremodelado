@@ -184,6 +184,30 @@ export async function loadHubSyncStatus(): Promise<HubSyncStatus> {
   return response.data;
 }
 
+export async function triggerDrawingSync(): Promise<{
+  request_id: number;
+  source: string;
+  forced: boolean;
+  started_at: string;
+  previous_version?: number | null;
+  previous_synced_at?: string | null;
+}> {
+  const response = await requestHub<{
+    ok: true;
+    data: {
+      request_id: number;
+      source: string;
+      forced: boolean;
+      started_at: string;
+      previous_version?: number | null;
+      previous_synced_at?: string | null;
+    };
+  }>({
+    action: 'drawing_sync_now',
+  });
+  return response.data;
+}
+
 export async function triggerHubSync(): Promise<{ request_id: number; started_at: string; mode: string }> {
   const response = await requestHub<{ ok: true; data: { request_id: number; started_at: string; mode: string } }>({
     action: 'sync_now',
