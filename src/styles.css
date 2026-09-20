@@ -176,6 +176,30 @@ h1,h2,h3,p { margin-top: 0; }
   display: grid; grid-template-columns: 1.2fr 1.35fr 1.35fr 1fr .75fr .85fr 24px; gap: 14px; align-items: center;
 }
 .table-head { padding: 10px 16px; background: #F8FBFF; border-bottom: 1px solid #E8EEF6; color: #8093A5; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; }
+.table-sort-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  justify-self: start;
+  cursor: pointer;
+}
+.table-sort-button svg { color: #8AA0B5; }
+.table-sort-button:hover,
+.table-sort-button.active { color: #1355C2; }
+.table-sort-button:hover svg,
+.table-sort-button.active svg { color: #1355C2; }
+.table-sort-button:focus-visible {
+  outline: 2px solid #BAD7F5;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
 .reference-row { border-bottom: 1px solid #EDF2F8; }
 .reference-row:last-child { border-bottom: 0; }
 .reference-row.expanded { background: #FCFEFF; }
