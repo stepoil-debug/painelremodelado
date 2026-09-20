@@ -19,9 +19,11 @@ import {
   loadCoreMigrationStatus,
   loadCoreValidationReport,
   loadHubProject,
+  loadHubSyncStatus,
   loadRegistrationCandidates,
   materializeCoreCandidate,
   refreshCoreRegistration,
+  triggerDrawingSync,
   removeCoreItem,
   upsertCoreItem,
   type HubCoreItemInput,
@@ -73,6 +75,16 @@ function modeLabel(mode?: string | null) {
   if (mode === 'pending_validation') return 'Pendente validação';
   if (mode === 'legacy_tracking') return 'Tracking legado';
   return 'Nova demanda';
+}
+
+function isNewDrawingCandidate(candidate: HubRegistrationCandidate) {
+  const detection = candidate.suggested_data?.detection;
+  return Boolean(
+    candidate.source_systems?.includes('drawing')
+    && detection
+    && typeof detection === 'object'
+    && (detection as Record<string, unknown>).new_project === true
+  );
 }
 
 export default function CoreMigrationPage() {
@@ -238,6 +250,63 @@ export default function CoreMigrationPage() {
     }
   }
 
+  async function refreshDrawing() {
+    setBusy('drawing');
+    setError('');
+    setNotice('Atualização manual do Drawing solicitada. Conferindo novas BSPs...');
+    try {
+      const request = await triggerDrawingSync();
+      let completed = false;
+
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+        const sync = await loadHubSyncStatus();
+        const drawing = sync.sources.find((source) => source.source_key === 'drawing');
+
+        if (drawing?.last_status === 'error') {
+          throw new Error('O Drawing retornou erro na última sincronização.');
+        }
+
+        const syncedAtChanged = Boolean(
+          drawing?.last_synced_at
+          && drawing.last_synced_at !== request.previous_synced_at
+        );
+        const versionChanged = request.previous_version != null
+          && drawing?.last_synced_version != null
+          && Number(drawing.last_synced_version) !== Number(request.previous_version);
+
+        if (syncedAtChanged || versionChanged) {
+          completed = true;
+          break;
+        }
+      }
+
+      await refreshCoreRegistration();
+      const [migration, queue] = await Promise.all([
+        loadCoreMigrationStatus(),
+        loadRegistrationCandidates('validation_required', 500),
+      ]);
+      setStatus(migration);
+      setCandidates(queue);
+
+      const newDrawing = queue.filter(isNewDrawingCandidate);
+      setNotice(
+        completed
+          ? 'Drawing atualizado. ' + newDrawing.length + ' nova(s) BSP(s) do Drawing aguardando validação.'
+          : 'Atualização do Drawing continua em processamento. A fila será atualizada automaticamente ao concluir.'
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o Drawing.');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  const newDrawingCount = useMemo(
+    () => candidates.filter(isNewDrawingCandidate).length,
+    [candidates],
+  );
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return candidates;
@@ -263,9 +332,14 @@ export default function CoreMigrationPage() {
           <h1>Cadastro e validação operacional</h1>
           <p>Uma BSP validada deixa de usar o Tracking. Novos projetos podem nascer diretamente das fontes técnicas.</p>
         </div>
-        <button className="core-button secondary" onClick={() => void refreshQueue()} disabled={Boolean(busy)}>
-          <RefreshCw size={16} className={busy === 'refresh' ? 'spin' : ''} /> Atualizar fontes
-        </button>
+        <div className="core-page-head-actions">
+          <button className="core-button primary" onClick={() => void refreshDrawing()} disabled={Boolean(busy)}>
+            <RefreshCw size={16} className={busy === 'drawing' ? 'spin' : ''} /> Atualizar Drawing
+          </button>
+          <button className="core-button secondary" onClick={() => void refreshQueue()} disabled={Boolean(busy)}>
+            <RefreshCw size={16} className={busy === 'refresh' ? 'spin' : ''} /> Atualizar cadastro
+          </button>
+        </div>
       </div>
 
       {notice && <div className="core-message success"><CheckCircle2 size={17} />{notice}<button onClick={() => setNotice('')}><X size={15} /></button></div>}
@@ -275,7 +349,8 @@ export default function CoreMigrationPage() {
         <article><span>BSPs atuais</span><strong>{status?.projects.total ?? '—'}</strong><small>snapshot inicial preservado</small></article>
         <article><span>No OPS CORE</span><strong>{status?.projects.cutover ?? '—'}</strong><small>sem leitura do Tracking</small></article>
         <article><span>Legado</span><strong>{status?.projects.legacy ?? '—'}</strong><small>aguardando validação</small></article>
-        <article><span>Fila de validação</span><strong>{status?.candidates.pending ?? '—'}</strong><small>WIP ativo + projetos atuais</small></article>
+        <article><span>Fila de validação</span><strong>{status?.candidates.pending ?? '—'}</strong><small>fontes operacionais</small></article>
+        <article className={newDrawingCount > 0 ? 'core-kpi-alert' : ''}><span>Novas do Drawing</span><strong>{newDrawingCount}</strong><small>{newDrawingCount > 0 ? 'requer conferência' : 'nenhuma nova BSP'}</small></article>
         <article><span>Itens migrados</span><strong>{status?.items.total ?? '—'}</strong><small>com histórico de etapas</small></article>
       </div>
 
@@ -301,6 +376,7 @@ export default function CoreMigrationPage() {
                   <small>{(item.source_systems || []).join(' + ') || 'fonte pendente'}</small>
                 </div>
                 <div className="core-candidate-meta">
+                  {isNewDrawingCandidate(item) && <em className="mode drawing-new">NOVA DO DRAWING</em>}
                   <em className={'mode ' + (item.source_mode || 'new')}>{modeLabel(item.source_mode)}</em>
                   <span>{item.item_count ?? 0} itens</span>
                   <ChevronRight size={16} />
