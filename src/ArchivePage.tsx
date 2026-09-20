@@ -1,10 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Archive, BarChart3, CalendarDays, Database, RefreshCcw, Search } from 'lucide-react';
+import {
+  Archive,
+  ArrowLeft,
+  BarChart3,
+  Boxes,
+  CalendarDays,
+  Clock3,
+  Database,
+  Factory,
+  Gauge,
+  RefreshCcw,
+  Search,
+  Weight,
+} from 'lucide-react';
 import {
   loadAnnualSummary,
+  loadArchivedProjectDetail,
   loadArchivedProjects,
   loadHistoryHealth,
   type HubAnnualSummary,
+  type HubArchiveDetail,
   type HubArchivedProject,
   type HubHistoryHealth,
 } from './services/opsPanelHub';
@@ -24,12 +39,229 @@ function fmtDateOnly(value?: string | null) {
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
 }
 
+function textValue(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return value === null || value === undefined || value === '' ? '—' : String(value);
+}
+
+function numValue(record: Record<string, unknown>, key: string) {
+  const value = Number(record[key] || 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function ArchiveDetail({ projectCore, onBack }: { projectCore: string; onBack: () => void }) {
+  const [detail, setDetail] = useState<HubArchiveDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
+    loadArchivedProjectDetail(projectCore)
+      .then((data) => {
+        if (active) setDetail(data);
+      })
+      .catch((err) => {
+        if (active) setError(err instanceof Error ? err.message : 'Falha ao abrir projeto arquivado.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, [projectCore]);
+
+  if (loading) {
+    return <div className="archive-detail-loading"><RefreshCcw className="spin" size={24} /><strong>Carregando histórico completo...</strong></div>;
+  }
+
+  if (error || !detail) {
+    return (
+      <div className="archive-detail-loading">
+        <Database size={24} />
+        <strong>{error || 'Projeto arquivado não encontrado.'}</strong>
+        <button className="soft-btn" onClick={onBack}><ArrowLeft size={14} /> Voltar</button>
+      </div>
+    );
+  }
+
+  const project = detail.project;
+  const metrics = detail.metrics;
+  const items = detail.items;
+  const stageMetrics = detail.stage_metrics;
+  const hhSummary = detail.hh_summary;
+  const holds = detail.hold_periods;
+  const documents = detail.documents;
+
+  return (
+    <>
+      <section className="archive-detail-head">
+        <button className="soft-btn" onClick={onBack}><ArrowLeft size={14} /> Arquivados</button>
+        <div>
+          <span className="eyebrow">Dossiê histórico completo</span>
+          <h1>{textValue(project, 'project_display')}</h1>
+          <p>{textValue(project, 'client')} · {textValue(project, 'vessel')} · PM {textValue(project, 'pm')}</p>
+        </div>
+        <span className="status-ref archived"><i />Arquivado</span>
+      </section>
+
+      <section className="archive-detail-dates section-card">
+        <div><span>Início do projeto</span><strong>{fmtDateOnly(metrics.project_start_date)}</strong></div>
+        <div><span>Início real</span><strong>{fmtDateOnly(metrics.actual_start_date)}</strong></div>
+        <div><span>Início fabricação</span><strong>{fmtDateOnly(metrics.fabrication_start_date)}</strong></div>
+        <div><span>Conclusão</span><strong>{fmtDateOnly(metrics.completed_on)}</strong></div>
+        <div><span>Prazo contratual</span><strong>{fmtDateOnly(project.contractual_date as string | null)}</strong></div>
+        <div><span>Prazo replanejado</span><strong>{fmtDateOnly(project.replanned_finish as string | null)}</strong></div>
+      </section>
+
+      <section className="archive-kpi-grid">
+        <div className="archive-kpi"><Clock3 size={18} /><span>Lead time total</span><strong>{metrics.lead_time_days ? fmtNumber(metrics.lead_time_days) + ' dias' : '—'}</strong></div>
+        <div className="archive-kpi"><Factory size={18} /><span>Tempo fabricação</span><strong>{metrics.fabrication_calendar_days ? fmtNumber(metrics.fabrication_calendar_days) + ' dias' : '—'}</strong></div>
+        <div className="archive-kpi"><Clock3 size={18} /><span>Dias efetivos</span><strong>{metrics.effective_fabrication_days ? fmtNumber(metrics.effective_fabrication_days, 1) + ' dias' : '—'}</strong><small>descontando ON HOLD</small></div>
+        <div className="archive-kpi"><Weight size={18} /><span>Peso produzido</span><strong>{fmtNumber(metrics.total_weight_kg, 0)} kg</strong></div>
+        <div className="archive-kpi"><Gauge size={18} /><span>Produtividade</span><strong>{metrics.weight_per_effective_day ? fmtNumber(metrics.weight_per_effective_day, 1) + ' kg/dia' : '—'}</strong><small>por dia efetivo</small></div>
+        <div className="archive-kpi"><Boxes size={18} /><span>Itens por dia</span><strong>{metrics.items_per_effective_day ? fmtNumber(metrics.items_per_effective_day, 2) : '—'}</strong></div>
+        <div className="archive-kpi"><Clock3 size={18} /><span>Média por item</span><strong>{metrics.avg_item_fabrication_days ? fmtNumber(metrics.avg_item_fabrication_days, 1) + ' dias' : '—'}</strong></div>
+        <div className="archive-kpi"><Clock3 size={18} /><span>ON HOLD</span><strong>{fmtNumber(metrics.hold_days, 1)} dias</strong></div>
+        <div className="archive-kpi"><Gauge size={18} /><span>HH total</span><strong>{metrics.total_hh ? fmtNumber(metrics.total_hh, 1) + ' HH' : '—'}</strong></div>
+        <div className="archive-kpi"><Gauge size={18} /><span>Eficiência HH</span><strong>{metrics.kg_per_hh ? fmtNumber(metrics.kg_per_hh, 2) + ' kg/HH' : '—'}</strong></div>
+      </section>
+
+      <section className="archive-info-grid">
+        <div className="section-card">
+          <div className="section-card-head"><div><span className="section-mono">Projeto</span><h2>Dados gerais</h2></div></div>
+          <div className="archive-info-list">
+            <div><span>Tipo</span><strong>{textValue(project, 'project_type')}</strong></div>
+            <div><span>PO</span><strong>{textValue(project, 'customer_po')}</strong></div>
+            <div><span>Referência cliente</span><strong>{textValue(project, 'client_reference')}</strong></div>
+            <div><span>Prioridade</span><strong>{textValue(project, 'priority')}</strong></div>
+            <div><span>Acceptance Date</span><strong>{fmtDateOnly(project.acceptance_date as string | null)}</strong></div>
+            <div><span>Drawing Approval</span><strong>{fmtDateOnly(project.drawing_approval_date as string | null)}</strong></div>
+            <div><span>Itens</span><strong>{fmtNumber(metrics.item_count)}</strong></div>
+            <div><span>M²</span><strong>{fmtNumber(metrics.total_m2, 1)}</strong></div>
+            <div><span>Origem</span><strong>{detail.origin === 'OPS_CORE' ? 'OPS CORE' : 'Tracking histórico'}</strong></div>
+          </div>
+        </div>
+
+        <div className="section-card">
+          <div className="section-card-head"><div><span className="section-mono">Disponibilidade</span><h2>Qualidade dos indicadores</h2></div></div>
+          <div className="archive-info-list">
+            {Object.entries(metrics.data_completeness || {}).map(([key, value]) => (
+              <div key={key}><span>{key.replace(/^has_/, '').replaceAll('_', ' ')}</span><strong>{value ? 'Disponível' : 'Não disponível'}</strong></div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {stageMetrics.length > 0 && (
+        <section className="section-card archive-detail-section">
+          <div className="section-card-head"><div><span className="section-mono">Processo</span><h2>Média por etapa</h2></div></div>
+          <div className="archive-stage-table">
+            <div className="archive-stage-head"><span>Etapa</span><span>Setor</span><span>Itens concluídos</span><span>Fila média</span><span>Execução média</span><span>Total médio</span></div>
+            {stageMetrics.map((raw, index) => {
+              const row = raw as Record<string, unknown>;
+              return <div className="archive-stage-row" key={textValue(row, 'stage_key') + index}>
+                <span><strong>{textValue(row, 'stage_name')}</strong></span>
+                <span>{textValue(row, 'sector_key')}</span>
+                <span>{fmtNumber(numValue(row, 'completed_items'))}</span>
+                <span>{row.avg_queue_hours == null ? '—' : fmtNumber(numValue(row, 'avg_queue_hours'), 1) + ' h'}</span>
+                <span>{row.avg_execution_hours == null ? '—' : fmtNumber(numValue(row, 'avg_execution_hours'), 1) + ' h'}</span>
+                <span>{row.avg_total_hours == null ? '—' : fmtNumber(numValue(row, 'avg_total_hours'), 1) + ' h'}</span>
+              </div>;
+            })}
+          </div>
+        </section>
+      )}
+
+      {hhSummary.length > 0 && (
+        <section className="section-card archive-detail-section">
+          <div className="section-card-head"><div><span className="section-mono">Apontamento HH</span><h2>Produtividade por atividade</h2></div></div>
+          <div className="archive-stage-table archive-hh-table">
+            <div className="archive-stage-head"><span>Atividade</span><span>Sessões</span><span>Tempo</span><span>HH</span><span>Primeiro início</span><span>Último fim</span></div>
+            {hhSummary.map((raw, index) => {
+              const row = raw as Record<string, unknown>;
+              return <div className="archive-stage-row" key={textValue(row, 'activity_name') + index}>
+                <span><strong>{textValue(row, 'activity_name')}</strong></span>
+                <span>{fmtNumber(numValue(row, 'sessions'))}</span>
+                <span>{fmtNumber(numValue(row, 'elapsed_hours'), 1)} h</span>
+                <span>{fmtNumber(numValue(row, 'total_hh'), 1)}</span>
+                <span>{fmtDateOnly(row.first_start as string | null)}</span>
+                <span>{fmtDateOnly(row.last_finish as string | null)}</span>
+              </div>;
+            })}
+          </div>
+        </section>
+      )}
+
+      <section className="section-card archive-detail-section">
+        <div className="section-card-head"><div><span className="section-mono">Produção</span><h2>Itens da BSP</h2></div><strong>{items.length}</strong></div>
+        <div className="archive-items-table">
+          <div className="archive-items-head"><span>Item</span><span>Drawing / Linha</span><span>Início</span><span>Início fabricação</span><span>Fim</span><span>Peso</span><span>M²</span><span>Status</span></div>
+          {items.map((raw, index) => {
+            const row = raw as Record<string, unknown>;
+            return <div className="archive-items-row" key={textValue(row, 'item_key') + index}>
+              <span><strong>{textValue(row, 'item_display')}</strong><small>{textValue(row, 'item_type')}</small></span>
+              <span><strong>{textValue(row, 'drawing_code')}</strong><small>{textValue(row, 'line_number')}</small></span>
+              <span>{fmtDateOnly(row.start_date as string | null)}</span>
+              <span>{fmtDateOnly(row.fabrication_start as string | null)}</span>
+              <span>{fmtDateOnly(row.finish_date as string | null)}</span>
+              <span>{fmtNumber(numValue(row, 'weight_kg'), 1)} kg</span>
+              <span>{row.m2 == null ? '—' : fmtNumber(numValue(row, 'm2'), 1)}</span>
+              <span><span className="status-ref archived"><i />{textValue(row, 'current_status')}</span></span>
+            </div>;
+          })}
+        </div>
+      </section>
+
+      {holds.length > 0 && (
+        <section className="section-card archive-detail-section">
+          <div className="section-card-head"><div><span className="section-mono">ON HOLD</span><h2>Períodos de suspensão</h2></div></div>
+          <div className="archive-stage-table archive-hold-table">
+            <div className="archive-stage-head"><span>Item</span><span>Início</span><span>Fim</span><span>Duração</span><span>Motivo</span><span>Origem</span></div>
+            {holds.map((raw, index) => {
+              const row = raw as Record<string, unknown>;
+              return <div className="archive-stage-row" key={textValue(row, 'id') + index}>
+                <span>{textValue(row, 'iso')}</span>
+                <span>{fmtDateOnly(row.started_at as string | null)}</span>
+                <span>{fmtDateOnly(row.ended_at as string | null)}</span>
+                <span>{fmtNumber(numValue(row, 'duration_hours') / 24, 1)} dias</span>
+                <span>{textValue(row, 'reason')}</span>
+                <span>{textValue(row, 'source_system')}</span>
+              </div>;
+            })}
+          </div>
+        </section>
+      )}
+
+      {documents.length > 0 && (
+        <section className="section-card archive-detail-section">
+          <div className="section-card-head"><div><span className="section-mono">Engenharia</span><h2>Documentos e revisões</h2></div></div>
+          <div className="archive-document-grid">
+            {documents.map((raw, index) => {
+              const row = raw as Record<string, unknown>;
+              const revisions = Array.isArray(row.revisions) ? row.revisions : [];
+              return <div className="archive-document-card" key={textValue(row, 'id') + index}>
+                <span>{textValue(row, 'document_type')}</span>
+                <strong>{textValue(row, 'document_number')}</strong>
+                <small>{textValue(row, 'title')}</small>
+                <p>Revisão vigente: <b>{textValue(row, 'current_revision')}</b></p>
+                <em>{revisions.length} revisão(ões) registradas</em>
+              </div>;
+            })}
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
 export default function ArchivePage() {
   const [items, setItems] = useState<HubArchivedProject[]>([]);
   const [summary, setSummary] = useState<HubAnnualSummary[]>([]);
   const [health, setHealth] = useState<HubHistoryHealth | null>(null);
   const [search, setSearch] = useState('');
   const [year, setYear] = useState<number | null>(null);
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [listLoading, setListLoading] = useState(false);
   const [error, setError] = useState('');
@@ -82,6 +314,10 @@ export default function ArchivePage() {
     [summary],
   );
 
+  if (selectedProject) {
+    return <ArchiveDetail projectCore={selectedProject} onBack={() => setSelectedProject(null)} />;
+  }
+
   const selectedSummary = year
     ? summary.find((row) => Number(row.reporting_year) === year)
     : null;
@@ -96,7 +332,7 @@ export default function ArchivePage() {
         <div>
           <span className="eyebrow">Base histórica operacional</span>
           <h1>Arquivados</h1>
-          <p>Projetos concluídos permanecem no banco para auditoria, comparativos e relatórios anuais.</p>
+          <p>Projetos concluídos permanecem completos no banco para auditoria, produtividade e relatórios anuais.</p>
         </div>
         <div className="head-actions">
           <span className="sync-chip archive-chip"><Archive size={13} /> Banco histórico STEP</span>
@@ -171,7 +407,12 @@ export default function ArchivePage() {
         </div>
 
         {items.map((row) => (
-          <div className="archive-table-row" key={row.origin + ':' + row.project_core}>
+          <button
+            type="button"
+            className="archive-table-row archive-table-button"
+            key={row.origin + ':' + row.project_core}
+            onClick={() => setSelectedProject(row.project_core)}
+          >
             <span><strong>{row.project_display || row.project_core}</strong><small>{row.project_type || 'Projeto'}</small></span>
             <span><strong>{row.client || 'Não informado'}</strong><small>{row.vessel || '—'}{row.pm ? ' · ' + row.pm : ''}</small></span>
             <span><strong>{fmtDateOnly(row.completed_on)}</strong><small>{row.reporting_year || '—'}</small></span>
@@ -184,7 +425,7 @@ export default function ArchivePage() {
               <span className="status-ref archived"><i />Arquivado</span>
               {Number(row.metric_quality_issues || 0) > 0 && <small className="archive-quality-warning">Conferir {row.metric_quality_issues}</small>}
             </span>
-          </div>
+          </button>
         ))}
 
         {!items.length && (
