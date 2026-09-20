@@ -445,6 +445,72 @@ export async function upsertCoreItem(projectKey: string, item: HubCoreItemInput)
 }
 
 
+
+export interface HubArchivedProject {
+  origin: 'LEGACY_TRACKING' | 'OPS_CORE';
+  project_id?: string | null;
+  project_core: string;
+  project_display?: string | null;
+  client?: string | null;
+  vessel?: string | null;
+  pm?: string | null;
+  project_type?: string | null;
+  completed_on?: string | null;
+  reporting_year?: number | null;
+  item_count: number;
+  total_weight_kg: number;
+  total_m2: number;
+  archive_source?: string | null;
+  hold_days: number;
+  metric_quality_issues?: number;
+}
+
+export interface HubAnnualSummary {
+  reporting_year: number;
+  projects: number;
+  clients: number;
+  items: number;
+  total_weight_kg: number;
+  total_m2: number;
+  hold_days: number;
+  metric_quality_issues?: number;
+}
+
+export interface HubHistoryHealth {
+  legacy_history_rows: number;
+  legacy_archive_rows: number;
+  legacy_current_rows: number;
+  on_hold_periods: number;
+  invalid_date_rows: number;
+  metric_quality_rows: number;
+  archived_projects: number;
+  years: number[];
+}
+
+export async function loadArchivedProjects(year?: number | null, search = '', limit = 1000): Promise<HubArchivedProject[]> {
+  const response = await requestHub<{ ok: true; data: HubArchivedProject[] }>({
+    action: 'archive_catalog',
+    year: year ?? null,
+    search,
+    limit,
+  });
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+export async function loadAnnualSummary(): Promise<HubAnnualSummary[]> {
+  const response = await requestHub<{ ok: true; data: HubAnnualSummary[] }>({
+    action: 'annual_summary',
+  });
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+export async function loadHistoryHealth(): Promise<HubHistoryHealth> {
+  const response = await requestHub<{ ok: true; data: HubHistoryHealth }>({
+    action: 'history_health',
+  });
+  return response.data;
+}
+
 export type CoreDemandAction = 'accept' | 'start' | 'progress' | 'wait' | 'resume' | 'block' | 'complete';
 
 export async function mutateCoreDemand(
