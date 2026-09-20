@@ -77,6 +77,7 @@ export interface HubStepflowProject {
 
 export interface HubProjectDetail {
   project: HubProject | null;
+  core?: HubCoreProjectDetail | null;
   wip: unknown[];
   drawings: unknown[];
   drawing_revisions: unknown[];
@@ -235,6 +236,9 @@ export interface HubDemandRow {
   archived?: boolean | null;
   archive_source?: string | null;
   archive_rank?: number | null;
+  source_mode?: 'legacy_tracking' | 'ops_core' | 'archived' | null;
+  core_project_id?: string | null;
+  core_item_id?: string | null;
   hh_session_id?: string | null;
   hh_status?: string | null;
   hh_activity_key?: string | null;
@@ -268,6 +272,130 @@ export async function loadHubDemands(region = 'BR', limit = 2000, search = ''): 
     search,
   });
   return Array.isArray(response.data) ? response.data : [];
+}
+
+
+export interface HubCoreMigrationStatus {
+  projects: {
+    total: number;
+    cutover: number;
+    legacy: number;
+    validation_required: number;
+  };
+  items: {
+    total: number;
+    cutover: number;
+    legacy: number;
+    removed: number;
+  };
+  candidates: {
+    total: number;
+    pending: number;
+    validated: number;
+  };
+  generated_at?: string;
+}
+
+export interface HubRegistrationCandidate {
+  id: string;
+  region: string;
+  project_core: string;
+  display_code: string;
+  candidate_status: 'discovered' | 'collecting' | 'parsed' | 'reconciled' | 'validation_required' | 'validated' | 'rejected';
+  source_systems: string[];
+  suggested_data: Record<string, unknown>;
+  conflicts: unknown[];
+  discovered_at: string;
+  last_seen_at: string;
+  validated_project_id?: string | null;
+  source_mode?: 'legacy_tracking' | 'ops_core' | 'archived' | null;
+  validation_status?: string | null;
+  client?: string | null;
+  vessel?: string | null;
+  pm?: string | null;
+  project_status?: string | null;
+  item_count?: number | null;
+  document_count?: number | null;
+}
+
+export interface HubCoreValidationReport {
+  project: Record<string, unknown> | null;
+  items: {
+    item_count: number;
+    missing_weight: number;
+    missing_material: number;
+    unclassified_items: number;
+    items_without_workflow: number;
+  };
+  documents: {
+    document_count: number;
+    missing_revision: number;
+    source_linked: number;
+  };
+  blocking_issues: string[];
+  warnings: Record<string, number>;
+  ready_for_cutover: boolean;
+  generated_at?: string;
+}
+
+export interface HubCoreProjectDetail {
+  project: Record<string, unknown> | null;
+  aliases: unknown[];
+  items: unknown[];
+  stages: unknown[];
+  documents: unknown[];
+  handoffs: unknown[];
+  notifications: unknown[];
+}
+
+export async function loadCoreMigrationStatus(): Promise<HubCoreMigrationStatus> {
+  const response = await requestHub<{ ok: true; data: HubCoreMigrationStatus }>({
+    action: 'migration_status',
+  });
+  return response.data;
+}
+
+export async function loadRegistrationCandidates(
+  status: HubRegistrationCandidate['candidate_status'] | '' = 'validation_required',
+  limit = 250,
+): Promise<HubRegistrationCandidate[]> {
+  const response = await requestHub<{ ok: true; data: HubRegistrationCandidate[] }>({
+    action: 'registration_candidates',
+    status,
+    limit,
+  });
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+export async function loadCoreValidationReport(projectKey: string): Promise<HubCoreValidationReport> {
+  const response = await requestHub<{ ok: true; data: HubCoreValidationReport }>({
+    action: 'validation_report',
+    projectKey,
+  });
+  return response.data;
+}
+
+export async function cutoverCoreProject(projectKey: string) {
+  const response = await requestHub<{ ok: true; data: Record<string, unknown>; report: HubCoreValidationReport; message?: string }>({
+    action: 'core_cutover',
+    projectKey,
+  });
+  return response;
+}
+
+export async function revertCoreProject(projectKey: string) {
+  const response = await requestHub<{ ok: true; data: Record<string, unknown> }>({
+    action: 'core_revert',
+    projectKey,
+  });
+  return response.data;
+}
+
+export async function refreshCoreRegistration() {
+  const response = await requestHub<{ ok: true; data: Record<string, unknown> }>({
+    action: 'core_refresh_registration',
+  });
+  return response.data;
 }
 
 
