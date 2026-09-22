@@ -344,11 +344,21 @@ export interface HubRegistrationCandidate {
 
 export interface HubCoreValidationReport {
   project: Record<string, unknown> | null;
+  fcb?: {
+    project_core?: string | null;
+    fcb_count: number;
+    has_fcb: boolean;
+    status: 'awaiting_fcb' | 'detected';
+    latest_revision?: string | null;
+    latest_source_row_id?: number | string | null;
+    documents?: Array<Record<string, unknown>>;
+  };
   items: {
     item_count: number;
     missing_weight: number;
     missing_material: number;
     unclassified_items: number;
+    provisional_breakdown?: number;
     items_without_workflow: number;
   };
   documents: {
@@ -453,6 +463,9 @@ export interface HubAutoRegisterResult {
   registered: boolean;
   activated: boolean;
   pending_detail?: boolean;
+  awaiting_fcb?: boolean;
+  fcb_detected?: boolean;
+  fcb?: Record<string, unknown>;
   materialized?: Record<string, unknown>;
   report?: HubCoreValidationReport;
   cutover?: Record<string, unknown>;
