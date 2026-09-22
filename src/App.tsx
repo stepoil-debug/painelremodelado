@@ -44,6 +44,7 @@ import {
   loadHubEvidence,
   loadHubProject,
   loadHubSyncStatus,
+  loadNewBspAlerts,
   loadCoreNotifications,
   markCoreNotificationRead,
   mutateCoreDemand,
@@ -51,6 +52,7 @@ import {
   type HubDrawingAttachment,
   type HubDrawingAttachments,
   type HubHHEvidence,
+  type HubNewBspAlert,
   type HubHHEvidencePhoto,
   type HubHHSession,
 } from './services/opsPanelHub';
@@ -198,6 +200,7 @@ export default function App() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [newBspPopup, setNewBspPopup] = useState<HubNewBspAlert | null>(null);
   const [clock, setClock] = useState(new Date());
 
   const demands = state.demands;
@@ -307,6 +310,44 @@ export default function App() {
       .then((status) => setLastSyncAt(status.last_synced_at || null))
       .catch(() => undefined);
   }, [panelUser]);
+
+  useEffect(() => {
+    if (!hubConfigured || !panelUser) return;
+
+    let active = true;
+    const checkNewBsp = async () => {
+      try {
+        const alerts = await loadNewBspAlerts(5);
+        if (!active || !alerts.length) return;
+        setNewBspPopup((current) => current || alerts[0]);
+      } catch {
+        // Popup é complementar; falha aqui não bloqueia a carteira.
+      }
+    };
+
+    void checkNewBsp();
+    const timer = window.setInterval(() => void checkNewBsp(), 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [panelUser]);
+
+  async function closeNewBspPopup(openRegistration = false) {
+    const alert = newBspPopup;
+    if (!alert) return;
+    setNewBspPopup(null);
+    try {
+      await markCoreNotificationRead(alert.id);
+    } catch {
+      // Não impede a navegação.
+    }
+    if (openRegistration) {
+      setSelectedId(null);
+      setExpandedId(null);
+      setPage('migration');
+    }
+  }
 
   useEffect(() => {
     if (!hubConfigured || !panelUser) return;
@@ -725,6 +766,23 @@ export default function App() {
       </header>
 
       {banner && <div className="floating-banner">{banner}</div>}
+
+      {newBspPopup && (
+        <aside className="new-bsp-popup" role="alertdialog" aria-live="assertive">
+          <button className="new-bsp-popup-close" onClick={() => void closeNewBspPopup(false)} aria-label="Fechar alerta">×</button>
+          <div className="new-bsp-popup-icon"><Bell size={20} /></div>
+          <div className="new-bsp-popup-copy">
+            <span>NOVA BSP DETECTADA</span>
+            <strong>{newBspPopup.display_code || newBspPopup.project_core}</strong>
+            <p>{newBspPopup.message}</p>
+            <small>{(newBspPopup.source_systems || []).join(' + ') || 'Drawing'}</small>
+          </div>
+          <div className="new-bsp-popup-actions">
+            <button className="soft-btn" onClick={() => void closeNewBspPopup(false)}>Fechar</button>
+            <button className="new-bsp-popup-primary" onClick={() => void closeNewBspPopup(true)}>Abrir cadastro</button>
+          </div>
+        </aside>
+      )}
 
       <main className="workspace">
         {selected ? (
