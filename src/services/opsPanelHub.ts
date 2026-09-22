@@ -391,6 +391,19 @@ export async function loadRegistrationCandidates(
   return Array.isArray(response.data) ? response.data : [];
 }
 
+export interface HubCoreRegistrationDetail {
+  project: Record<string, unknown> | null;
+  items: Array<Record<string, unknown>>;
+}
+
+export async function loadCoreRegistrationDetail(projectKey: string): Promise<HubCoreRegistrationDetail> {
+  const response = await requestHub<{ ok: true; data: HubCoreRegistrationDetail }>({
+    action: 'core_registration_detail',
+    projectKey,
+  });
+  return response.data;
+}
+
 export async function loadCoreValidationReport(projectKey: string): Promise<HubCoreValidationReport> {
   const response = await requestHub<{ ok: true; data: HubCoreValidationReport }>({
     action: 'validation_report',
