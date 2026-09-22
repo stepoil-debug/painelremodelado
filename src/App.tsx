@@ -303,7 +303,6 @@ export default function App() {
 
   useEffect(() => {
     if (!hubConfigured || !panelUser) return;
-    void refreshHub(false, '');
     void loadHubSyncStatus()
       .then((status) => setLastSyncAt(status.last_synced_at || null))
       .catch(() => undefined);
