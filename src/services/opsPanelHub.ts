@@ -435,6 +435,24 @@ export async function materializeCoreCandidate(projectKey: string) {
   return response;
 }
 
+export interface HubAutoRegisterResult {
+  ok: boolean;
+  registered: boolean;
+  activated: boolean;
+  pending_detail?: boolean;
+  materialized?: Record<string, unknown>;
+  report?: HubCoreValidationReport;
+  cutover?: Record<string, unknown>;
+}
+
+export async function autoRegisterCoreCandidate(projectKey: string): Promise<HubAutoRegisterResult> {
+  const response = await requestHub<{ ok: true; data: HubAutoRegisterResult }>({
+    action: 'core_register_candidate_auto',
+    projectKey,
+  });
+  return response.data;
+}
+
 export interface HubCoreItemInput {
   id?: string | null;
   item_key?: string | null;
@@ -590,6 +608,28 @@ export async function mutateCoreDemand(
     note: options.note || '',
   });
   return response.data;
+}
+
+export interface HubNewBspAlert {
+  id: string;
+  notification_type: string;
+  title: string;
+  message: string;
+  severity: 'info' | 'warning' | 'danger' | 'success';
+  created_at: string;
+  read_at?: string | null;
+  project_core: string;
+  display_code: string;
+  source_systems?: string[];
+  suggested_data?: Record<string, unknown>;
+}
+
+export async function loadNewBspAlerts(limit = 10): Promise<HubNewBspAlert[]> {
+  const response = await requestHub<{ ok: true; data: HubNewBspAlert[] }>({
+    action: 'new_bsp_alerts',
+    limit,
+  });
+  return Array.isArray(response.data) ? response.data : [];
 }
 
 export interface HubCoreNotification {
