@@ -572,11 +572,18 @@ Deno.serve(async (request: Request) => {
     await admin.rpc("ops_core_refresh_registration").catch(() => null);
   }
 
+  let demandCache: unknown = null;
+  if (results.some((row) => ["tracking", "wip", "drawing"].includes(String(row.source || "")) && row.status !== "error")) {
+    const { data: cacheData, error: cacheError } = await admin.rpc("ops_core_refresh_demand_feed_cache");
+    demandCache = cacheError ? { ok: false, error: cacheError.message } : cacheData;
+  }
+
   return json({
     ok: results.every((r) => r.status !== "error"),
     results,
     drawing_detection: drawingDetection,
     legacy_reconciliation: legacyReconciliation,
+    demand_cache: demandCache,
     migration_mode: legacyProjects > 0 ? "ops_core_hybrid" : "ops_core_only",
     legacy_projects: legacyProjects,
   });
