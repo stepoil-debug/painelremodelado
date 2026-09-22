@@ -653,7 +653,9 @@ Deno.serve(async (request: Request) => {
       data,
       message: (data as any)?.activated
         ? "BSP cadastrada e ativada automaticamente no OPS CORE."
-        : "BSP cadastrada. O projeto permanece pendente até o Drawing fornecer o detalhamento necessário.",
+        : (data as any)?.awaiting_fcb
+          ? "BSP pendente. O cadastro técnico aguardará o FCB vigente; dados provisórios do Drawing não serão usados como fonte final."
+          : "FCB detectado. O projeto permanece pendente até concluir a importação e validação técnica.",
       generatedAt: new Date().toISOString(),
     });
   }
