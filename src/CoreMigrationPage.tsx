@@ -158,7 +158,9 @@ export default function CoreMigrationPage() {
       setNotice(
         result.activated
           ? selected.display_code + ' cadastrada e ativada automaticamente no OPS CORE.'
-          : selected.display_code + ' cadastrada automaticamente. O projeto ficará pendente até o Drawing trazer o detalhamento restante.'
+          : result.awaiting_fcb
+            ? selected.display_code + ' ficou pendente: aguardando o FCB técnico vigente para montar o cadastro completo.'
+            : selected.display_code + ' cadastrada automaticamente. O projeto continuará pendente até a validação técnica.'
       );
       setSelected(null);
       setDetail(null);
@@ -416,32 +418,53 @@ export default function CoreMigrationPage() {
             <>
               <div className="core-detail-head">
                 <div>
-                  <span className="core-eyebrow">{modeLabel(selected.source_mode)}</span>
+                  <span className="core-eyebrow">{report?.fcb?.status === 'awaiting_fcb' ? 'AGUARDANDO FCB' : modeLabel(selected.source_mode)}</span>
                   <h2>{selected.display_code}</h2>
                   <p>{selected.client || core?.project?.client || 'Cliente a confirmar'} · {selected.vessel || core?.project?.vessel || 'Vessel a confirmar'}</p>
                 </div>
-                <button className="core-button secondary" onClick={() => setEditing({ ...emptyItem })}><Plus size={16} />Adicionar item</button>
+                {report?.fcb?.status !== 'awaiting_fcb' && (
+                  <button className="core-button secondary" onClick={() => setEditing({ ...emptyItem })}><Plus size={16} />Adicionar item</button>
+                )}
               </div>
 
               <div className="core-validation">
                 <div className={'core-ready ' + (report?.ready_for_cutover ? 'ready' : 'pending')}>
                   {report?.ready_for_cutover ? <CheckCircle2 size={20} /> : <AlertTriangle size={20} />}
                   <div>
-                    <strong>{report?.ready_for_cutover ? 'Cadastro apto para validação' : 'Cadastro ainda possui bloqueios'}</strong>
-                    <small>{report?.ready_for_cutover ? 'O corte pode ser executado com rastreabilidade.' : 'Corrija os pontos abaixo antes de validar.'}</small>
+                    <strong>
+                      {report?.ready_for_cutover
+                        ? 'Cadastro técnico completo'
+                        : report?.fcb?.status === 'awaiting_fcb'
+                          ? 'Aguardando FCB técnico'
+                          : 'Cadastro técnico em validação'}
+                    </strong>
+                    <small>
+                      {report?.ready_for_cutover
+                        ? 'Os dados técnicos foram validados e o projeto pode ser ativado.'
+                        : report?.fcb?.status === 'awaiting_fcb'
+                          ? 'O Drawing gerou somente um pré-cadastro. Peso, material, dimensão e demais dados serão carregados do FCB vigente.'
+                          : 'O FCB foi detectado, mas o cadastro técnico ainda precisa concluir a importação/validação.'}
+                    </small>
                   </div>
                 </div>
                 {report?.blocking_issues?.map((issue) => <p className="core-blocking" key={issue}>{issue}</p>)}
                 <div className="core-warnings">
-                  <span>Peso ausente: <b>{report ? report.warnings?.missing_weight ?? 0 : '—'}</b></span>
-                  <span>Material ausente: <b>{report ? report.warnings?.missing_material ?? 0 : '—'}</b></span>
-                  <span>Não classificados: <b>{report ? report.warnings?.unclassified_items ?? 0 : '—'}</b></span>
-                  <span>Detalhamento pendente: <b>{report ? report.warnings?.provisional_breakdown ?? 0 : '—'}</b></span>
+                  <span>FCB detectado: <b>{report ? (report.fcb?.has_fcb ? 'Sim' : 'Não') : '—'}</b></span>
+                  <span>Revisão FCB: <b>{report?.fcb?.latest_revision || '—'}</b></span>
+                  <span>Pré-cadastro Drawing: <b>{report ? report.warnings?.provisional_drawing_items ?? 0 : '—'}</b></span>
+                  <span>Itens técnicos: <b>{report?.fcb?.has_fcb ? report.items?.item_count ?? '—' : 'aguardando FCB'}</b></span>
                 </div>
               </div>
 
               <div className="core-items-title">
-                <div><strong>Itens operacionais</strong><small>{items.length} item(ns) ativos</small></div>
+                <div>
+                  <strong>{report?.fcb?.status === 'awaiting_fcb' ? 'Pré-cadastro do Drawing' : 'Itens operacionais'}</strong>
+                  <small>
+                    {report?.fcb?.status === 'awaiting_fcb'
+                      ? items.length + ' registro(s) provisório(s) - não são dados técnicos finais'
+                      : items.length + ' item(ns) ativos'}
+                  </small>
+                </div>
               </div>
               <div className="core-table-wrap">
                 <table className="core-table">
@@ -458,8 +481,12 @@ export default function CoreMigrationPage() {
                         <td>{boolLabel(item.requires_3d)}</td>
                         <td>{boolLabel(item.requires_assembly_simulation)}</td>
                         <td className="core-row-actions">
-                          <button title="Editar" onClick={() => setEditing({ ...item })}><Save size={15} /></button>
-                          <button title="Retirar do escopo" onClick={() => void removeItem(item)}><Trash2 size={15} /></button>
+                          {report?.fcb?.status !== 'awaiting_fcb' && (
+                            <>
+                              <button title="Editar" onClick={() => setEditing({ ...item })}><Save size={15} /></button>
+                              <button title="Retirar do escopo" onClick={() => void removeItem(item)}><Trash2 size={15} /></button>
+                            </>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -470,14 +497,26 @@ export default function CoreMigrationPage() {
 
               <div className="core-cutover">
                 <div>
-                  <strong>{selected.source_mode === 'legacy_tracking' ? 'Corte Tracking → OPS CORE' : 'Ativar projeto no OPS CORE'}</strong>
-                  <p>{selected.source_mode === 'legacy_tracking'
-                    ? 'Ao validar, esta BSP deixa imediatamente de ler o Tracking no painel operacional.'
-                    : 'A BSP passa a fazer parte da operação sem nunca ser cadastrada no Tracking.'}</p>
+                  <strong>
+                    {report?.fcb?.status === 'awaiting_fcb'
+                      ? 'Ativação bloqueada até o FCB'
+                      : selected.source_mode === 'legacy_tracking'
+                        ? 'Corte Tracking → OPS CORE'
+                        : 'Ativar projeto no OPS CORE'}
+                  </strong>
+                  <p>
+                    {report?.fcb?.status === 'awaiting_fcb'
+                      ? 'O sistema não aceitará peso, material ou detalhamento manual como substituto do FCB. Assim que o FCB vigente for processado, os itens técnicos serão cadastrados automaticamente.'
+                      : selected.source_mode === 'legacy_tracking'
+                        ? 'Ao validar, esta BSP deixa imediatamente de ler o Tracking no painel operacional.'
+                        : 'A BSP passa a fazer parte da operação sem nunca ser cadastrada no Tracking.'}
+                  </p>
                 </div>
-                <button className="core-button primary" disabled={!report?.ready_for_cutover || busy === 'cutover'} onClick={() => void validateAndCutover()}>
-                  {busy === 'cutover' ? <LoaderCircle className="spin" size={16} /> : <ShieldCheck size={16} />} Validar e ativar
-                </button>
+                {report?.fcb?.status !== 'awaiting_fcb' && (
+                  <button className="core-button primary" disabled={!report?.ready_for_cutover || busy === 'cutover'} onClick={() => void validateAndCutover()}>
+                    {busy === 'cutover' ? <LoaderCircle className="spin" size={16} /> : <ShieldCheck size={16} />} Validar e ativar
+                  </button>
+                )}
               </div>
             </>
           )}
