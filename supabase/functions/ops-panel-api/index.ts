@@ -171,23 +171,6 @@ Deno.serve(async (request: Request) => {
     });
     if (dispatchError) return json({ ok: false, error: dispatchError.message }, 500);
 
-    let tracking: unknown = null;
-    let bootstrap: unknown = null;
-    if (legacyProjects > 0) {
-      const { data: normalized, error: normalizedError } = await admin.rpc("sync_tracking_normalized_if_needed", {
-        p_region: "BR",
-      });
-      if (normalizedError) return json({ ok: false, error: normalizedError.message }, 500);
-      tracking = normalized;
-
-      const { data: snapshot, error: snapshotError } = await admin.rpc("ops_core_refresh_legacy_snapshot");
-      if (snapshotError) return json({ ok: false, error: snapshotError.message }, 500);
-      bootstrap = snapshot;
-    }
-
-    const { data: candidates, error: candidatesError } = await admin.rpc("ops_core_refresh_registration");
-    if (candidatesError) return json({ ok: false, error: candidatesError.message }, 500);
-
     return json({
       ok: true,
       data: {
@@ -196,12 +179,9 @@ Deno.serve(async (request: Request) => {
         mode: legacyProjects > 0 ? "ops_core_hybrid" : "ops_core_only",
         sources,
         legacy_projects: legacyProjects,
-        tracking,
-        bootstrap,
-        candidates,
       },
       message: legacyProjects > 0
-        ? "Atualização solicitada. Projetos legados continuam sincronizados até o cutover individual."
+        ? "Atualização solicitada. A reconciliação ocorrerá ao concluir o sync das fontes."
         : "Atualização solicitada somente nas fontes operacionais. Tracking está fora do fluxo ativo.",
     });
   }
