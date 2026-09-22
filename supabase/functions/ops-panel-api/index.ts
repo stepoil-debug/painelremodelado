@@ -625,6 +625,28 @@ Deno.serve(async (request: Request) => {
     return json({ ok: true, data, generatedAt: new Date().toISOString() });
   }
 
+  if (action === "core_register_candidate_auto") {
+    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode cadastrar uma nova BSP." }, 403);
+    const projectKey = String(body.projectKey || "").trim();
+    if (!projectKey) return json({ ok: false, error: "projectKey é obrigatório." }, 400);
+
+    const { data, error } = await admin.rpc("ops_core_register_candidate_auto", {
+      p_project_key: projectKey,
+      p_actor: actor,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+
+    await refreshDemandCache();
+    return json({
+      ok: true,
+      data,
+      message: (data as any)?.activated
+        ? "BSP cadastrada e ativada automaticamente no OPS CORE."
+        : "BSP cadastrada. O projeto permanece pendente até o Drawing fornecer o detalhamento necessário.",
+      generatedAt: new Date().toISOString(),
+    });
+  }
+
   if (action === "core_materialize_candidate") {
     if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode criar uma BSP a partir da fila de validação." }, 403);
     const projectKey = String(body.projectKey || "").trim();
@@ -819,6 +841,21 @@ Deno.serve(async (request: Request) => {
     await refreshDemandCache();
 
     return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
+  if (action === "new_bsp_alerts") {
+    if (!mayManageCore) return json({ ok: true, data: [], generatedAt: new Date().toISOString() });
+
+    const requestedLimit = Number(body.limit || 10);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.max(1, Math.min(Math.trunc(requestedLimit), 50))
+      : 10;
+
+    const { data, error } = await admin.rpc("ops_core_new_bsp_alerts", {
+      p_limit: limit,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data: Array.isArray(data) ? data : [], generatedAt: new Date().toISOString() });
   }
 
   if (action === "core_notifications") {
