@@ -21,7 +21,7 @@ import {
   loadHubProject,
   loadHubSyncStatus,
   loadRegistrationCandidates,
-  materializeCoreCandidate,
+  autoRegisterCoreCandidate,
   refreshCoreRegistration,
   triggerDrawingSync,
   removeCoreItem,
@@ -74,7 +74,7 @@ function modeLabel(mode?: string | null) {
   if (mode === 'ops_core') return 'OPS CORE';
   if (mode === 'pending_validation') return 'Pendente validação';
   if (mode === 'legacy_tracking') return 'Tracking legado';
-  return 'Nova demanda';
+  return 'Pendente';
 }
 
 function isNewDrawingCandidate(candidate: HubRegistrationCandidate) {
@@ -149,19 +149,23 @@ export default function CoreMigrationPage() {
     }
   }
 
-  async function prepareCandidate() {
+  async function registerCandidate() {
     if (!selected) return;
-    setBusy('prepare');
+    setBusy('register');
     setError('');
     try {
-      await materializeCoreCandidate(selected.project_core);
-      setNotice('Cadastro preparado no banco operacional. Revise os itens antes de validar.');
+      const result = await autoRegisterCoreCandidate(selected.project_core);
+      setNotice(
+        result.activated
+          ? selected.display_code + ' cadastrada e ativada automaticamente no OPS CORE.'
+          : selected.display_code + ' cadastrada automaticamente. O projeto ficará pendente até o Drawing trazer o detalhamento restante.'
+      );
+      setSelected(null);
+      setDetail(null);
+      setReport(null);
       await loadAll();
-      const refreshed = (await loadRegistrationCandidates('', 500))
-        .find((item) => item.project_core === selected.project_core);
-      if (refreshed) await openCandidate(refreshed);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível preparar o cadastro.');
+      setError(reason instanceof Error ? reason.message : 'Não foi possível cadastrar a BSP.');
     } finally {
       setBusy('');
     }
@@ -377,7 +381,7 @@ export default function CoreMigrationPage() {
                 </div>
                 <div className="core-candidate-meta">
                   {isNewDrawingCandidate(item) && <em className="mode drawing-new">NOVA DO DRAWING</em>}
-                  <em className={'mode ' + (item.source_mode || 'new')}>{modeLabel(item.source_mode)}</em>
+                  <em className={'mode ' + (item.source_mode || 'pending')}>{modeLabel(item.source_mode)}</em>
                   <span>{item.item_count ?? 0} itens</span>
                   <ChevronRight size={16} />
                 </div>
@@ -392,19 +396,19 @@ export default function CoreMigrationPage() {
             <div className="core-empty">
               <FileCheck2 size={36} />
               <h2>Selecione uma BSP</h2>
-              <p>Confira as fontes, itens, documentos e divergências antes do corte.</p>
+              <p>Selecione uma BSP pendente para cadastrá-la automaticamente.</p>
             </div>
           ) : !selected.source_mode ? (
-            <div className="core-prepare">
-              <span className="core-eyebrow">NOVA DEMANDA DETECTADA</span>
+            <div className="core-prepare core-pending-register">
+              <span className="core-eyebrow">PENDENTE DE CADASTRO</span>
               <h2>{selected.display_code}</h2>
-              <p>Esta demanda existe nas fontes operacionais, mas ainda não possui cadastro no OPS CORE.</p>
+              <p>A BSP foi detectada nas fontes operacionais e está aguardando somente o cadastro no OPS CORE.</p>
               <div className="core-source-list">{selected.source_systems.map((source) => <span key={source}>{source}</span>)}</div>
-              <button className="core-button primary" onClick={() => void prepareCandidate()} disabled={busy === 'prepare'}>
-                {busy === 'prepare' ? <LoaderCircle className="spin" size={16} /> : <Database size={16} />}
-                Preparar cadastro
+              <button className="core-button primary core-register-button" onClick={() => void registerCandidate()} disabled={busy === 'register'}>
+                {busy === 'register' ? <LoaderCircle className="spin" size={16} /> : <Database size={16} />}
+                {busy === 'register' ? 'Cadastrando...' : 'Cadastrar'}
               </button>
-              <small>Nenhuma linha será criada no Tracking.</small>
+              <small>O cadastro é montado automaticamente a partir de Drawing, WIP e Job Order. Nada será criado no Tracking.</small>
             </div>
           ) : busy === 'detail' && !detail ? (
             <div className="core-empty"><LoaderCircle className="spin" size={28} /><p>Carregando cadastro...</p></div>
