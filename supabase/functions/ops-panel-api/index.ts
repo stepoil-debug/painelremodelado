@@ -647,15 +647,12 @@ Deno.serve(async (request: Request) => {
     });
     if (error) return json({ ok: false, error: error.message }, 500);
 
-    await refreshDemandCache();
     return json({
       ok: true,
       data,
-      message: (data as any)?.activated
-        ? "BSP cadastrada e ativada automaticamente no OPS CORE."
-        : (data as any)?.awaiting_fcb
-          ? "BSP pendente. O cadastro técnico aguardará o FCB vigente; dados provisórios do Drawing não serão usados como fonte final."
-          : "FCB detectado. O projeto permanece pendente até concluir a importação e validação técnica.",
+      message: (data as any)?.awaiting_fcb
+        ? "BSP pendente em modo observação. O cadastro técnico aguardará o FCB vigente e nenhum painel operacional será alterado."
+        : "Cadastro atualizado em modo observação. Nenhum painel operacional foi alterado.",
       generatedAt: new Date().toISOString(),
     });
   }
@@ -712,7 +709,6 @@ Deno.serve(async (request: Request) => {
       p_actor: actor,
     });
     if (error) return json({ ok: false, error: error.message }, 500);
-    await refreshDemandCache();
     const { data: report } = await admin.rpc("ops_core_project_validation_report", {
       p_project_key: projectKey,
     });
@@ -731,49 +727,23 @@ Deno.serve(async (request: Request) => {
       p_actor: actor,
     });
     if (error) return json({ ok: false, error: error.message }, 500);
-    await refreshDemandCache();
     return json({ ok: true, data, generatedAt: new Date().toISOString() });
   }
 
   if (action === "core_cutover") {
-    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode validar e retirar uma BSP do Tracking." }, 403);
-    const projectKey = String(body.projectKey || "").trim();
-    if (!projectKey) return json({ ok: false, error: "projectKey é obrigatório." }, 400);
-
-    const { data: report, error: reportError } = await admin.rpc("ops_core_project_validation_report", {
-      p_project_key: projectKey,
-    });
-    if (reportError) return json({ ok: false, error: reportError.message }, 500);
-    if (!(report as any)?.ready_for_cutover) {
-      return json({ ok: false, error: "A BSP ainda possui bloqueios de validação.", report }, 409);
-    }
-
-    const { data, error } = await admin.rpc("ops_core_cutover_project", {
-      p_project_key: projectKey,
-      p_actor: actor,
-    });
-    if (error) return json({ ok: false, error: error.message }, 500);
-    await refreshDemandCache();
     return json({
-      ok: true,
-      data,
-      report,
-      message: "BSP validada. A partir deste momento o painel não usa mais o Tracking para este projeto.",
-      generatedAt: new Date().toISOString(),
-    });
+      ok: false,
+      error: "Modo observação ativo. A ativação de BSPs nos painéis operacionais está bloqueada nesta fase.",
+      observationMode: true,
+    }, 423);
   }
 
   if (action === "core_revert") {
-    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode reverter uma BSP para o legado." }, 403);
-    const projectKey = String(body.projectKey || "").trim();
-    if (!projectKey) return json({ ok: false, error: "projectKey é obrigatório." }, 400);
-    const { data, error } = await admin.rpc("ops_core_revert_project", {
-      p_project_key: projectKey,
-      p_actor: actor,
-    });
-    if (error) return json({ ok: false, error: error.message }, 500);
-    await refreshDemandCache();
-    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+    return json({
+      ok: false,
+      error: "Modo observação ativo. Alterações de fonte dos painéis operacionais estão bloqueadas nesta fase.",
+      observationMode: true,
+    }, 423);
   }
 
   if (action === "drawing_sync_now") {
