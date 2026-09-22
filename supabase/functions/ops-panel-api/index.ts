@@ -615,6 +615,17 @@ Deno.serve(async (request: Request) => {
     return json({ ok: true, data: Array.isArray(data) ? data : [], generatedAt: new Date().toISOString() });
   }
 
+  if (action === "core_registration_detail") {
+    const projectKey = String(body.projectKey || "").trim();
+    if (!projectKey) return json({ ok: false, error: "projectKey é obrigatório." }, 400);
+
+    const { data, error } = await admin.rpc("ops_core_registration_detail", {
+      p_project_key: projectKey,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data: data || { project: null, items: [] }, generatedAt: new Date().toISOString() });
+  }
+
   if (action === "validation_report") {
     const projectKey = String(body.projectKey || "").trim();
     if (!projectKey) return json({ ok: false, error: "projectKey é obrigatório." }, 400);
