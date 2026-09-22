@@ -14,7 +14,6 @@ import {
   X,
 } from 'lucide-react';
 import {
-  cutoverCoreProject,
   hubConfigured,
   loadCoreMigrationStatus,
   loadCoreValidationReport,
@@ -156,11 +155,9 @@ export default function CoreMigrationPage() {
     try {
       const result = await autoRegisterCoreCandidate(selected.project_core);
       setNotice(
-        result.activated
-          ? selected.display_code + ' cadastrada e ativada automaticamente no OPS CORE.'
-          : result.awaiting_fcb
-            ? selected.display_code + ' ficou pendente: aguardando o FCB técnico vigente para montar o cadastro completo.'
-            : selected.display_code + ' cadastrada automaticamente. O projeto continuará pendente até a validação técnica.'
+        result.awaiting_fcb
+          ? selected.display_code + ' ficou pendente em modo observação: aguardando o FCB técnico vigente.'
+          : selected.display_code + ' foi atualizada no banco de validação. Nenhum painel operacional foi alterado.'
       );
       setSelected(null);
       setDetail(null);
@@ -214,29 +211,6 @@ export default function CoreMigrationPage() {
       await loadAll();
     } catch (reasonValue) {
       setError(reasonValue instanceof Error ? reasonValue.message : 'Não foi possível retirar o item.');
-    } finally {
-      setBusy('');
-    }
-  }
-
-  async function validateAndCutover() {
-    if (!selected || !report?.ready_for_cutover) return;
-    const message = selected.source_mode === 'legacy_tracking'
-      ? 'Validar esta BSP e retirar o Tracking da operação deste projeto? Depois disso, o painel usará somente o OPS CORE.'
-      : 'Validar esta BSP e colocá-la em operação no OPS CORE?';
-    if (!window.confirm(message)) return;
-
-    setBusy('cutover');
-    setError('');
-    try {
-      await cutoverCoreProject(selected.project_core);
-      setNotice('BSP validada. O OPS CORE agora é a fonte operacional deste projeto.');
-      setSelected(null);
-      setDetail(null);
-      setReport(null);
-      await loadAll();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível validar a BSP.');
     } finally {
       setBusy('');
     }
@@ -336,7 +310,7 @@ export default function CoreMigrationPage() {
         <div>
           <span className="core-eyebrow">FONTE DA VERDADE · OPS CORE</span>
           <h1>Cadastro e validação operacional</h1>
-          <p>Uma BSP validada deixa de usar o Tracking. Novos projetos podem nascer diretamente das fontes técnicas.</p>
+          <p>Modo observação: o cadastro pode ser analisado e preparado sem alterar Carteira, Produção, Bloqueios, Indicadores ou Arquivados.</p>
         </div>
         <div className="core-page-head-actions">
           <button className="core-button primary" onClick={() => void refreshDrawing()} disabled={Boolean(busy)}>
@@ -497,26 +471,16 @@ export default function CoreMigrationPage() {
 
               <div className="core-cutover">
                 <div>
-                  <strong>
-                    {report?.fcb?.status === 'awaiting_fcb'
-                      ? 'Ativação bloqueada até o FCB'
-                      : selected.source_mode === 'legacy_tracking'
-                        ? 'Corte Tracking → OPS CORE'
-                        : 'Ativar projeto no OPS CORE'}
-                  </strong>
+                  <strong>Modo observação ativo</strong>
                   <p>
                     {report?.fcb?.status === 'awaiting_fcb'
-                      ? 'O sistema não aceitará peso, material ou detalhamento manual como substituto do FCB. Assim que o FCB vigente for processado, os itens técnicos serão cadastrados automaticamente.'
-                      : selected.source_mode === 'legacy_tracking'
-                        ? 'Ao validar, esta BSP deixa imediatamente de ler o Tracking no painel operacional.'
-                        : 'A BSP passa a fazer parte da operação sem nunca ser cadastrada no Tracking.'}
+                      ? 'A BSP continuará aguardando o FCB técnico. Nenhum dado deste cadastro será enviado aos painéis operacionais.'
+                      : report?.ready_for_cutover
+                        ? 'O cadastro está tecnicamente pronto para uma futura ativação, mas a ativação está bloqueada nesta fase. O Tracking continua sendo a fonte dos painéis.'
+                        : 'O cadastro permanece isolado para conferência. Nenhuma alteração será aplicada aos painéis operacionais.'}
                   </p>
                 </div>
-                {report?.fcb?.status !== 'awaiting_fcb' && (
-                  <button className="core-button primary" disabled={!report?.ready_for_cutover || busy === 'cutover'} onClick={() => void validateAndCutover()}>
-                    {busy === 'cutover' ? <LoaderCircle className="spin" size={16} /> : <ShieldCheck size={16} />} Validar e ativar
-                  </button>
-                )}
+                <span className="core-observation-badge"><ShieldCheck size={16} /> Painéis preservados</span>
               </div>
             </>
           )}
