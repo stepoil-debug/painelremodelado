@@ -18,7 +18,7 @@ import {
   hubConfigured,
   loadCoreMigrationStatus,
   loadCoreValidationReport,
-  loadHubProject,
+  loadCoreRegistrationDetail,
   loadHubSyncStatus,
   loadRegistrationCandidates,
   autoRegisterCoreCandidate,
@@ -91,7 +91,7 @@ export default function CoreMigrationPage() {
   const [status, setStatus] = useState<HubCoreMigrationStatus | null>(null);
   const [candidates, setCandidates] = useState<HubRegistrationCandidate[]>([]);
   const [selected, setSelected] = useState<HubRegistrationCandidate | null>(null);
-  const [detail, setDetail] = useState<Awaited<ReturnType<typeof loadHubProject>> | null>(null);
+  const [detail, setDetail] = useState<Awaited<ReturnType<typeof loadCoreRegistrationDetail>> | null>(null);
   const [report, setReport] = useState<HubCoreValidationReport | null>(null);
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState('');
@@ -137,7 +137,7 @@ export default function CoreMigrationPage() {
         return;
       }
       const [project, validation] = await Promise.all([
-        loadHubProject(candidate.project_core),
+        loadCoreRegistrationDetail(candidate.project_core),
         loadCoreValidationReport(candidate.project_core),
       ]);
       setDetail(project);
@@ -174,7 +174,7 @@ export default function CoreMigrationPage() {
   async function refreshSelected() {
     if (!selected) return;
     const [project, validation] = await Promise.all([
-      loadHubProject(selected.project_core),
+      loadCoreRegistrationDetail(selected.project_core),
       loadCoreValidationReport(selected.project_core),
     ]);
     setDetail(project);
@@ -320,7 +320,7 @@ export default function CoreMigrationPage() {
     );
   }, [candidates, search]);
 
-  const core = detail?.core as any;
+  const core = detail as any;
   const items = (Array.isArray(core?.items) ? core.items : [])
     .filter((item: CoreItem) => !item.removed_from_scope) as CoreItem[];
 
@@ -433,10 +433,10 @@ export default function CoreMigrationPage() {
                 </div>
                 {report?.blocking_issues?.map((issue) => <p className="core-blocking" key={issue}>{issue}</p>)}
                 <div className="core-warnings">
-                  <span>Peso ausente: <b>{report?.warnings?.missing_weight ?? 0}</b></span>
-                  <span>Material ausente: <b>{report?.warnings?.missing_material ?? 0}</b></span>
-                  <span>Não classificados: <b>{report?.warnings?.unclassified_items ?? 0}</b></span>
-                  <span>Detalhamento pendente: <b>{report?.warnings?.provisional_breakdown ?? 0}</b></span>
+                  <span>Peso ausente: <b>{report ? report.warnings?.missing_weight ?? 0 : '—'}</b></span>
+                  <span>Material ausente: <b>{report ? report.warnings?.missing_material ?? 0 : '—'}</b></span>
+                  <span>Não classificados: <b>{report ? report.warnings?.unclassified_items ?? 0 : '—'}</b></span>
+                  <span>Detalhamento pendente: <b>{report ? report.warnings?.provisional_breakdown ?? 0 : '—'}</b></span>
                 </div>
               </div>
 
