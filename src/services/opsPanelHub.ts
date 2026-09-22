@@ -462,6 +462,8 @@ export interface HubAutoRegisterResult {
   ok: boolean;
   registered: boolean;
   activated: boolean;
+  ready_for_activation?: boolean;
+  observation_mode?: boolean;
   pending_detail?: boolean;
   awaiting_fcb?: boolean;
   fcb_detected?: boolean;
