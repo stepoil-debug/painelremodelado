@@ -73,6 +73,11 @@ Deno.serve(async (request: Request) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
+  const refreshDemandCache = async () => {
+    const { error } = await admin.rpc("ops_core_refresh_demand_feed_cache");
+    if (error) console.error("demand cache refresh error:", error.message);
+  };
+
   let authorized = false;
   let authorizedByBackend = false;
   let authorizedByOidc = false;
@@ -692,6 +697,7 @@ Deno.serve(async (request: Request) => {
       p_actor: actor,
     });
     if (error) return json({ ok: false, error: error.message }, 500);
+    await refreshDemandCache();
     const { data: report } = await admin.rpc("ops_core_project_validation_report", {
       p_project_key: projectKey,
     });
@@ -710,6 +716,7 @@ Deno.serve(async (request: Request) => {
       p_actor: actor,
     });
     if (error) return json({ ok: false, error: error.message }, 500);
+    await refreshDemandCache();
     return json({ ok: true, data, generatedAt: new Date().toISOString() });
   }
 
@@ -731,6 +738,7 @@ Deno.serve(async (request: Request) => {
       p_actor: actor,
     });
     if (error) return json({ ok: false, error: error.message }, 500);
+    await refreshDemandCache();
     return json({
       ok: true,
       data,
@@ -749,6 +757,7 @@ Deno.serve(async (request: Request) => {
       p_actor: actor,
     });
     if (error) return json({ ok: false, error: error.message }, 500);
+    await refreshDemandCache();
     return json({ ok: true, data, generatedAt: new Date().toISOString() });
   }
 
@@ -827,6 +836,7 @@ Deno.serve(async (request: Request) => {
       p_note: note || null,
     });
     if (error) return json({ ok: false, error: error.message }, 409);
+    await refreshDemandCache();
 
     return json({ ok: true, data, generatedAt: new Date().toISOString() });
   }
