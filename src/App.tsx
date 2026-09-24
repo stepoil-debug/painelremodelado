@@ -1979,6 +1979,13 @@ function normalizeSearchValue(value: unknown) {
     .replace(/[^a-z0-9]+/g, '');
 }
 
+function normalizeIdentifierSearch(value: unknown) {
+  return normalizeSearchValue(value)
+    .replace(/^bsp/, '')
+    .replace(/^iso/, '')
+    .replace(/^spl/, '');
+}
+
 function matchesDemandSearch(demand: Demand, rawQuery: string) {
   const query = rawQuery.trim();
   if (!query) return true;
@@ -1986,27 +1993,21 @@ function matchesDemandSearch(demand: Demand, rawQuery: string) {
   const normalizedQuery = normalizeSearchValue(query);
   if (!normalizedQuery) return true;
 
+  const identifierQuery = normalizeIdentifierSearch(query);
   const identifierFields = [
     demand.bsp,
     demand.iso,
-  ].map(normalizeSearchValue).filter(Boolean);
+    demand.project,
+    demand.projectGroupKey,
+    String(demand.bsp ?? '') + String(demand.iso ?? ''),
+  ]
+    .map(normalizeIdentifierSearch)
+    .filter(Boolean);
 
-  const isIdentifierLike = /^[\d\s\-_/\.]+$/.test(query)
-    || /^(bsp|iso|spl)[\s\-_/\.]*[a-z0-9\s\-_/\.]*/i.test(query);
-
-  if (isIdentifierLike) {
-    const compactIdentifierQuery = normalizedQuery
-      .replace(/^bsp/, '')
-      .replace(/^iso/, '')
-      .replace(/^spl/, '');
-
-    return identifierFields.some((field) => {
-      const comparable = field
-        .replace(/^bsp/, '')
-        .replace(/^iso/, '')
-        .replace(/^spl/, '');
-      return comparable.includes(compactIdentifierQuery);
-    });
+  // Identificadores são comparados sem pontuação/separadores.
+  // Ex.: 25-481-STR-001 = 25481STR001 = 25.481.STR.001 = BSP-25-481-STR-001.
+  if (identifierQuery && identifierFields.some((field) => field.includes(identifierQuery))) {
+    return true;
   }
 
   const words = query
@@ -2188,7 +2189,7 @@ function Portfolio(props: {
           <input
             value={props.search}
             onChange={(e) => props.setSearch(e.target.value)}
-            placeholder="BSP ou ISO: 26-955, 26955, ISO001..."
+            placeholder="BSP / ISO / SPL / STR / SUP: 25-481-STR-001 ou 25481STR001..."
           />
           {props.search && <button type="button" className="search-clear" onClick={() => props.setSearch('')}>Limpar</button>}
         </label>
