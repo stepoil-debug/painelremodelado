@@ -1893,8 +1893,12 @@ function groupDemandsByBsp(demands: Demand[]): BspGroup[] {
 
   for (const demand of demands) {
     const rawBsp = String(demand.bsp ?? '').trim();
-    const normalizedBsp = rawBsp.toUpperCase();
-    const key = String(demand.projectGroupKey || normalizedBsp || demand.id || 'sem-bsp');
+    const normalizedBsp = rawBsp
+      .toUpperCase()
+      .replace(/^BSP[\s_-]*/i, '')
+      .replace(/\s+/g, '')
+      .trim();
+    const key = normalizedBsp || String(demand.projectGroupKey || demand.id || 'sem-bsp');
     const items = map.get(key) ?? [];
     items.push(demand);
     map.set(key, items);
