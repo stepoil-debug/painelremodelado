@@ -68,6 +68,7 @@ export interface Demand {
   iso: string;
   project?: string;
   client?: string;
+  pm?: string;
   stageKey: string;
   stage: string;
   sector: SectorKey;
