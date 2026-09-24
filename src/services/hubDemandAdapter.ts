@@ -216,6 +216,7 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       iso: compactIso(row),
       project: row.project_display || ('BSP ' + bsp),
       client: row.client || '—',
+      pm: row.pm || undefined,
       stageKey: mapped.stageKey,
       stage: mapped.label,
       sector: mapped.sector,
