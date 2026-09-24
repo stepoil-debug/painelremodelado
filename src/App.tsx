@@ -184,6 +184,7 @@ export default function App() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [mode, setMode] = useState<ListMode>('table');
   const [search, setSearch] = useState('');
+  const [pmFilter, setPmFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<PortfolioStatusFilter>('all');
   const [priorityOnly, setPriorityOnly] = useState(false);
   const [lateOnly, setLateOnly] = useState(false);
@@ -810,6 +811,8 @@ export default function App() {
             setMode={setMode}
             search={search}
             setSearch={setSearch}
+            pmFilter={pmFilter}
+            setPmFilter={setPmFilter}
             statusFilter={statusFilter}
             setStatusFilter={setStatusFilter}
             priorityOnly={priorityOnly}
@@ -1986,6 +1989,32 @@ function normalizeIdentifierSearch(value: unknown) {
     .replace(/^spl/, '');
 }
 
+function normalizePmKey(value: unknown) {
+  let raw = String(value ?? '').trim().replace(/^PM\s*[·:\-]?\s*/i, '');
+  if (raw.includes('@')) {
+    raw = raw.split('@')[0].replace(/[._-]+/g, ' ');
+  }
+  return normalizeSearchValue(raw);
+}
+
+function pmDisplayLabel(value: unknown) {
+  let raw = String(value ?? '').trim().replace(/^PM\s*[·:\-]?\s*/i, '');
+  if (!raw) return 'Sem PM';
+  if (raw.includes('@')) {
+    raw = raw.split('@')[0]
+      .replace(/[._-]+/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+  return raw;
+}
+
+function bspFilterKey(value: unknown) {
+  return String(value ?? '')
+    .toUpperCase()
+    .replace(/^BSP[\s_-]*/i, '')
+    .replace(/[^A-Z0-9]/g, '');
+}
+
 function matchesDemandSearch(demand: Demand, rawQuery: string) {
   const query = rawQuery.trim();
   if (!query) return true;
@@ -2021,6 +2050,7 @@ function matchesDemandSearch(demand: Demand, rawQuery: string) {
     demand.stage,
     demand.project,
     demand.client,
+    demand.pm,
     demand.assignedTo,
     sectorName(demand.sector),
     demand.note,
@@ -2040,6 +2070,8 @@ function Portfolio(props: {
   setMode: (value: ListMode) => void;
   search: string;
   setSearch: (value: string) => void;
+  pmFilter: string;
+  setPmFilter: (value: string) => void;
   statusFilter: PortfolioStatusFilter;
   setStatusFilter: (value: PortfolioStatusFilter) => void;
   priorityOnly: boolean;
@@ -2059,8 +2091,42 @@ function Portfolio(props: {
 }) {
   const [progressSort, setProgressSort] = useState<'none' | 'desc' | 'asc'>('none');
   const [statusSort, setStatusSort] = useState<'none' | 'desc' | 'asc'>('none');
+
+  const pmOptions = useMemo(() => {
+    const options = new Map<string, { key: string; label: string; raw: string }>();
+    for (const demand of props.demands) {
+      const raw = String(demand.pm ?? '').trim();
+      const key = normalizePmKey(raw);
+      if (!key) continue;
+
+      const label = pmDisplayLabel(raw);
+      const current = options.get(key);
+      const shouldReplace = !current
+        || (current.raw.includes('@') && !raw.includes('@'))
+        || label.length > current.label.length;
+
+      if (shouldReplace) options.set(key, { key, label, raw });
+    }
+
+    return [...options.values()]
+      .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' }));
+  }, [props.demands]);
+
+  const pmBspKeys = useMemo(() => {
+    if (props.pmFilter === 'all') return null;
+
+    const keys = new Set<string>();
+    for (const demand of props.demands) {
+      if (normalizePmKey(demand.pm) === props.pmFilter) {
+        keys.add(bspFilterKey(demand.bsp));
+      }
+    }
+    return keys;
+  }, [props.demands, props.pmFilter]);
+
   const filtered = useMemo(() => {
     return props.demands
+      .filter((d) => !pmBspKeys || pmBspKeys.has(bspFilterKey(d.bsp)))
       .filter((d) => props.sector === 'all' || d.sector === props.sector)
       .filter((d) =>
         props.statusFilter === 'all'
@@ -2070,7 +2136,7 @@ function Portfolio(props: {
       .filter((d) => !props.lateOnly || effectiveStatus(d) === 'late')
       .filter((d) => matchesDemandSearch(d, props.search))
       .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority] || new Date(a.enteredAt).getTime() - new Date(b.enteredAt).getTime());
-  }, [props.demands, props.sector, props.statusFilter, props.priorityOnly, props.lateOnly, props.search]);
+  }, [props.demands, props.pmFilter, pmBspKeys, props.sector, props.statusFilter, props.priorityOnly, props.lateOnly, props.search]);
 
   const grouped = useMemo(() => {
     const groups = groupDemandsByBsp(filtered);
@@ -2192,6 +2258,13 @@ function Portfolio(props: {
             placeholder="BSP / ISO / SPL / STR / SUP: 25-481-STR-001 ou 25481STR001..."
           />
           {props.search && <button type="button" className="search-clear" onClick={() => props.setSearch('')}>Limpar</button>}
+        </label>
+        <label className="filter-field select-filter pm-filter">
+          <span>PM</span>
+          <select value={props.pmFilter} onChange={(e) => props.setPmFilter(e.target.value)}>
+            <option value="all">Todos os PMs</option>
+            {pmOptions.map((pm) => <option key={pm.key} value={pm.key}>{pm.label}</option>)}
+          </select>
         </label>
         <label className="filter-field select-filter sector-filter">
           <span>Setor</span>
