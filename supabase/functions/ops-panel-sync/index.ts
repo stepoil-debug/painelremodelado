@@ -245,9 +245,18 @@ function deriveTrackingArchive(source: Source, cells: Map<string, any>) {
     ?? 0;
 
   const finishedFlag = display(cells, "Project Finished?");
+  const projectFinishDate = raw(cells, "Project Finish Date");
+  const explicitFinishedStatus =
+    /project finished|finished and delivered|projeto finalizado|projeto conclu[ií]do|finalizado|conclu[ií]do/i.test(statusText);
+
+  // "Package and Delivered" é o nome de uma etapa do Tracking e NÃO significa,
+  // sozinho, que o item/projeto foi entregue. A conclusão só é aceita quando
+  // existe flag explícita, data final, status terminal inequívoco ou 100% real
+  // na etapa de Package and Delivered.
   const isFinished =
     truthySheet(finishedFlag)
-    || /project finished|finished and delivered|conclu[ií]d|delivered/i.test(statusText)
+    || Boolean(projectFinishDate)
+    || explicitFinishedStatus
     || packagePct === 100;
 
   const isHold = /\bon\s*hold\b|\bhold\b/i.test(statusText);
@@ -319,7 +328,7 @@ function deriveTrackingArchive(source: Source, cells: Map<string, any>) {
     overall_progress: isFinished ? 100 : overallPct,
     project_finished: isFinished,
     status_text: statusText,
-    project_finish_date: raw(cells, "Project Finish Date"),
+    project_finish_date: projectFinishDate,
     fabrication_start: raw(cells, "Fabrication Start Date"),
     weight_kg: raw(cells, "Kilos"),
     m2: raw(cells, "M2 Painting"),
