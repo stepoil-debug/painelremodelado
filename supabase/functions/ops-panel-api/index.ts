@@ -255,6 +255,39 @@ Deno.serve(async (request: Request) => {
   }
 
 
+  if (action === "goalfy_shipping") {
+    const projectKey = String(body.projectKey || "").trim();
+    if (!projectKey) return json({ ok: false, error: "projectKey é obrigatório." }, 400);
+
+    const { data, error } = await admin.rpc("ops_goalfy_project_shipping", {
+      p_project_key: projectKey,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
+  if (action === "goalfy_sync_status") {
+    const { data, error } = await admin.rpc("ops_goalfy_sync_status");
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
+  if (action === "goalfy_sync_now") {
+    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode atualizar o Goalfy." }, 403);
+
+    const { data: requestId, error } = await admin.rpc("ops_goalfy_dispatch_sync", {
+      p_force: body.force === true,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+
+    return json({
+      ok: true,
+      data: { request_id: requestId, started_at: new Date().toISOString(), observation_mode: true },
+      message: "Sincronização Goalfy solicitada em modo leitura. Nenhum progresso operacional será alterado.",
+      generatedAt: new Date().toISOString(),
+    });
+  }
+
   if (action === "evidence") {
     const bsp = String(body.bsp || "").trim();
     const iso = String(body.iso || "").trim();
