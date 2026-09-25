@@ -119,7 +119,10 @@ export default function CoreMigrationPage() {
     try {
       const [migration, queue] = await Promise.all([
         loadCoreMigrationStatus(),
-        loadRegistrationCandidates('validation_required', 500),
+        // A candidate can move to `parsed` as soon as the FCB ingestion is
+        // applied. Keep it visible so the panel reflects the FCB even before
+        // the operator completes the final validation/cutover step.
+        loadRegistrationCandidates('', 500),
       ]);
       setStatus(migration);
       setCandidates(queue);
@@ -278,7 +281,7 @@ export default function CoreMigrationPage() {
       await refreshCoreRegistration();
       const [migration, queue] = await Promise.all([
         loadCoreMigrationStatus(),
-        loadRegistrationCandidates('validation_required', 500),
+        loadRegistrationCandidates('', 500),
       ]);
       setStatus(migration);
       setCandidates(queue);
