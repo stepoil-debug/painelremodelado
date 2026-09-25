@@ -285,6 +285,8 @@ h1,h2,h3,p { margin-top: 0; }
 .detail-top { background: #fff; border-bottom: 1px solid #EDF2F8; padding: 17px 26px 15px; }
 .back-link { border: 0; background: transparent; color: #1355C2; padding: 0; display: flex; gap: 6px; align-items: center; font-size: 10px; }
 .detail-title-row { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+.goalfy-main-status{display:inline-flex;align-items:center;gap:5px;min-height:28px;padding:0 10px;border:1px solid #bfe4ca;border-radius:999px;background:#eaf8ef;color:#26713c;font-size:9px;font-weight:800;white-space:nowrap}
+.goalfy-main-status.partial,.goalfy-main-status.shipping_evidence{border-color:#f0d397;background:#fff5dd;color:#946100}
 .detail-bsp { min-width: 125px; padding-right: 14px; border-right: 1px solid #E1E9F4; }
 .detail-bsp span,.detail-bsp strong,.detail-bsp em { display: block; }
 .detail-bsp span { font-size: 8px; color: #93A6B8; text-transform: uppercase; letter-spacing: .08em; }

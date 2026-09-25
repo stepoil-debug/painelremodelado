@@ -270,10 +270,10 @@ function normalizeCard(raw: Record<string, unknown>, boardId: string, source: "r
   const history = source === "api" ? extractHistory(raw) : [];
   const phaseNorm = compact(phase.name);
   const tagNorm = compact(tags.join(" "));
-  const isShipped = /EXPEDIDO|DESPACHADO/.test(phaseNorm) || /MATERIALENVIADO|EXPEDIDO/.test(tagNorm);
-  const isReady = isShipped || /PRONTAPARAENVIO|PRONTOPARAENVIO/.test(phaseNorm);
-  const shippedHistory = history.find((h) => /EXPEDIDO|DESPACHADO/.test(compact(h.phase_name)));
+  const shippedHistory = history.find((h) => /EXPEDIDO|DESPACHADO|ENVIADO/.test(compact(h.phase_name)));
   const readyHistory = history.find((h) => /PRONTAPARAENVIO|PRONTOPARAENVIO/.test(compact(h.phase_name)));
+  const isShipped = Boolean(shippedHistory) || /EXPEDIDO|DESPACHADO|ENVIADO/.test(phaseNorm) || /MATERIALENVIADO|EXPEDIDO/.test(tagNorm);
+  const isReady = isShipped || Boolean(readyHistory) || /PRONTAPARAENVIO|PRONTOPARAENVIO/.test(phaseNorm);
 
   const topId = textValue(raw.id ?? raw.cardId ?? raw.card_id);
   const fallbackId = ["report", projectCore, dnNumber, textValue(raw.title ?? pick(map, ["Título do Card", "Card Title"]))].map(compact).filter(Boolean).join(":");

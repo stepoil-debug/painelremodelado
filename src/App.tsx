@@ -2569,9 +2569,9 @@ function BoardMode({ demands, onOpen }: { demands: Demand[]; onOpen: (id: string
 
 function shippingStatusLabel(status?: HubGoalfyShipping['summary']['shipping_status']) {
   switch (status) {
-    case 'complete': return 'Envio completo';
-    case 'partial': return 'Envio parcial';
-    case 'shipping_evidence': return 'Expedição detectada';
+    case 'complete': return 'Enviado';
+    case 'partial': return 'Enviado parcialmente';
+    case 'shipping_evidence': return 'Enviado · cobertura pendente';
     case 'ready': return 'Pronta para envio';
     case 'processing': return 'Em processo';
     case 'no_dn': return 'Sem DN';
@@ -2885,7 +2885,7 @@ function GoalfyShippingSide({ shipping, loading }: { shipping: HubGoalfyShipping
           <div><span>Último sync</span><strong>{sync?.last_success_at ? fmtDate(sync.last_success_at) : sync?.status === 'error' ? 'Com erro' : '—'}</strong></div>
         </div>
       )}
-      <div className="goalfy-readonly-note">Somente leitura · não altera o progresso do Tracking.</div>
+      <div className="goalfy-readonly-note">Atualiza automaticamente o status de expedição neste painel; não altera o progresso operacional do Tracking.</div>
     </div>
   );
 }
@@ -2930,6 +2930,8 @@ function DemandDetail(props: {
   const totalEvidence = demand.evidences.length + hhPhotos.length;
   const hhTotal = hhSessions.reduce((sum, session) => sum + Number(session.total_hh || 0), 0);
   const readOnly = demand.source !== 'demo';
+  const goalfyStatus = props.goalfyShipping?.summary?.shipping_status;
+  const goalfySent = goalfyStatus === 'complete' || goalfyStatus === 'partial' || goalfyStatus === 'shipping_evidence';
 
   useEffect(() => setPhaseKey(demand.stageKey), [demand.stageKey]);
 
@@ -2973,6 +2975,7 @@ function DemandDetail(props: {
           <div className="detail-bsp"><span>BSP / ISO</span><strong>{demand.bsp}</strong><em>{demand.iso}</em></div>
           <div className="detail-title-copy"><h1>{demand.project}</h1><p>{demand.client} · {sectorName(demand.sector)}</p></div>
           <StatusPill status={status} onHold={demand.onHold === true} />
+          {goalfySent && <span className={'goalfy-main-status ' + goalfyStatus}><CheckCircle2 size={13} /> {shippingStatusLabel(goalfyStatus)}</span>}
           <PriorityPill priority={demand.priority} />
         </div>
         <div className="detail-summary-grid">
@@ -2982,6 +2985,7 @@ function DemandDetail(props: {
           <SummaryField label="SLA da etapa" value={fmtDate(demand.slaDueAt)} />
           <SummaryField label="Evidências" value={props.evidenceLoading ? '...' : String(totalEvidence)} />
           <SummaryField label="HH / duração" value={hhTotal > 0 ? hhTotal.toFixed(2) + ' HH' : demand.hhMinutes ? demand.hhMinutes + ' min' : '—'} />
+          <SummaryField label="Expedição Goalfy" value={goalfyStatus ? shippingStatusLabel(goalfyStatus) : 'Aguardando leitura'} />
         </div>
       </section>
 
