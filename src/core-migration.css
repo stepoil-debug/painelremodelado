@@ -13,3 +13,4 @@
   font-weight:700;
   white-space:nowrap;
 }
+.core-non-blocking{display:flex;align-items:center;gap:7px;margin:8px 0 0;padding:9px 10px;border:1px solid #f0c46d;border-radius:7px;background:#fff8ea;color:#8a5b0f;font-size:13px;font-weight:650}
