@@ -2540,6 +2540,187 @@ function BoardMode({ demands, onOpen }: { demands: Demand[]; onOpen: (id: string
   );
 }
 
+
+function shippingStatusLabel(status?: HubGoalfyShipping['summary']['shipping_status']) {
+  switch (status) {
+    case 'complete': return 'Envio completo';
+    case 'partial': return 'Envio parcial';
+    case 'shipping_evidence': return 'Expedição detectada';
+    case 'ready': return 'Pronta para envio';
+    case 'processing': return 'Em processo';
+    case 'no_dn': return 'Sem DN';
+    default: return 'Sem leitura';
+  }
+}
+
+function shippingScopeLabel(scope?: string | null) {
+  if (scope === 'spool') return 'Spool';
+  if (scope === 'loose') return 'Loose Material';
+  if (scope === 'mixed') return 'Spool + Loose';
+  if (scope === 'other') return 'Outros materiais';
+  return 'Não classificado';
+}
+
+function GoalfyShippingPanel(props: {
+  shipping: HubGoalfyShipping | null;
+  loading: boolean;
+  syncing: boolean;
+  onRefresh: () => void;
+}) {
+  const summary = props.shipping?.summary;
+  const dns = props.shipping?.dns ?? [];
+  const sync = props.shipping?.sync;
+  const coverage = summary?.coverage_percent;
+  const syncError = sync?.status === 'error' ? sync.last_error : null;
+
+  return (
+    <div className="section-card goalfy-shipping-card">
+      <div className="section-card-head goalfy-shipping-head">
+        <div>
+          <span className="section-mono">Logística / Expedição</span>
+          <h2>Delivery Notes · Goalfy</h2>
+          <p className="goalfy-subtitle">Leitura independente para validar envio parcial ou completo. Não altera o avanço operacional.</p>
+        </div>
+        <div className="goalfy-head-actions">
+          <span className={'goalfy-status ' + (summary?.shipping_status || 'no_dn')}>
+            {shippingStatusLabel(summary?.shipping_status)}
+          </span>
+          <button className="soft-btn" onClick={props.onRefresh} disabled={props.syncing}>
+            <RefreshCcw size={14} className={props.syncing ? 'spin' : ''} />
+            {props.syncing ? 'Atualizando...' : 'Atualizar Goalfy'}
+          </button>
+        </div>
+      </div>
+
+      {props.loading ? (
+        <div className="goalfy-empty"><RefreshCcw size={18} className="spin" /><span>Carregando expedição da BSP...</span></div>
+      ) : (
+        <>
+          <div className="goalfy-kpis">
+            <div><span>DNs encontradas</span><strong>{summary?.dn_count ?? 0}</strong></div>
+            <div><span>Expedidas</span><strong>{summary?.shipped_dn_count ?? 0}</strong></div>
+            <div><span>Prontas</span><strong>{summary?.ready_dn_count ?? 0}</strong></div>
+            <div>
+              <span>Cobertura FCB</span>
+              <strong>{coverage == null ? '—' : coverage.toFixed(1) + '%'}</strong>
+              <small>{summary?.expected_item_count ? (summary.matched_expected_item_count + ' de ' + summary.expected_item_count + ' itens') : 'FCB técnico ainda não disponível'}</small>
+            </div>
+          </div>
+
+          {syncError && (
+            <div className="goalfy-warning">
+              <AlertTriangle size={17} />
+              <div>
+                <strong>Goalfy ainda não sincronizado</strong>
+                <p>{syncError}</p>
+                <span>A integração está isolada e este erro não afeta Carteira, Produção ou Tracking.</span>
+              </div>
+            </div>
+          )}
+
+          {!syncError && !dns.length && (
+            <div className="goalfy-empty">
+              <Boxes size={18} />
+              <div>
+                <strong>Nenhuma DN sincronizada para esta BSP.</strong>
+                <span>{sync?.status === 'never' ? 'A fonte Goalfy ainda não executou a primeira sincronização.' : 'Não há evidência de DN vinculada a esta BSP na última leitura.'}</span>
+              </div>
+            </div>
+          )}
+
+          {!!dns.length && (
+            <div className="goalfy-dn-list">
+              {dns.map((dn) => {
+                const items = dn.items ?? [];
+                const history = dn.phase_history ?? [];
+                return (
+                  <article className="goalfy-dn" key={dn.card_id}>
+                    <header>
+                      <div>
+                        <span>DN</span>
+                        <strong>{dn.dn_number || dn.card_title || 'Sem número'}</strong>
+                        <small>{shippingScopeLabel(dn.material_scope)}</small>
+                      </div>
+                      <span className={'goalfy-dn-phase ' + (dn.is_shipped ? 'shipped' : dn.is_ready ? 'ready' : 'open')}>
+                        {dn.phase_name || 'Fase não informada'}
+                      </span>
+                    </header>
+
+                    <div className="goalfy-dn-grid">
+                      <div><span>Destino</span><strong>{dn.destination || '—'}</strong></div>
+                      <div><span>DN para</span><strong>{dn.dn_for || '—'}</strong></div>
+                      <div><span>PO</span><strong>{dn.po_number || '—'}</strong></div>
+                      <div><span>NF</span><strong>{dn.invoice_number || '—'}</strong></div>
+                      <div><span>Expedição</span><strong>{dn.shipped_at ? fmtDate(dn.shipped_at) : dn.is_ready ? 'Aguardando saída' : 'Não expedida'}</strong></div>
+                      <div><span>Itens vinculados</span><strong>{items.length || '—'}</strong></div>
+                    </div>
+
+                    {(dn.tags?.length ?? 0) > 0 && (
+                      <div className="goalfy-tags">{dn.tags!.map((tag) => <span key={tag}>{tag}</span>)}</div>
+                    )}
+
+                    {!!items.length && (
+                      <div className="goalfy-items">
+                        {items.slice(0, 8).map((item) => (
+                          <span key={item.id ?? item.item_key}>{item.item_label || item.item_key}</span>
+                        ))}
+                        {items.length > 8 && <em>+{items.length - 8} item(ns)</em>}
+                      </div>
+                    )}
+
+                    {!!history.length && (
+                      <div className="goalfy-history">
+                        {[...history].slice(-5).map((step) => (
+                          <div key={(step.id ?? step.phase_name) + ':' + (step.entered_at || '')}>
+                            <i />
+                            <span>{step.phase_name}</span>
+                            <small>{step.entered_at ? fmtDate(step.entered_at) : '—'}</small>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {dn.invoice_url && (
+                      <footer>
+                        <a href={dn.invoice_url} target="_blank" rel="noreferrer">Abrir documento / NF</a>
+                      </footer>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function GoalfyShippingSide({ shipping, loading }: { shipping: HubGoalfyShipping | null; loading: boolean }) {
+  const summary = shipping?.summary;
+  const sync = shipping?.sync;
+
+  return (
+    <div className="side-section goalfy-side">
+      <span className="section-mono">Expedição · Goalfy</span>
+      {loading ? (
+        <p className="muted-side">Carregando DNs...</p>
+      ) : (
+        <div className="data-list">
+          <div><span>Status</span><strong>{shippingStatusLabel(summary?.shipping_status)}</strong></div>
+          <div><span>DNs</span><strong>{summary?.dn_count ?? 0}</strong></div>
+          <div><span>Expedidas</span><strong>{summary?.shipped_dn_count ?? 0}</strong></div>
+          <div><span>Prontas</span><strong>{summary?.ready_dn_count ?? 0}</strong></div>
+          <div><span>Cobertura FCB</span><strong>{summary?.coverage_percent == null ? '—' : summary.coverage_percent.toFixed(1) + '%'}</strong></div>
+          <div><span>Última expedição</span><strong>{summary?.latest_shipped_at ? fmtDate(summary.latest_shipped_at) : '—'}</strong></div>
+          <div><span>Último sync</span><strong>{sync?.last_success_at ? fmtDate(sync.last_success_at) : sync?.status === 'error' ? 'Com erro' : '—'}</strong></div>
+        </div>
+      )}
+      <div className="goalfy-readonly-note">Somente leitura · não altera o progresso do Tracking.</div>
+    </div>
+  );
+}
+
 function DemandDetail(props: {
   demand: Demand;
   onBack: () => void;
