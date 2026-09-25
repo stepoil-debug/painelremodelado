@@ -26,11 +26,28 @@ as $$
 $$;
 
 -- Backfill rows that were already synchronized before the broader FCB
--- recognition was added. No row is deleted or re-keyed.
-update ops_panel.drawings_current d
-set is_fcb=true
-where coalesce(d.is_fcb,false)=false
-  and ops_core.detect_fcb_cells(d.raw_cells);
+-- recognition was added. drawings_current is a WITH view, so the payload
+-- must be updated in source_rows; its existing trigger then refreshes the
+-- derived drawing projection and technical profile.
+update ops_panel.source_rows r
+set payload = jsonb_set(
+      coalesce(r.payload,'{}'::jsonb),
+      '{derived,is_fcb}',
+      'true'::jsonb,
+      true
+    ),
+    row_hash = md5(
+      jsonb_set(
+        coalesce(r.payload,'{}'::jsonb),
+        '{derived,is_fcb}',
+        'true'::jsonb,
+        true
+      )::text
+    )
+where r.source_key='drawing'
+  and r.active=true
+  and coalesce((r.payload #>> '{derived,is_fcb}')::boolean,false)=false
+  and ops_core.detect_fcb_cells(r.payload->'cells');
 
 create table if not exists ops_core.fcb_project_profiles (
   id uuid primary key default gen_random_uuid(),
