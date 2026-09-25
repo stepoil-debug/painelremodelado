@@ -255,6 +255,34 @@ Deno.serve(async (request: Request) => {
   }
 
 
+  if (action === "goalfy_connection_status") {
+    const { data, error } = await admin.rpc("ops_goalfy_connection_status");
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
+  if (action === "goalfy_save_credentials") {
+    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode configurar o Goalfy." }, 403);
+
+    const accessToken = String(body.accessToken || "").trim();
+    const reportId = body.reportId == null ? null : String(body.reportId).trim();
+    const apiKey = String(body.apiKey || "").trim();
+
+    const { data, error } = await admin.rpc("ops_goalfy_save_credentials", {
+      p_access_token: accessToken || null,
+      p_report_id: reportId,
+      p_api_key: apiKey || null,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+
+    return json({
+      ok: true,
+      data,
+      message: "Credenciais Goalfy armazenadas com segurança no Vault.",
+      generatedAt: new Date().toISOString(),
+    });
+  }
+
   if (action === "goalfy_shipping") {
     const projectKey = String(body.projectKey || "").trim();
     if (!projectKey) return json({ ok: false, error: "projectKey é obrigatório." }, 400);
