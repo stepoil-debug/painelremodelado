@@ -480,6 +480,9 @@ export interface HubRegistrationCandidate {
   project_status?: string | null;
   item_count?: number | null;
   document_count?: number | null;
+  fcb_status?: 'awaiting_fcb' | 'detected' | string | null;
+  technical_authority?: string | null;
+  tracking_validation?: Record<string, unknown> | null;
 }
 
 export interface HubCoreValidationReport {
@@ -493,6 +496,16 @@ export interface HubCoreValidationReport {
     latest_source_row_id?: number | string | null;
     documents?: Array<Record<string, unknown>>;
   };
+  tracking_validation?: {
+    status?: 'not_checked' | 'not_found' | 'matched' | 'mismatch' | string | null;
+    tracking_item_count?: number;
+    fcb_item_count?: number;
+    missing_in_tracking?: unknown[];
+    tracking_only?: unknown[];
+    fcb_is_authority?: boolean;
+    tracking_is_validation_only?: boolean;
+  } | null;
+  technical_authority?: string | null;
   items: {
     item_count: number;
     missing_weight: number;

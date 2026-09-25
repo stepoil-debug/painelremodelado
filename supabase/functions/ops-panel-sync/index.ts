@@ -56,6 +56,17 @@ function display(cells: Map<string, any>, title: string) {
   return displayValue(pickCell(cells, title)).trim();
 }
 
+function isFcbDocument(value: string) {
+  const normalized = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  return /\bfcb\b/.test(normalized)
+    || /fabrication\s+control\s+book/.test(normalized)
+    || /controle\s+de\s+fabricacao/.test(normalized)
+    || /control\s+book/.test(normalized);
+}
+
 function revisionField(title: string): string | null {
   const t = title.toLowerCase();
   if (t.includes("internally approved")) return "internally_sent_pm";
@@ -118,7 +129,7 @@ function deriveDrawing(cells: Map<string, any>, cellDisplay: Record<string, stri
     drawing_number: display(cells, "Drawing Number (Rev. A)"),
     approval_date: raw(cells, "Approval Date"),
     current_revision: currentRevision,
-    is_fcb: /\bFCB\b/i.test(identifiers),
+    is_fcb: isFcbDocument(identifiers),
     revisions,
   };
 }
