@@ -314,6 +314,7 @@ export default function CoreMigrationPage() {
   }, [candidates, search]);
 
   const core = detail as any;
+  const nonBlockingWarnings = report?.non_blocking_warnings || [];
   const items = (Array.isArray(core?.items) ? core.items : [])
     .filter((item: CoreItem) => !item.removed_from_scope) as CoreItem[];
 
@@ -426,14 +427,18 @@ export default function CoreMigrationPage() {
                   <div>
                     <strong>
                       {report?.ready_for_cutover
-                        ? 'Cadastro técnico completo'
+                        ? nonBlockingWarnings.length
+                          ? 'Cadastro técnico liberado com pendências informativas'
+                          : 'Cadastro técnico completo'
                         : report?.fcb?.status === 'awaiting_fcb'
                           ? 'Aguardando FCB técnico'
                           : 'Cadastro técnico em validação'}
                     </strong>
                     <small>
                       {report?.ready_for_cutover
-                        ? 'Os dados técnicos foram validados e o projeto pode ser ativado.'
+                        ? nonBlockingWarnings.length
+                          ? 'A BSP pode ser cadastrada. Complete os campos pendentes diretamente nesta tela quando a informação estiver disponível.'
+                          : 'Os dados técnicos foram validados e o projeto pode ser ativado.'
                         : report?.fcb?.status === 'awaiting_fcb'
                           ? 'O Drawing gerou somente um pré-cadastro. Peso, material, dimensão e demais dados serão carregados do FCB vigente.'
                           : 'O FCB foi detectado, mas o cadastro técnico ainda precisa concluir a importação/validação.'}
@@ -441,6 +446,7 @@ export default function CoreMigrationPage() {
                   </div>
                 </div>
                 {report?.blocking_issues?.map((issue) => <p className="core-blocking" key={issue}>{issue}</p>)}
+                {nonBlockingWarnings.map((warning) => <p className="core-non-blocking" key={warning}><AlertTriangle size={15} />{warning}</p>)}
                 <div className="core-warnings">
                   <span>FCB detectado: <b>{report ? (report.fcb?.has_fcb ? 'Sim' : 'Não') : '—'}</b></span>
                   <span>Revisão FCB: <b>{report?.fcb?.latest_revision || '—'}</b></span>
