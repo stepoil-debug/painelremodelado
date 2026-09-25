@@ -392,13 +392,14 @@ Deno.serve(async (request: Request) => {
   const { data: authorized, error: authError } = await admin.rpc("ops_panel_sync_auth", { p_candidate: candidate });
   if (authError || authorized !== true) return json({ ok: false, error: "Não autorizado." }, 401);
 
-  const { data: boardConfig, error: configError } = await admin.rpc("ops_goalfy_board_config");
+  const { data: runtimeConfig, error: configError } = await admin.rpc("ops_goalfy_runtime_config");
   if (configError) return json({ ok: false, error: configError.message }, 500);
 
-  const boardId = String((boardConfig as Record<string, unknown>)?.board_id || Deno.env.get("GOALFY_BOARD_ID") || "").trim();
-  const accessToken = String(Deno.env.get("GOALFY_ACCESS_TOKEN") || "").trim();
-  const reportId = String(Deno.env.get("GOALFY_REPORT_ID") || "").trim();
-  const apiKey = String(Deno.env.get("GOALFY_API_KEY") || "").trim();
+  const runtime = (runtimeConfig || {}) as Record<string, unknown>;
+  const boardId = String(runtime.board_id || Deno.env.get("GOALFY_BOARD_ID") || "").trim();
+  const accessToken = String(runtime.access_token || Deno.env.get("GOALFY_ACCESS_TOKEN") || "").trim();
+  const reportId = String(runtime.report_id || Deno.env.get("GOALFY_REPORT_ID") || "").trim();
+  const apiKey = String(runtime.api_key || Deno.env.get("GOALFY_API_KEY") || "").trim();
 
   if (!boardId) return json({ ok: false, error: "GOALFY_BOARD_ID não configurado." }, 503);
 
