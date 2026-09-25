@@ -46,16 +46,19 @@ import {
   loadHubSyncStatus,
   loadGoalfyShipping,
   loadGoalfySyncStatus,
+  loadGoalfyConnectionStatus,
   loadNewBspAlerts,
   loadCoreNotifications,
   markCoreNotificationRead,
   mutateCoreDemand,
   triggerHubSync,
   triggerGoalfySync,
+  saveGoalfyCredentials,
   type HubDrawingAttachment,
   type HubDrawingAttachments,
   type HubHHEvidence,
   type HubGoalfyShipping,
+  type HubGoalfyConnectionStatus,
   type HubNewBspAlert,
   type HubHHEvidencePhoto,
   type HubHHSession,
@@ -203,6 +206,7 @@ export default function App() {
   const [projectDetail, setProjectDetail] = useState<Awaited<ReturnType<typeof loadHubProject>> | null>(null);
   const [hhEvidence, setHhEvidence] = useState<HubHHEvidence | null>(null);
   const [goalfyShipping, setGoalfyShipping] = useState<HubGoalfyShipping | null>(null);
+  const [goalfyConnection, setGoalfyConnection] = useState<HubGoalfyConnectionStatus | null>(null);
   const [goalfyLoading, setGoalfyLoading] = useState(false);
   const [goalfySyncing, setGoalfySyncing] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -372,6 +376,7 @@ export default function App() {
       setProjectDetail(null);
       setHhEvidence(null);
       setGoalfyShipping(null);
+      setGoalfyConnection(null);
       setGoalfyLoading(false);
       setDetailLoading(false);
       setEvidenceLoading(false);
@@ -405,12 +410,18 @@ export default function App() {
         if (active) setEvidenceLoading(false);
       });
 
-    loadGoalfyShipping(selected.bsp)
-      .then((shipping) => {
-        if (active) setGoalfyShipping(shipping);
+    Promise.all([
+      loadGoalfyShipping(selected.bsp),
+      loadGoalfyConnectionStatus().catch(() => null),
+    ])
+      .then(([shipping, connection]) => {
+        if (!active) return;
+        setGoalfyShipping(shipping);
+        setGoalfyConnection(connection);
       })
       .catch(() => {
-        if (active) setGoalfyShipping(null);
+        if (!active) return;
+        setGoalfyShipping(null);
       })
       .finally(() => {
         if (active) setGoalfyLoading(false);
@@ -433,6 +444,19 @@ export default function App() {
       })
       .finally(() => setLoadingHH(false));
   }, []);
+
+  async function saveGoalfyConnection(input: { accessToken?: string; reportId?: string | null; apiKey?: string }) {
+    try {
+      const status = await saveGoalfyCredentials(input);
+      setGoalfyConnection(status);
+      setBanner('Conexão Goalfy salva com segurança. Agora você pode sincronizar as DNs.');
+      return null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Não foi possível salvar a conexão Goalfy.';
+      setBanner(message);
+      return message;
+    }
+  }
 
   async function refreshGoalfyForSelected() {
     if (!selected || goalfySyncing) return;
@@ -849,9 +873,11 @@ export default function App() {
             hubDetail={projectDetail}
             hhEvidence={hhEvidence}
             goalfyShipping={goalfyShipping}
+            goalfyConnection={goalfyConnection}
             goalfyLoading={goalfyLoading}
             goalfySyncing={goalfySyncing}
             onRefreshGoalfy={() => void refreshGoalfyForSelected()}
+            onSaveGoalfyConnection={saveGoalfyConnection}
             detailLoading={detailLoading}
             evidenceLoading={evidenceLoading}
           />
@@ -2734,9 +2760,11 @@ function DemandDetail(props: {
   hubDetail: Awaited<ReturnType<typeof loadHubProject>> | null;
   hhEvidence: HubHHEvidence | null;
   goalfyShipping: HubGoalfyShipping | null;
+  goalfyConnection: HubGoalfyConnectionStatus | null;
   goalfyLoading: boolean;
   goalfySyncing: boolean;
   onRefreshGoalfy: () => void;
+  onSaveGoalfyConnection: (input: { accessToken?: string; reportId?: string | null; apiKey?: string }) => Promise<string | null>;
   detailLoading: boolean;
   evidenceLoading: boolean;
 }) {
@@ -2881,9 +2909,11 @@ function DemandDetail(props: {
           {demand.source !== 'demo' && (
             <GoalfyShippingPanel
               shipping={props.goalfyShipping}
+              connection={props.goalfyConnection}
               loading={props.goalfyLoading}
               syncing={props.goalfySyncing}
               onRefresh={props.onRefreshGoalfy}
+              onSaveConnection={props.onSaveGoalfyConnection}
             />
           )}
 
