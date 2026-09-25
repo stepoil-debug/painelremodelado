@@ -522,6 +522,7 @@ export interface HubCoreValidationReport {
     source_linked: number;
   };
   blocking_issues: string[];
+  non_blocking_warnings?: string[];
   warnings: Record<string, number>;
   ready_for_cutover: boolean;
   generated_at?: string;
