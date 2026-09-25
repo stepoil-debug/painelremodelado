@@ -2078,3 +2078,62 @@ h1,h2,h3,p { margin-top: 0; }
 @media (max-width: 640px) {
   .new-bsp-popup { top: 70px; right: 14px; left: 14px; width: auto; }
 }
+
+
+/* Goalfy / Delivery Notes */
+.goalfy-shipping-card{overflow:hidden}
+.goalfy-shipping-head{align-items:flex-start}
+.goalfy-shipping-head h2{margin-bottom:4px}
+.goalfy-subtitle{margin:0;color:#70869a;font-size:10px;line-height:1.5}
+.goalfy-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.goalfy-status{display:inline-flex;align-items:center;min-height:28px;padding:0 10px;border-radius:999px;font-size:9px;font-weight:800;white-space:nowrap;border:1px solid #d9e4ec;background:#f6f9fb;color:#61778b}
+.goalfy-status.complete{background:#eaf8ef;border-color:#bfe4ca;color:#26713c}
+.goalfy-status.partial,.goalfy-status.shipping_evidence{background:#fff5dd;border-color:#f0d397;color:#946100}
+.goalfy-status.ready{background:#eaf4ff;border-color:#bfd9f3;color:#1d67a1}
+.goalfy-status.processing{background:#f0f4f7;border-color:#d5e0e8;color:#526d82}
+.goalfy-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:14px 0}
+.goalfy-kpis>div{min-height:76px;padding:12px;border:1px solid #dfe9f1;border-radius:10px;background:#fbfdfe;display:flex;flex-direction:column;gap:4px}
+.goalfy-kpis span{font-size:9px;color:#7890a5;text-transform:uppercase;letter-spacing:.05em}
+.goalfy-kpis strong{font-size:20px;color:#153650}
+.goalfy-kpis small{font-size:8px;color:#7c91a2;line-height:1.35}
+.goalfy-warning{display:flex;gap:10px;padding:12px;border:1px solid #efc879;border-radius:10px;background:#fff8e8;color:#875700;margin:10px 0}
+.goalfy-warning strong{font-size:11px}
+.goalfy-warning p{margin:3px 0;font-size:9px;line-height:1.45}
+.goalfy-warning span{font-size:8px;color:#9a7840}
+.goalfy-empty{display:flex;align-items:center;gap:10px;min-height:76px;padding:14px;border:1px dashed #cedde8;border-radius:10px;color:#71879a;background:#fbfdff}
+.goalfy-empty strong{display:block;font-size:10px;color:#536d83;margin-bottom:3px}
+.goalfy-empty span{font-size:9px}
+.goalfy-dn-list{display:grid;gap:10px;margin-top:12px}
+.goalfy-dn{border:1px solid #dbe7ef;border-radius:11px;background:#fff;overflow:hidden}
+.goalfy-dn>header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px 13px;border-bottom:1px solid #e8eff4;background:#fbfdff}
+.goalfy-dn>header>div{display:grid;grid-template-columns:auto auto;gap:2px 8px;align-items:baseline}
+.goalfy-dn>header span:first-child{font-size:8px;color:#8096a8;text-transform:uppercase}
+.goalfy-dn>header strong{font-size:13px;color:#14364f}
+.goalfy-dn>header small{grid-column:2;font-size:8px;color:#6d8598}
+.goalfy-dn-phase{display:inline-flex;align-items:center;min-height:25px;padding:0 9px;border-radius:999px;font-size:8px;font-weight:800;background:#f0f4f7;color:#5c7487;white-space:nowrap}
+.goalfy-dn-phase.shipped{background:#e7f7ec;color:#28713e}
+.goalfy-dn-phase.ready{background:#e9f4ff;color:#17679f}
+.goalfy-dn-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:12px 13px}
+.goalfy-dn-grid>div{display:flex;flex-direction:column;gap:3px}
+.goalfy-dn-grid span{font-size:8px;color:#8195a6;text-transform:uppercase}
+.goalfy-dn-grid strong{font-size:9px;color:#26465f;overflow-wrap:anywhere}
+.goalfy-tags,.goalfy-items{display:flex;gap:6px;flex-wrap:wrap;padding:0 13px 10px}
+.goalfy-tags span{padding:4px 7px;border-radius:999px;background:#f3f6f8;color:#587187;font-size:7px;font-weight:700}
+.goalfy-items span{padding:5px 7px;border-radius:6px;background:#edf5fb;color:#185c8d;font-size:8px;font-family:'IBM Plex Mono',monospace}
+.goalfy-items em{font-size:8px;color:#7c91a2;align-self:center}
+.goalfy-history{display:flex;gap:8px;overflow-x:auto;padding:9px 13px;border-top:1px solid #edf2f6;background:#fbfcfd}
+.goalfy-history>div{display:grid;grid-template-columns:auto 1fr;column-gap:5px;min-width:128px}
+.goalfy-history i{width:6px;height:6px;margin-top:3px;border-radius:50%;background:#3d91c8}
+.goalfy-history span{font-size:8px;color:#3b5c74;font-weight:700}
+.goalfy-history small{grid-column:2;font-size:7px;color:#8799a8}
+.goalfy-dn footer{display:flex;justify-content:flex-end;padding:8px 13px;border-top:1px solid #edf2f6}
+.goalfy-dn footer a{font-size:8px;font-weight:800;color:#0b69ad;text-decoration:none}
+.goalfy-readonly-note{margin-top:10px;padding:7px 8px;border-radius:7px;background:#f4f8fb;color:#70869a;font-size:8px;line-height:1.4}
+@media (max-width:900px){
+  .goalfy-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .goalfy-dn-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:560px){
+  .goalfy-head-actions{width:100%;justify-content:flex-start}
+  .goalfy-kpis,.goalfy-dn-grid{grid-template-columns:1fr}
+}
