@@ -2137,3 +2137,192 @@ h1,h2,h3,p { margin-top: 0; }
   .goalfy-head-actions{width:100%;justify-content:flex-start}
   .goalfy-kpis,.goalfy-dn-grid{grid-template-columns:1fr}
 }
+
+
+.goalfy-connection{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-height:28px;
+  padding:0 10px;
+  border-radius:999px;
+  border:1px solid #d9e4ec;
+  background:#f6f9fb;
+  color:#61778b;
+  font-size:8px;
+  font-weight:800;
+  white-space:nowrap;
+}
+.goalfy-connection i{
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#9aabb9;
+}
+.goalfy-connection.report_external{
+  background:#eaf8ef;
+  border-color:#bfe4ca;
+  color:#26713c;
+}
+.goalfy-connection.report_external i{background:#2f9b52}
+.goalfy-connection.cards_api{
+  background:#eaf4ff;
+  border-color:#bfd9f3;
+  color:#1d67a1;
+}
+.goalfy-connection.cards_api i{background:#2b85c4}
+.goalfy-connection.not_configured{
+  background:#fff5dd;
+  border-color:#f0d397;
+  color:#946100;
+}
+.goalfy-connection.not_configured i{background:#d39722}
+
+.goalfy-setup{
+  margin:14px 0;
+  padding:14px;
+  border:1px solid #cadce8;
+  border-radius:12px;
+  background:#f8fbfd;
+}
+.goalfy-setup-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:14px;
+  margin-bottom:12px;
+}
+.goalfy-setup-head>div{display:flex;flex-direction:column;gap:3px}
+.goalfy-setup-head strong{font-size:12px;color:#173b56}
+.goalfy-setup-head span{font-size:8px;color:#71899c;line-height:1.45}
+.goalfy-setup-head button{
+  border:0;
+  background:transparent;
+  color:#7c91a2;
+  font-size:20px;
+  line-height:1;
+  cursor:pointer;
+}
+.goalfy-setup-mode{
+  padding:12px;
+  border:1px solid #dce7ee;
+  border-radius:10px;
+  background:#fff;
+}
+.goalfy-setup-mode.recommended{
+  border-color:#b9d8ea;
+  background:#f6fbfe;
+}
+.goalfy-setup-mode>div:first-child{
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  margin-bottom:10px;
+}
+.goalfy-setup-mode>div:first-child>span{
+  width:max-content;
+  padding:3px 6px;
+  border-radius:999px;
+  background:#e4f3fb;
+  color:#196693;
+  font-size:7px;
+  font-weight:800;
+  letter-spacing:.05em;
+}
+.goalfy-setup-mode strong{font-size:10px;color:#274961}
+.goalfy-setup-mode small{font-size:8px;color:#7b90a1;line-height:1.4}
+.goalfy-setup-fields{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:9px;
+}
+.goalfy-setup label{
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  min-width:0;
+}
+.goalfy-setup label>span{
+  font-size:8px;
+  font-weight:700;
+  color:#607a8f;
+  text-transform:uppercase;
+}
+.goalfy-setup input{
+  width:100%;
+  min-height:38px;
+  border:1px solid #cedce6;
+  border-radius:8px;
+  padding:0 10px;
+  background:#fff;
+  color:#18384f;
+  font-size:9px;
+  outline:none;
+}
+.goalfy-setup input:focus{
+  border-color:#6fb3de;
+  box-shadow:0 0 0 3px rgba(55,142,197,.09);
+}
+.goalfy-setup-divider{
+  position:relative;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:28px;
+}
+.goalfy-setup-divider::before{
+  content:'';
+  position:absolute;
+  left:0;
+  right:0;
+  height:1px;
+  background:#dce7ee;
+}
+.goalfy-setup-divider span{
+  position:relative;
+  padding:0 9px;
+  background:#f8fbfd;
+  color:#8b9dab;
+  font-size:8px;
+}
+.goalfy-setup-status{
+  display:grid;
+  grid-template-columns:auto 1fr auto 1fr;
+  gap:6px 10px;
+  margin-top:10px;
+  padding:9px 10px;
+  border-radius:8px;
+  background:#edf4f8;
+}
+.goalfy-setup-status span{
+  font-size:7px;
+  color:#7e92a2;
+  text-transform:uppercase;
+}
+.goalfy-setup-status strong{
+  font-size:8px;
+  color:#315269;
+  overflow-wrap:anywhere;
+}
+.goalfy-setup-error{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  margin-top:10px;
+  padding:8px 9px;
+  border:1px solid #edc878;
+  border-radius:8px;
+  background:#fff8e8;
+  color:#8a5a00;
+  font-size:8px;
+}
+.goalfy-setup-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+  margin-top:12px;
+}
+@media (max-width:700px){
+  .goalfy-setup-fields{grid-template-columns:1fr}
+  .goalfy-setup-status{grid-template-columns:auto 1fr}
+}
