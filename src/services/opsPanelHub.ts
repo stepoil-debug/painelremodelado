@@ -229,6 +229,117 @@ export async function loadHubProject(projectKey: string): Promise<HubProjectDeta
 }
 
 
+export interface HubGoalfyDnItem {
+  id?: number;
+  card_id: string;
+  project_core?: string | null;
+  item_key: string;
+  item_label?: string | null;
+  relation_id?: string | null;
+  item_type?: string | null;
+  quantity?: number | null;
+  source_field?: string | null;
+}
+
+export interface HubGoalfyPhaseHistory {
+  id?: number;
+  card_id: string;
+  phase_id?: string | null;
+  phase_name: string;
+  phase_order?: number | null;
+  entered_at?: string | null;
+  exited_at?: string | null;
+  duration_minutes?: number | null;
+}
+
+export interface HubGoalfyDn {
+  card_id: string;
+  dn_number?: string | null;
+  card_title?: string | null;
+  phase_id?: string | null;
+  phase_name?: string | null;
+  client?: string | null;
+  project_manager?: string | null;
+  destination?: string | null;
+  dn_for?: string | null;
+  po_number?: string | null;
+  items_text?: string | null;
+  tags?: string[];
+  invoice_number?: string | null;
+  invoice_url?: string | null;
+  date_in_current_phase?: string | null;
+  ready_at?: string | null;
+  shipped_at?: string | null;
+  is_ready?: boolean;
+  is_shipped?: boolean;
+  material_scope?: 'spool' | 'loose' | 'mixed' | 'other' | 'unknown';
+  updated_at_source?: string | null;
+  items: HubGoalfyDnItem[];
+  phase_history: HubGoalfyPhaseHistory[];
+}
+
+export interface HubGoalfyShippingSummary {
+  project_core: string;
+  dn_count: number;
+  shipped_dn_count: number;
+  ready_dn_count: number;
+  open_dn_count: number;
+  material_scope_count?: number;
+  latest_shipped_at?: string | null;
+  latest_goalfy_update?: string | null;
+  expected_item_count: number;
+  shipped_item_count: number;
+  matched_expected_item_count: number;
+  coverage_percent?: number | null;
+  shipping_status: 'no_dn' | 'processing' | 'ready' | 'shipping_evidence' | 'partial' | 'complete';
+}
+
+export interface HubGoalfySyncStatus {
+  board_id?: string;
+  mode?: string;
+  status: string;
+  total_cards?: number | null;
+  processed_cards?: number | null;
+  last_sync_started_at?: string | null;
+  last_synced_at?: string | null;
+  last_success_at?: string | null;
+  last_error?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface HubGoalfyShipping {
+  summary: HubGoalfyShippingSummary;
+  dns: HubGoalfyDn[];
+  sync: HubGoalfySyncStatus;
+}
+
+export async function loadGoalfyShipping(projectKey: string): Promise<HubGoalfyShipping> {
+  const response = await requestHub<{ ok: true; data: HubGoalfyShipping }>({
+    action: 'goalfy_shipping',
+    projectKey,
+  });
+  return response.data;
+}
+
+export async function loadGoalfySyncStatus(): Promise<HubGoalfySyncStatus> {
+  const response = await requestHub<{ ok: true; data: HubGoalfySyncStatus }>({
+    action: 'goalfy_sync_status',
+  });
+  return response.data;
+}
+
+export async function triggerGoalfySync(force = true): Promise<{ request_id: number; started_at: string; observation_mode: boolean }> {
+  const response = await requestHub<{
+    ok: true;
+    data: { request_id: number; started_at: string; observation_mode: boolean };
+  }>({
+    action: 'goalfy_sync_now',
+    force,
+  });
+  return response.data;
+}
+
+
 export interface HubDemandRow {
   region: string;
   iso_key: string;
