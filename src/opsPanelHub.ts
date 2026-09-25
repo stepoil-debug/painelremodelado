@@ -500,8 +500,6 @@ export interface HubCoreValidationReport {
     status?: 'not_checked' | 'not_found' | 'matched' | 'mismatch' | string | null;
     tracking_item_count?: number;
     fcb_item_count?: number;
-    core_count?: number;
-    source_count?: number;
     missing_in_tracking?: unknown[];
     tracking_only?: unknown[];
     fcb_is_authority?: boolean;
@@ -522,7 +520,6 @@ export interface HubCoreValidationReport {
     source_linked: number;
   };
   blocking_issues: string[];
-  non_blocking_warnings?: string[];
   warnings: Record<string, number>;
   ready_for_cutover: boolean;
   generated_at?: string;
