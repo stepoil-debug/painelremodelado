@@ -349,8 +349,12 @@ Deno.serve(async(req:Request)=>{
     }
   }));
 
-  if(!dryRun)await admin.rpc("ops_core_refresh_demand_feed_cache").catch(()=>null);
+  let registrationRefresh:any=null;
+  if(!dryRun){
+    const refresh=await admin.rpc("ops_core_refresh_registration");
+    registrationRefresh=refresh.error?{ok:false,error:refresh.error.message}:{ok:true,data:refresh.data};
+    await admin.rpc("ops_core_refresh_demand_feed_cache").catch(()=>null);
+  }
   const failed=results.filter(r=>!r.ok||(r.payload?.validation&&r.payload.validation.passed===false)||(r.parsed&&r.parsed.passed===false));
-  return json({ok:failed.length===0,status:failed.length?"review_required":"parsed",project_core:projectCore(project),sources:sources.length,processed:results.length,failed:failed.length,results},failed.length?409:200);
+  return json({ok:failed.length===0,status:failed.length?"review_required":"parsed",project_core:projectCore(project),sources:sources.length,processed:results.length,failed:failed.length,registration_refresh:registrationRefresh,results},failed.length?409:200);
 });
-
