@@ -79,11 +79,25 @@ function modeLabel(mode?: string | null) {
 function isNewDrawingCandidate(candidate: HubRegistrationCandidate) {
   const detection = candidate.suggested_data?.detection;
   return Boolean(
-    candidate.source_systems?.includes('drawing')
+    (candidate.source_systems?.includes('fcb') || candidate.fcb_status === 'detected')
     && detection
     && typeof detection === 'object'
+    && (detection as Record<string, unknown>).source === 'fcb'
     && (detection as Record<string, unknown>).new_project === true
   );
+}
+
+function candidateFcbStatus(candidate: HubRegistrationCandidate) {
+  return candidate.fcb_status
+    || (candidate.suggested_data?.fcb as Record<string, unknown> | undefined)?.status
+    || 'awaiting_fcb';
+}
+
+function trackingValidationLabel(status?: string | null) {
+  if (status === 'matched') return 'Tracking conferido';
+  if (status === 'mismatch') return 'Divergência no Tracking';
+  if (status === 'not_found') return 'Tracking não encontrado';
+  return 'Tracking ainda não conferido';
 }
 
 export default function CoreMigrationPage() {
@@ -105,7 +119,10 @@ export default function CoreMigrationPage() {
     try {
       const [migration, queue] = await Promise.all([
         loadCoreMigrationStatus(),
-        loadRegistrationCandidates('validation_required', 500),
+        // A candidate can move to `parsed` as soon as the FCB ingestion is
+        // applied. Keep it visible so the panel reflects the FCB even before
+        // the operator completes the final validation/cutover step.
+        loadRegistrationCandidates('', 500),
       ]);
       setStatus(migration);
       setCandidates(queue);
@@ -264,7 +281,7 @@ export default function CoreMigrationPage() {
       await refreshCoreRegistration();
       const [migration, queue] = await Promise.all([
         loadCoreMigrationStatus(),
-        loadRegistrationCandidates('validation_required', 500),
+        loadRegistrationCandidates('', 500),
       ]);
       setStatus(migration);
       setCandidates(queue);
@@ -272,7 +289,7 @@ export default function CoreMigrationPage() {
       const newDrawing = queue.filter(isNewDrawingCandidate);
       setNotice(
         completed
-          ? 'Drawing atualizado. ' + newDrawing.length + ' nova(s) BSP(s) do Drawing aguardando validação.'
+          ? 'FCB atualizado. ' + newDrawing.length + ' nova(s) BSP(s) do FCB aguardando validação.'
           : 'Atualização do Drawing continua em processamento. A fila será atualizada automaticamente ao concluir.'
       );
     } catch (reason) {
@@ -310,7 +327,7 @@ export default function CoreMigrationPage() {
         <div>
           <span className="core-eyebrow">FONTE DA VERDADE · OPS CORE</span>
           <h1>Cadastro e validação operacional</h1>
-          <p>Modo observação: o cadastro pode ser analisado e preparado sem alterar Carteira, Produção, Bloqueios, Indicadores ou Arquivados.</p>
+          <p>FCB é a autoridade técnica; WIP/Job Order complementam o cadastro e o Tracking é usado somente para validação nesta fase. O modo observação preserva os painéis operacionais.</p>
         </div>
         <div className="core-page-head-actions">
           <button className="core-button primary" onClick={() => void refreshDrawing()} disabled={Boolean(busy)}>
@@ -330,7 +347,7 @@ export default function CoreMigrationPage() {
         <article><span>No OPS CORE</span><strong>{status?.projects.cutover ?? '—'}</strong><small>sem leitura do Tracking</small></article>
         <article><span>Legado</span><strong>{status?.projects.legacy ?? '—'}</strong><small>aguardando validação</small></article>
         <article><span>Fila de validação</span><strong>{status?.candidates.pending ?? '—'}</strong><small>fontes operacionais</small></article>
-        <article className={newDrawingCount > 0 ? 'core-kpi-alert' : ''}><span>Novas do Drawing</span><strong>{newDrawingCount}</strong><small>{newDrawingCount > 0 ? 'requer conferência' : 'nenhuma nova BSP'}</small></article>
+        <article className={newDrawingCount > 0 ? 'core-kpi-alert' : ''}><span>Novas do FCB</span><strong>{newDrawingCount}</strong><small>{newDrawingCount > 0 ? 'requer conferência' : 'nenhuma nova BSP'}</small></article>
         <article><span>Itens migrados</span><strong>{status?.items.total ?? '—'}</strong><small>com histórico de etapas</small></article>
       </div>
 
@@ -353,10 +370,10 @@ export default function CoreMigrationPage() {
                 <div>
                   <strong>{item.display_code || item.project_core}</strong>
                   <span>{item.client || 'Cliente a confirmar'} · {item.vessel || 'Vessel a confirmar'}</span>
-                  <small>{(item.source_systems || []).join(' + ') || 'fonte pendente'}</small>
+                  <small>{(item.source_systems || []).join(' + ') || 'fonte pendente'} · FCB {candidateFcbStatus(item) === 'detected' ? 'detectado' : 'aguardando'}</small>
                 </div>
                 <div className="core-candidate-meta">
-                  {isNewDrawingCandidate(item) && <em className="mode drawing-new">NOVA DO DRAWING</em>}
+                  {isNewDrawingCandidate(item) && <em className="mode drawing-new">NOVA DO FCB</em>}
                   <em className={'mode ' + (item.source_mode || 'pending')}>{modeLabel(item.source_mode)}</em>
                   <span>{item.item_count ?? 0} itens</span>
                   <ChevronRight size={16} />
@@ -378,13 +395,15 @@ export default function CoreMigrationPage() {
             <div className="core-prepare core-pending-register">
               <span className="core-eyebrow">PENDENTE DE CADASTRO</span>
               <h2>{selected.display_code}</h2>
-              <p>A BSP foi detectada nas fontes operacionais e está aguardando somente o cadastro no OPS CORE.</p>
+              <p>{candidateFcbStatus(selected) === 'detected'
+                ? 'O FCB foi detectado. O cadastro será montado com os dados técnicos do FCB e os dados cadastrais do WIP/Job Order.'
+                : 'A BSP foi encontrada nas fontes auxiliares, mas ainda não possui FCB vigente. Ela permanece somente como pré-cadastro.'}</p>
               <div className="core-source-list">{selected.source_systems.map((source) => <span key={source}>{source}</span>)}</div>
-              <button className="core-button primary core-register-button" onClick={() => void registerCandidate()} disabled={busy === 'register'}>
+              <button className="core-button primary core-register-button" onClick={() => void registerCandidate()} disabled={busy === 'register' || candidateFcbStatus(selected) !== 'detected'}>
                 {busy === 'register' ? <LoaderCircle className="spin" size={16} /> : <Database size={16} />}
-                {busy === 'register' ? 'Cadastrando...' : 'Cadastrar'}
+                {busy === 'register' ? 'Cadastrando...' : candidateFcbStatus(selected) === 'detected' ? 'Cadastrar pelo FCB' : 'Aguardando FCB'}
               </button>
-              <small>O cadastro é montado automaticamente a partir de Drawing, WIP e Job Order. Nada será criado no Tracking.</small>
+              <small>FCB = autoridade técnica. WIP/Job Order complementam o cadastro. Tracking será consultado somente para validação e nunca será alterado.</small>
             </div>
           ) : busy === 'detail' && !detail ? (
             <div className="core-empty"><LoaderCircle className="spin" size={28} /><p>Carregando cadastro...</p></div>
@@ -394,7 +413,7 @@ export default function CoreMigrationPage() {
                 <div>
                   <span className="core-eyebrow">{report?.fcb?.status === 'awaiting_fcb' ? 'AGUARDANDO FCB' : modeLabel(selected.source_mode)}</span>
                   <h2>{selected.display_code}</h2>
-                  <p>{selected.client || core?.project?.client || 'Cliente a confirmar'} · {selected.vessel || core?.project?.vessel || 'Vessel a confirmar'}</p>
+                  <p>{selected.client || core?.project?.client || 'Cliente a confirmar'} · {selected.vessel || core?.project?.vessel || 'Vessel a confirmar'} · Autoridade: FCB</p>
                 </div>
                 {report?.fcb?.status !== 'awaiting_fcb' && (
                   <button className="core-button secondary" onClick={() => setEditing({ ...emptyItem })}><Plus size={16} />Adicionar item</button>
@@ -425,9 +444,12 @@ export default function CoreMigrationPage() {
                 <div className="core-warnings">
                   <span>FCB detectado: <b>{report ? (report.fcb?.has_fcb ? 'Sim' : 'Não') : '—'}</b></span>
                   <span>Revisão FCB: <b>{report?.fcb?.latest_revision || '—'}</b></span>
-                  <span>Pré-cadastro Drawing: <b>{report ? report.warnings?.provisional_drawing_items ?? 0 : '—'}</b></span>
+                  <span>Tracking: <b>{trackingValidationLabel(report?.tracking_validation?.status)}</b></span>
+                  <span>Itens FCB / Tracking: <b>{report?.tracking_validation ? `${report.tracking_validation.fcb_item_count ?? 0} / ${report.tracking_validation.tracking_item_count ?? 0}` : '—'}</b></span>
+                  <span>Itens provisórios: <b>{report ? report.warnings?.provisional_drawing_items ?? 0 : '—'}</b></span>
                   <span>Itens técnicos: <b>{report?.fcb?.has_fcb ? report.items?.item_count ?? '—' : 'aguardando FCB'}</b></span>
                 </div>
+                {report?.tracking_validation?.status === 'mismatch' && <p className="core-blocking tracking-warning">Divergência encontrada no Tracking apenas para conferência. O FCB continua sendo a fonte técnica e o Tracking não será alterado.</p>}
               </div>
 
               <div className="core-items-title">
