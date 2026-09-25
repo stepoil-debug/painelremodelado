@@ -2589,15 +2589,64 @@ function shippingScopeLabel(scope?: string | null) {
 
 function GoalfyShippingPanel(props: {
   shipping: HubGoalfyShipping | null;
+  connection: HubGoalfyConnectionStatus | null;
   loading: boolean;
   syncing: boolean;
   onRefresh: () => void;
+  onSaveConnection: (input: { accessToken?: string; reportId?: string | null; apiKey?: string }) => Promise<string | null>;
 }) {
   const summary = props.shipping?.summary;
   const dns = props.shipping?.dns ?? [];
   const sync = props.shipping?.sync;
   const coverage = summary?.coverage_percent;
   const syncError = sync?.status === 'error' ? sync.last_error : null;
+  const [showSetup, setShowSetup] = useState(false);
+  const [accessToken, setAccessToken] = useState('');
+  const [reportId, setReportId] = useState(props.connection?.report_id || '');
+  const [apiKey, setApiKey] = useState('');
+  const [savingConnection, setSavingConnection] = useState(false);
+  const [setupError, setSetupError] = useState('');
+
+  useEffect(() => {
+    setReportId(props.connection?.report_id || '');
+  }, [props.connection?.report_id]);
+
+  const connectionLabel = props.connection?.preferred_mode === 'report_external'
+    ? 'Relatório conectado'
+    : props.connection?.preferred_mode === 'cards_api'
+      ? 'Token conectado'
+      : 'Conexão pendente';
+
+  async function saveConnection() {
+    if (savingConnection) return;
+
+    const hasNewReportPair = Boolean(reportId.trim() && apiKey.trim());
+    const hasExistingReportPair = Boolean(reportId.trim() && props.connection?.has_api_key);
+    const hasToken = Boolean(accessToken.trim() || props.connection?.has_access_token);
+
+    if (!hasNewReportPair && !hasExistingReportPair && !hasToken) {
+      setSetupError('Informe um Token de acesso ou o Report ID com a API Key.');
+      return;
+    }
+
+    setSavingConnection(true);
+    setSetupError('');
+    const error = await props.onSaveConnection({
+      accessToken: accessToken.trim() || undefined,
+      reportId: reportId.trim(),
+      apiKey: apiKey.trim() || undefined,
+    });
+    setSavingConnection(false);
+
+    if (error) {
+      setSetupError(error);
+      return;
+    }
+
+    setAccessToken('');
+    setApiKey('');
+    setShowSetup(false);
+  }
 
   return (
     <div className="section-card goalfy-shipping-card">
@@ -2608,15 +2657,105 @@ function GoalfyShippingPanel(props: {
           <p className="goalfy-subtitle">Leitura independente para validar envio parcial ou completo. Não altera o avanço operacional.</p>
         </div>
         <div className="goalfy-head-actions">
+          <span className={'goalfy-connection ' + (props.connection?.preferred_mode || 'not_configured')}>
+            <i />
+            {connectionLabel}
+          </span>
           <span className={'goalfy-status ' + (summary?.shipping_status || 'no_dn')}>
             {shippingStatusLabel(summary?.shipping_status)}
           </span>
-          <button className="soft-btn" onClick={props.onRefresh} disabled={props.syncing}>
+          <button className="soft-btn" onClick={() => setShowSetup((value) => !value)}>
+            <LockKeyhole size={14} />
+            Conexão
+          </button>
+          <button
+            className="soft-btn"
+            onClick={props.onRefresh}
+            disabled={props.syncing || props.connection?.preferred_mode === 'not_configured'}
+            title={props.connection?.preferred_mode === 'not_configured' ? 'Configure a conexão Goalfy antes de sincronizar.' : undefined}
+          >
             <RefreshCcw size={14} className={props.syncing ? 'spin' : ''} />
             {props.syncing ? 'Atualizando...' : 'Atualizar Goalfy'}
           </button>
         </div>
       </div>
+
+      {showSetup && (
+        <div className="goalfy-setup">
+          <div className="goalfy-setup-head">
+            <div>
+              <strong>Conexão segura com o Goalfy</strong>
+              <span>As credenciais são gravadas no Vault do Supabase e nunca são exibidas novamente no navegador.</span>
+            </div>
+            <button type="button" onClick={() => setShowSetup(false)} aria-label="Fechar configuração">×</button>
+          </div>
+
+          <div className="goalfy-setup-mode recommended">
+            <div>
+              <span>RECOMENDADO</span>
+              <strong>Relatório oficial + API Key</strong>
+              <small>Mais estável para sincronizar todas as DNs e campos do board em lote.</small>
+            </div>
+            <div className="goalfy-setup-fields">
+              <label>
+                <span>Report ID</span>
+                <input
+                  value={reportId}
+                  onChange={(event) => setReportId(event.target.value)}
+                  placeholder="ID do relatório Goalfy"
+                  autoComplete="off"
+                />
+              </label>
+              <label>
+                <span>API Key</span>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(event) => setApiKey(event.target.value)}
+                  placeholder={props.connection?.has_api_key ? 'API Key já armazenada · deixe vazio para manter' : 'API Key do Goalfy'}
+                  autoComplete="new-password"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="goalfy-setup-divider"><span>ou</span></div>
+
+          <div className="goalfy-setup-mode">
+            <div>
+              <strong>Token de acesso</strong>
+              <small>Fallback para leitura direta da API quando o token tiver permissão para os cards.</small>
+            </div>
+            <label>
+              <span>Access Token</span>
+              <input
+                type="password"
+                value={accessToken}
+                onChange={(event) => setAccessToken(event.target.value)}
+                placeholder={props.connection?.has_access_token ? 'Token já armazenado · deixe vazio para manter' : 'Token Goalfy'}
+                autoComplete="new-password"
+              />
+            </label>
+          </div>
+
+          <div className="goalfy-setup-status">
+            <span>Board</span><strong>{props.connection?.board_id || 'Não configurado'}</strong>
+            <span>Token</span><strong>{props.connection?.has_access_token ? 'Armazenado' : 'Não informado'}</strong>
+            <span>Relatório</span><strong>{props.connection?.report_id || 'Não informado'}</strong>
+            <span>API Key</span><strong>{props.connection?.has_api_key ? 'Armazenada' : 'Não informada'}</strong>
+          </div>
+
+          {setupError && <div className="goalfy-setup-error"><AlertTriangle size={14} />{setupError}</div>}
+
+          <div className="goalfy-setup-actions">
+            <button className="soft-btn" type="button" onClick={() => setShowSetup(false)}>Cancelar</button>
+            <button className="success-ref" type="button" onClick={() => void saveConnection()} disabled={savingConnection}>
+              {savingConnection ? <RefreshCcw size={14} className="spin" /> : <ShieldCheck size={14} />}
+              {savingConnection ? 'Salvando...' : 'Salvar conexão'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {props.loading ? (
         <div className="goalfy-empty"><RefreshCcw size={18} className="spin" /><span>Carregando expedição da BSP...</span></div>
@@ -2649,7 +2788,11 @@ function GoalfyShippingPanel(props: {
               <Boxes size={18} />
               <div>
                 <strong>Nenhuma DN sincronizada para esta BSP.</strong>
-                <span>{sync?.status === 'never' ? 'A fonte Goalfy ainda não executou a primeira sincronização.' : 'Não há evidência de DN vinculada a esta BSP na última leitura.'}</span>
+                <span>{props.connection?.preferred_mode === 'not_configured'
+                  ? 'Configure a conexão Goalfy acima para iniciar a primeira sincronização.'
+                  : sync?.status === 'never'
+                    ? 'A fonte Goalfy ainda não executou a primeira sincronização.'
+                    : 'Não há evidência de DN vinculada a esta BSP na última leitura.'}</span>
               </div>
             </div>
           )}
