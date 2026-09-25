@@ -110,12 +110,18 @@ function deriveDrawing(cells: Map<string, any>, cellDisplay: Record<string, stri
     || display(cells, "Project Number")
     || display(cells, "Task Name (BSP, GASP, ICSP,SP)");
 
-  const identifiers = [
+  // FCB is a document-level fact. Do not scan every cell here: status notes,
+  // comments and unrelated references can contain the text "FCB" and create
+  // false technical-authority records.
+  const documentIdentifiers = [
     display(cells, "Task Name (BSP, GASP, ICSP,SP)"),
     display(cells, "Doc. Ref.Client / Title"),
     display(cells, "Drawing Number (Rev. A)"),
-    ...Object.values(cellDisplay),
   ].join(" ");
+  const unitIdentifiers = Object.entries(cellDisplay)
+    .filter(([title]) => /(^|[^a-z])(unit|unidade)([^a-z]|$)/i.test(title))
+    .map(([, value]) => value)
+    .join(" ");
 
   return {
     project_key: projectKey,
@@ -129,7 +135,7 @@ function deriveDrawing(cells: Map<string, any>, cellDisplay: Record<string, stri
     drawing_number: display(cells, "Drawing Number (Rev. A)"),
     approval_date: raw(cells, "Approval Date"),
     current_revision: currentRevision,
-    is_fcb: isFcbDocument(identifiers),
+    is_fcb: isFcbDocument(documentIdentifiers) || isFcbDocument(unitIdentifiers),
     revisions,
   };
 }
@@ -578,6 +584,18 @@ Deno.serve(async (request: Request) => {
       : detected;
   }
 
+  // The Drawing sync is the trigger for technical authority. Dispatch each
+  // not-yet-ingested FCB source asynchronously; the ingest function processes
+  // one source per request so a project with many FCBs cannot hit the Edge
+  // runtime resource limit.
+  let fcbDispatch: unknown = null;
+  if (results.some((row) => row.source === "drawing" && row.status !== "error")) {
+    const { data: dispatched, error: dispatchError } = await admin.rpc("ops_fcb_dispatch_pending", { p_limit: 40 });
+    fcbDispatch = dispatchError
+      ? { ok: false, error: dispatchError.message }
+      : dispatched;
+  }
+
   let legacyReconciliation: unknown = null;
   if (results.some((row) => row.source === "tracking" && row.status !== "error")) {
     const { data: reconciled, error: reconciliationError } = await admin.rpc("ops_core_sync_legacy_tracking_current_items", {
@@ -589,7 +607,7 @@ Deno.serve(async (request: Request) => {
   }
 
   if (results.some((row) => row.source === "wip" || row.source === "drawing" || row.source === "tracking")) {
-    await admin.rpc("ops_core_refresh_registration").catch(() => null);
+    await admin.rpc("ops_core_refresh_registration");
   }
 
   let demandCache: unknown = null;
@@ -602,6 +620,7 @@ Deno.serve(async (request: Request) => {
     ok: results.every((r) => r.status !== "error"),
     results,
     drawing_detection: drawingDetection,
+    fcb_dispatch: fcbDispatch,
     legacy_reconciliation: legacyReconciliation,
     demand_cache: demandCache,
     migration_mode: legacyProjects > 0 ? "ops_core_hybrid" : "ops_core_only",

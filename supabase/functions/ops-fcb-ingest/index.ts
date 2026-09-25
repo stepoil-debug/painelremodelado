@@ -23,6 +23,12 @@ function projectCore(v:unknown){
   let s=String(v??"").toUpperCase().trim().replace(/^(BSP|BEP|BPP|B3D|SP)[\s_-]*/,"");
   const m=s.match(/(\d{2}-\d+(?:-\d+)?)/);return m?m[1]:s;
 }
+function isValidProjectCore(v:unknown){
+  return /^[0-9]{2}-(?:[0-9]{3,4}|P[0-9]{3})(?:-[0-9A-Z]{1,3}){0,3}$/.test(projectCore(v));
+}
+function normalizeRevision(v:unknown){
+  return String(v??"").toUpperCase().trim().replace(/^(?:REV(?:ISION)?)[ .:_-]*/i,"");
+}
 function parseNum(v:unknown):number|null{
   let s=String(v??"").trim().replace(/\s/g,"");
   if(!s||s==="-"||/^N\.?A\.?$/i.test(s))return null;
@@ -74,30 +80,50 @@ function deriveSchedule(desc:string){
   const x=desc.match(/\b(XXS|XS|STD)\b/i);return x?x[1].toUpperCase():null;
 }
 function revisionMatchesFile(name:string,rev:string){
-  const n=name.toUpperCase().replace(/\s+/g,"");
-  const r=rev.toUpperCase().replace(/[^A-Z0-9]/g,"");
+  const n=name.toUpperCase().replace(/[ ._-]+/g," ");
+  const r=normalizeRevision(rev).replace(/[^A-Z0-9]/g,"");
   if(!r)return false;
-  return n.includes("REV_"+r)||n.includes("REV-"+r)||n.includes("REV."+r)||n.includes("REV"+r)
-    ||n.endsWith("="+r+".PDF")||n.endsWith("-"+r+".PDF")||n.endsWith("_"+r+".PDF");
+  return new RegExp(`(?:^| )REV(?:ISION)? ${r}(?: |\\.PDF$)`).test(n)
+    || new RegExp(`(?:^|[ =_-])${r}\\.PDF$`).test(name.toUpperCase());
 }
 function getValueBelow(page:PdfPage,label:RegExp,maxGap=55){
   const hit=page.lines.find(l=>label.test(l.text));if(!hit)return null;
+  const parts=hit.text.split("|").map(x=>x.trim()).filter(Boolean);
+  const labelIndex=parts.findIndex(x=>label.test(x));
+  if(labelIndex>=0&&parts[labelIndex].replace(label," ").trim())return parts[labelIndex].replace(label," ").replace(/^[:\-]+/,"").trim()||null;
+  if(labelIndex>=0&&parts[labelIndex+1])return parts[labelIndex+1];
+  const inline=hit.text.match(new RegExp(label.source+"\\s*[:\\-]?\\s*(.+)$",label.flags));
+  if(inline?.[1]&&!/^[:|\-\s]*$/.test(inline[1]))return inline[1].replace(/\s*\|.*$/," ").trim()||null;
   const rows=page.lines.filter(l=>l.y<hit.y&&hit.y-l.y<=maxGap&&l.text&&!label.test(l.text)).sort((a,b)=>b.y-a.y);
   return rows[0]?.text||null;
 }
 function parseRevisionTable(page:PdfPage){
-  const hit=page.lines.find(l=>/REVISION\s*\|\s*DESCRIPTION/i.test(l.text));if(!hit)return [];
-  const rows=page.lines.filter(l=>l.y<hit.y&&hit.y-l.y<120);
-  return unique(rows.map(l=>l.text.match(/^\s*([A-Z0-9]+)\s*\|/i)?.[1]?.toUpperCase()));
+  const hit=page.lines.find(l=>/REVISION\s*\|\s*DESCRIPTION|REV\.?\s*DESCRIPTION/i.test(l.text));
+  if(hit){
+    const rows=page.lines.filter(l=>l.y<hit.y&&hit.y-l.y<150);
+    const values=rows.map(l=>l.text.match(/^\s*([A-Z0-9]{1,3})\s*\|/i)?.[1]?.toUpperCase()).filter(Boolean);
+    if(values.length)return unique(values);
+  }
+  const fallback:string[]=[];
+  for(const line of page.lines){
+    const m=line.text.match(/(?:REV(?:ISION)?|REVISÃO)\s*[:.|_-]?\s*([A-Z0-9]{1,3})\b/i);
+    if(m)fallback.push(normalizeRevision(m[1]));
+  }
+  return unique(fallback);
 }
 function parseTotals(page:PdfPage){
-  const hit=page.lines.find(l=>/Área Total de Pintura|TOTAL PAINTING AREA/i.test(l.text));if(!hit)return {painting:null,weight:null};
+  const hitIndex=page.lines.findIndex(l=>/Área Total de Pintura|TOTAL PAINTING AREA|TOTAL WEIGHT|PESO TOTAL/i.test(l.text));
+  if(hitIndex<0)return {painting:null,weight:null};
+  const hit=page.lines[hitIndex];
   const rows=page.lines.filter(l=>l.y<hit.y&&hit.y-l.y<=20).sort((a,b)=>b.y-a.y);
   for(const l of rows){
     const nums=l.text.split("|").map(parseNum).filter((x):x is number=>x!==null);
     if(nums.length>=2)return {painting:nums[0],weight:nums[nums.length-1]};
   }
-  return {painting:null,weight:null};
+  const nearby=page.lines.slice(Math.max(0,hitIndex-2),Math.min(page.lines.length,hitIndex+4));
+  const nums=nearby.flatMap(l=>l.text.split("|").map(parseNum).filter((x):x is number=>x!==null));
+  if(/TOTAL WEIGHT|PESO TOTAL/i.test(hit.text)&&nums.length)return {painting:null,weight:nums[nums.length-1]};
+  return nums.length>=2?{painting:nums[0],weight:nums[nums.length-1]}:{painting:null,weight:null};
 }
 function findHeaders(page:PdfPage){
   const lines=page.lines.filter(l=>/Material description|Descrição do Material/i.test(l.text)&&/Quantity|Quantidade/i.test(l.text)&&/Weight|Peso/i.test(l.text));
@@ -158,7 +184,10 @@ function parseCutPage(page:PdfPage,start:number){
     const cur=mains[i],prev=i===0?h.y:mains[i-1].line.y,next=i===mains.length-1?20:mains[i+1].line.y;
     const upper=(prev+cur.line.y)/2,lower=(cur.line.y+next)/2;
     const block=page.lines.filter(l=>l.y<upper&&l.y>lower);
-    const desc=unique(block.map(l=>mapCols(l.items,h.cols).desc)).join(" | ");
+    const desc=unique(block.map(l=>l.text.trim()).filter(t=>
+      t && !/^\s*(SPL|SPOOL)[-_\s]*\d+\s*\|/i.test(t)
+      && !/^\s*(measurement|medição|description|descrição|total|list of materials|lista de materiais)\b/i.test(t)
+    )).join(" | ");
     rows.push({
       row_index:start+rows.length,spool_raw:clean(cur.map.spool),material_code:clean(cur.map.code),
       description:desc||clean(cur.map.code)||"",material_grade:deriveMaterial(desc||clean(cur.map.code)||""),unit:clean(cur.map.unit),
@@ -195,37 +224,64 @@ async function extractPdf(bytes:Uint8Array):Promise<PdfPage[]>{
 async function sha256(bytes:Uint8Array){
   const d=await crypto.subtle.digest("SHA-256",bytes);return Array.from(new Uint8Array(d)).map(b=>b.toString(16).padStart(2,"0")).join("");
 }
+async function fetchRetry(input:RequestInfo|URL,init:RequestInit={},attempts=3){
+  let last:unknown;
+  for(let attempt=0;attempt<attempts;attempt++){
+    const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),45000);
+    try{
+      const response=await fetch(input,{...init,signal:controller.signal});
+      if(response.ok||response.status<500)return response;
+      last=new Error("HTTP "+response.status);
+    }catch(error){last=error}
+    finally{clearTimeout(timer)}
+    if(attempt+1<attempts)await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));
+  }
+  throw last instanceof Error?last:new Error(String(last));
+}
 async function sheetGet(path:string,token:string){
-  const r=await fetch(API+path,{headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"}});
+  const r=await fetchRetry(API+path,{headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"}});
   if(!r.ok)throw new Error("Smartsheet "+path+" => "+r.status+" "+(await r.text()).slice(0,300));
   return r.json();
 }
-async function attachmentFor(rowId:number,rev:string,token:string){
+async function attachmentFor(rowId:number,rev:string,source:any,token:string){
   const list=await sheetGet(`/sheets/${SHEET_ID}/rows/${rowId}/attachments?includeAll=true&pageSize=100`,token);
   const files=(Array.isArray(list)?list:(list.data||[])).filter((a:any)=>String(a.mimeType||"").toLowerCase()==="application/pdf");
   const ranked=files.map((a:any)=>{
-    let score=revisionMatchesFile(String(a.name||""),rev)?100:0;
-    if(/BACK|COMENT|VERIF|MARKUP/i.test(String(a.name||"")))score-=40;
+    const name=String(a.name||"");
+    let score=revisionMatchesFile(name,rev)?100:(rev?0:20);
+    const sourceCode=String(source.drawing_number||source.document_title||"").replace(/\s+/g,"").toUpperCase();
+    if(sourceCode&&name.replace(/\s+/g,"").toUpperCase().includes(sourceCode))score+=30;
+    if(/BACK|COMENT|VERIF|MARKUP|CANCEL|RASCUNHO|DRAFT/i.test(name))score-=80;
     return {...a,_score:score};
   }).sort((a:any,b:any)=>b._score-a._score||new Date(b.createdAt||0).getTime()-new Date(a.createdAt||0).getTime());
-  return ranked.find((x:any)=>x._score>=100)||(ranked.length===1?ranked[0]:null);
+  const exact=ranked.find((x:any)=>x._score>=100);
+  if(exact)return exact;
+  if(ranked.length===1)return ranked[0];
+  if(!rev){
+    const fallback=ranked.find((x:any)=>x._score>=0);
+    if(fallback)return {...fallback,_ambiguous:true};
+  }
+  return null;
 }
 async function parseSource(source:any,project:string,token:string){
-  const rev=String(source.current_revision||"").trim().toUpperCase();
-  const attachment=await attachmentFor(Number(source.source_row_id),rev,token);
-  if(!attachment)return {ok:false,source,error:"FCB vigente sem PDF da revisão "+rev+" anexado na linha."};
+  const rev=normalizeRevision(source.current_revision);
+  const attachment=await attachmentFor(Number(source.source_row_id),rev,source,token);
+  if(!attachment)return {ok:false,source,error:"FCB vigente sem PDF compatível com a revisão "+(rev||"informada")+" anexado na linha."};
 
   const meta=await sheetGet(`/sheets/${SHEET_ID}/attachments/${attachment.id}`,token);
   if(!meta.url)return {ok:false,source,error:"URL do anexo FCB indisponível."};
-  const file=await fetch(String(meta.url));if(!file.ok)return {ok:false,source,error:"Falha ao baixar FCB: "+file.status};
+  const file=await fetchRetry(String(meta.url));if(!file.ok)return {ok:false,source,error:"Falha ao baixar FCB: "+file.status};
   const bytes=new Uint8Array(await file.arrayBuffer());
   const [fileHash,pages]=await Promise.all([sha256(bytes),extractPdf(bytes)]);
   if(!pages.length)return {ok:false,source,error:"FCB sem texto extraível."};
 
-  const cover=pages[0],revisions=parseRevisionTable(cover);
-  const revisionMatched=revisions.includes(rev);
+  const cover=pages[0],revisions=parseRevisionTable(cover).map(normalizeRevision);
+  const effectiveRevision=rev||revisions[revisions.length-1]||"";
+  const revisionMatched=!rev||revisions.includes(rev)||revisionMatchesFile(String(attachment.name||""),rev);
   const projectText=getValueBelow(cover,/Project Number|Número do Projeto/i,45)||"";
-  const projectMatched=projectCore(projectText)===projectCore(project);
+  const expectedProject=projectCore(project);
+  const projectMatched=projectCore(projectText)===expectedProject
+    || pages.some(p=>p.lines.some(l=>l.text.toUpperCase().includes(expectedProject)));
   const fcbCover=getValueBelow(cover,/Fabrication Control Book|Controle de Fabricação/i,60);
   const lineNumber=getValueBelow(cover,/Line Number|Tag da linha/i,45);
   const reference=getValueBelow(cover,/Reference Document|Documento de referência/i,45);
@@ -239,7 +295,9 @@ async function parseSource(source:any,project:string,token:string){
   }
 
   const warnings:string[]=[];
-  if(!revisionMatched)warnings.push("PDF não confirma a revisão vigente "+rev+".");
+  if(!rev)warnings.push("Linha do Drawing sem revisão vigente; revisão do PDF usada como referência.");
+  if(attachment._ambiguous)warnings.push("Mais de um PDF estava anexado sem revisão informada; foi selecionado o anexo mais recente não marcado como comentário ou rascunho.");
+  else if(!revisionMatched)warnings.push("PDF não confirma a revisão vigente "+rev+".");
   if(!projectMatched)warnings.push("Número do projeto no FCB não corresponde a "+project+".");
   if(!cutPages.length)warnings.push("Nenhuma página de Cut List encontrada.");
   if(!allRows.length)warnings.push("Nenhuma linha técnica da Cut List foi extraída.");
@@ -294,7 +352,7 @@ async function parseSource(source:any,project:string,token:string){
     project_core:projectCore(project),
     source:{
       drawing_source_row_id:Number(source.source_row_id),source_version:Number(source.source_version||0),
-      fcb_code:base||fcbCover,document_title:source.document_title,revision:rev,
+      fcb_code:base||fcbCover,document_title:source.document_title,revision:effectiveRevision,
       attachment_id:Number(attachment.id),attachment_name:String(attachment.name||""),
       attachment_created_at:attachment.createdAt||null,file_hash:fileHash,page_count:pages.length
     },
@@ -317,18 +375,28 @@ Deno.serve(async(req:Request)=>{
   const url=Deno.env.get("SUPABASE_URL")!,key=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,token=Deno.env.get("SMARTSHEET_ACCESS_TOKEN");
   if(!token)return json({ok:false,error:"SMARTSHEET_ACCESS_TOKEN não configurado."},500);
   const admin=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
-  const body=await req.json().catch(()=>({})),project=String(body.projectCore||"").trim(),actor=String(body.actor||"system:fcb-ingest");
+  const body=await req.json().catch(()=>({})),requestedProject=String(body.projectCore||"").trim(),project=projectCore(requestedProject),actor=String(body.actor||"system:fcb-ingest");
   const dryRun=body.dryRun===true,sourceRowId=body.sourceRowId?Number(body.sourceRowId):null;
   const auth=req.headers.get("authorization")||"";
   const probeOk=dryRun===true&&body.probe==="fcb-dryrun-20260922";
-  if(!probeOk&&auth!=="Bearer "+key)return json({ok:false,error:"unauthorized"},401);
-  if(!project)return json({ok:false,error:"projectCore é obrigatório."},400);
+  let syncAuthorized=false;
+  const syncKey=(req.headers.get("x-ops-sync-key")||"").trim();
+  if(syncKey){
+    const checked=await admin.rpc("ops_panel_sync_auth",{p_candidate:syncKey});
+    syncAuthorized=!checked.error&&checked.data===true;
+  }
+  if(!probeOk&&auth!=="Bearer "+key&&!syncAuthorized)return json({ok:false,error:"unauthorized"},401);
+  if(!requestedProject)return json({ok:false,error:"projectCore é obrigatório."},400);
+  if(!isValidProjectCore(project))return json({ok:false,error:"projectCore inválido: "+requestedProject},400);
 
   const {data:sourcesRaw,error:sourcesError}=await admin.rpc("ops_core_fcb_sources",{p_project_key:project});
   if(sourcesError)return json({ok:false,error:sourcesError.message},500);
-  let sources=Array.isArray(sourcesRaw)?sourcesRaw:[];
-  if(sourceRowId)sources=sources.filter((s:any)=>Number(s.source_row_id)===sourceRowId);
-  if(!sources.length)return json({ok:true,status:"waiting_fcb",project_core:projectCore(project),message:"FCB vigente ainda não disponível no Drawing.",sources:0,results:[]});
+  const allSources=Array.isArray(sourcesRaw)?sourcesRaw:[];
+  const sources=sourceRowId
+    ? allSources.filter((s:any)=>Number(s.source_row_id)===sourceRowId)
+    : allSources.slice(0,1);
+  if(!allSources.length)return json({ok:true,status:"waiting_fcb",project_core:projectCore(project),message:"FCB vigente ainda não disponível no Drawing.",sources:0,results:[]});
+  if(!sources.length)return json({ok:false,status:"source_not_found",project_core:projectCore(project),sources:allSources.length,results:[]},404);
 
   if(!dryRun){
     const {error}=await admin.rpc("ops_core_prepare_candidate_project",{p_project_key:project,p_actor:actor});
@@ -340,11 +408,15 @@ Deno.serve(async(req:Request)=>{
     while(queue.length){
       const source=queue.shift();if(!source)break;
       try{
-        const parsed:any=await parseSource(source,project,token);
-        if(parsed.ok&&!dryRun){
-          const {data,error}=await admin.rpc("ops_core_apply_fcb_payload",{p_payload:parsed.payload,p_actor:actor});
-          results.push(error?{ok:false,source,error:error.message}:{ok:true,source,parsed:parsed.payload.validation,applied:data,payload_summary:{spools:parsed.payload.spools.length,warnings:parsed.payload.parse_warnings}});
-        }else results.push(parsed);
+          const parsed:any=await parseSource(source,project,token);
+          if(parsed.ok&&!dryRun){
+            const {data,error}=await admin.rpc("ops_core_apply_fcb_payload",{p_payload:parsed.payload,p_actor:actor});
+            if(error)results.push({ok:false,source,error:error.message});
+            else{
+              await admin.rpc("ops_core_resolve_fcb_ingest_attempt",{p_source_row_id:Number(source.source_row_id)});
+              results.push({ok:true,source,parsed:parsed.payload.validation,applied:data,payload_summary:{spools:parsed.payload.spools.length,warnings:parsed.payload.parse_warnings}});
+            }
+          }else results.push(parsed);
       }catch(e){results.push({ok:false,source,error:e instanceof Error?e.message:String(e)})}
     }
   }));
@@ -353,8 +425,16 @@ Deno.serve(async(req:Request)=>{
   if(!dryRun){
     const refresh=await admin.rpc("ops_core_refresh_registration");
     registrationRefresh=refresh.error?{ok:false,error:refresh.error.message}:{ok:true,data:refresh.data};
-    await admin.rpc("ops_core_refresh_demand_feed_cache").catch(()=>null);
+    await admin.rpc("ops_core_refresh_demand_feed_cache");
   }
   const failed=results.filter(r=>!r.ok||(r.payload?.validation&&r.payload.validation.passed===false)||(r.parsed&&r.parsed.passed===false));
-  return json({ok:failed.length===0,status:failed.length?"review_required":"parsed",project_core:projectCore(project),sources:sources.length,processed:results.length,failed:failed.length,registration_refresh:registrationRefresh,results},failed.length?409:200);
+  if(!dryRun){
+    await Promise.all(results.filter(r=>!r.ok&&r.source?.source_row_id).map((r:any)=>admin.rpc("ops_core_record_fcb_ingest_failure",{
+      p_project_core:project,
+      p_source_row_id:Number(r.source.source_row_id),
+      p_source_version:Number(r.source.source_version||0),
+      p_error:String(r.error||"Falha desconhecida na importação do FCB.")
+    })));
+  }
+  return json({ok:failed.length===0,status:failed.length?"review_required":"parsed",project_core:projectCore(project),sources:allSources.length,processed:results.length,remaining_sources:Math.max(0,allSources.length-results.length),failed:failed.length,registration_refresh:registrationRefresh,results},failed.length?409:200);
 });
