@@ -445,7 +445,7 @@ export default function CoreMigrationPage() {
                   <span>FCB detectado: <b>{report ? (report.fcb?.has_fcb ? 'Sim' : 'Não') : '—'}</b></span>
                   <span>Revisão FCB: <b>{report?.fcb?.latest_revision || '—'}</b></span>
                   <span>Tracking: <b>{trackingValidationLabel(report?.tracking_validation?.status)}</b></span>
-                  <span>Itens FCB / Tracking: <b>{report?.tracking_validation ? `${report.tracking_validation.fcb_item_count ?? 0} / ${report.tracking_validation.tracking_item_count ?? 0}` : '—'}</b></span>
+                  <span>Itens FCB / Tracking: <b>{report?.tracking_validation ? `${report.tracking_validation.fcb_item_count ?? report.items?.item_count ?? 0} / ${report.tracking_validation.tracking_item_count ?? report.tracking_validation.source_count ?? 0}` : '—'}</b></span>
                   <span>Itens provisórios: <b>{report ? report.warnings?.provisional_drawing_items ?? 0 : '—'}</b></span>
                   <span>Itens técnicos: <b>{report?.fcb?.has_fcb ? report.items?.item_count ?? '—' : 'aguardando FCB'}</b></span>
                 </div>
