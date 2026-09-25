@@ -229,6 +229,35 @@ export async function loadHubProject(projectKey: string): Promise<HubProjectDeta
 }
 
 
+export interface HubGoalfyConnectionStatus {
+  board_id?: string | null;
+  has_access_token: boolean;
+  report_id?: string | null;
+  has_api_key: boolean;
+  preferred_mode: 'report_external' | 'cards_api' | 'not_configured';
+}
+
+export async function loadGoalfyConnectionStatus(): Promise<HubGoalfyConnectionStatus> {
+  const response = await requestHub<{ ok: true; data: HubGoalfyConnectionStatus }>({
+    action: 'goalfy_connection_status',
+  });
+  return response.data;
+}
+
+export async function saveGoalfyCredentials(input: {
+  accessToken?: string;
+  reportId?: string | null;
+  apiKey?: string;
+}): Promise<HubGoalfyConnectionStatus> {
+  const response = await requestHub<{ ok: true; data: HubGoalfyConnectionStatus }>({
+    action: 'goalfy_save_credentials',
+    accessToken: input.accessToken || '',
+    reportId: input.reportId ?? null,
+    apiKey: input.apiKey || '',
+  });
+  return response.data;
+}
+
 export interface HubGoalfyDnItem {
   id?: number;
   card_id: string;
