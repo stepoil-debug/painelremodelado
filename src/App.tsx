@@ -44,14 +44,18 @@ import {
   loadHubEvidence,
   loadHubProject,
   loadHubSyncStatus,
+  loadGoalfyShipping,
+  loadGoalfySyncStatus,
   loadNewBspAlerts,
   loadCoreNotifications,
   markCoreNotificationRead,
   mutateCoreDemand,
   triggerHubSync,
+  triggerGoalfySync,
   type HubDrawingAttachment,
   type HubDrawingAttachments,
   type HubHHEvidence,
+  type HubGoalfyShipping,
   type HubNewBspAlert,
   type HubHHEvidencePhoto,
   type HubHHSession,
@@ -198,6 +202,9 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [projectDetail, setProjectDetail] = useState<Awaited<ReturnType<typeof loadHubProject>> | null>(null);
   const [hhEvidence, setHhEvidence] = useState<HubHHEvidence | null>(null);
+  const [goalfyShipping, setGoalfyShipping] = useState<HubGoalfyShipping | null>(null);
+  const [goalfyLoading, setGoalfyLoading] = useState(false);
+  const [goalfySyncing, setGoalfySyncing] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
@@ -364,6 +371,8 @@ export default function App() {
     if (!hubConfigured || !panelUser || !selected || !['hub_readonly', 'ops_core'].includes(selected.source)) {
       setProjectDetail(null);
       setHhEvidence(null);
+      setGoalfyShipping(null);
+      setGoalfyLoading(false);
       setDetailLoading(false);
       setEvidenceLoading(false);
       return;
@@ -372,6 +381,7 @@ export default function App() {
     let active = true;
     setDetailLoading(true);
     setEvidenceLoading(true);
+    setGoalfyLoading(true);
 
     loadHubProject(selected.bsp)
       .then((detail) => {
@@ -395,6 +405,17 @@ export default function App() {
         if (active) setEvidenceLoading(false);
       });
 
+    loadGoalfyShipping(selected.bsp)
+      .then((shipping) => {
+        if (active) setGoalfyShipping(shipping);
+      })
+      .catch(() => {
+        if (active) setGoalfyShipping(null);
+      })
+      .finally(() => {
+        if (active) setGoalfyLoading(false);
+      });
+
     return () => {
       active = false;
     };
@@ -412,6 +433,34 @@ export default function App() {
       })
       .finally(() => setLoadingHH(false));
   }, []);
+
+  async function refreshGoalfyForSelected() {
+    if (!selected || goalfySyncing) return;
+    setGoalfySyncing(true);
+    try {
+      await triggerGoalfySync(true);
+      setBanner('Atualização do Goalfy solicitada em modo leitura.');
+
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
+        const status = await loadGoalfySyncStatus().catch(() => null);
+        if (!status || status.status === 'running') continue;
+
+        if (status.status === 'success') {
+          const shipping = await loadGoalfyShipping(selected.bsp);
+          setGoalfyShipping(shipping);
+          setBanner('Goalfy atualizado. Nenhum avanço operacional foi alterado.');
+        } else if (status.last_error) {
+          setBanner('Goalfy: ' + status.last_error);
+        }
+        break;
+      }
+    } catch (error) {
+      setBanner(error instanceof Error ? error.message : 'Não foi possível atualizar o Goalfy.');
+    } finally {
+      setGoalfySyncing(false);
+    }
+  }
 
   function updateDemand(id: string, updater: (d: Demand) => Demand, notification?: NotificationItem) {
     setState((current) => ({
@@ -799,6 +848,10 @@ export default function App() {
             onComplete={() => completeDemand(selected.id)}
             hubDetail={projectDetail}
             hhEvidence={hhEvidence}
+            goalfyShipping={goalfyShipping}
+            goalfyLoading={goalfyLoading}
+            goalfySyncing={goalfySyncing}
+            onRefreshGoalfy={() => void refreshGoalfyForSelected()}
             detailLoading={detailLoading}
             evidenceLoading={evidenceLoading}
           />
@@ -2499,6 +2552,10 @@ function DemandDetail(props: {
   onComplete: () => void;
   hubDetail: Awaited<ReturnType<typeof loadHubProject>> | null;
   hhEvidence: HubHHEvidence | null;
+  goalfyShipping: HubGoalfyShipping | null;
+  goalfyLoading: boolean;
+  goalfySyncing: boolean;
+  onRefreshGoalfy: () => void;
   detailLoading: boolean;
   evidenceLoading: boolean;
 }) {
@@ -2640,6 +2697,15 @@ function DemandDetail(props: {
             <RealSourcesPanel detail={props.hubDetail} loading={props.detailLoading} iso={demand.iso} />
           )}
 
+          {demand.source !== 'demo' && (
+            <GoalfyShippingPanel
+              shipping={props.goalfyShipping}
+              loading={props.goalfyLoading}
+              syncing={props.goalfySyncing}
+              onRefresh={props.onRefreshGoalfy}
+            />
+          )}
+
           <div className="section-card">
             <div className="section-card-head"><div><span className="section-mono">Rastreabilidade</span><h2>Histórico completo da demanda</h2></div><span className="count-ref">{demand.history.length}</span></div>
             <div className="full-timeline">
@@ -2664,6 +2730,10 @@ function DemandDetail(props: {
               <div><span>Fonte</span><strong>{demand.archived ? 'Tracking histórico · ' + (demand.archiveSource || 'OLD') : demand.source === 'hub_readonly' ? 'Tracking + Apontamento HH' : demand.source === 'hh_readonly' ? 'HH · leitura' : 'Demonstração'}</strong></div>
             </div>
           </div>
+
+          {demand.source !== 'demo' && (
+            <GoalfyShippingSide shipping={props.goalfyShipping} loading={props.goalfyLoading} />
+          )}
 
           <div className="side-section">
             <span className="section-mono">Evidências e anexos</span>
