@@ -1,0 +1,11 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  VITE_OPS_PANEL_PROXY_URL = "https://qxmxtbjxkhecqilpnhgq.supabase.co/functions/v1/ops-panel-api"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
