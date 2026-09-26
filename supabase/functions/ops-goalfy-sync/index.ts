@@ -314,39 +314,56 @@ function normalizeCard(raw: Record<string, unknown>, boardId: string, source: "r
 }
 
 async function goalfyFetch(url: string, token: string, sessionId: string) {
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Token ${token}`,
-      "X-Session-Id": sessionId,
-      Accept: "application/json",
-    },
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Goalfy ${response.status}: ${body || response.statusText}`);
+  let lastStatus = 0;
+  let lastBody = "";
+
+  // Goalfy installations in use by this board expose the same read API with
+  // either the legacy Token scheme or the standard Bearer scheme. Try the
+  // legacy scheme first and transparently fall back on an auth rejection.
+  for (const scheme of ["Token", "Bearer"]) {
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `${scheme} ${token}`,
+        "X-Session-Id": sessionId,
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (response.ok) return response.json();
+
+    lastStatus = response.status;
+    lastBody = await response.text().catch(() => "");
+    if (response.status !== 401 && response.status !== 403) break;
   }
-  return response.json();
+
+  throw new Error(`Goalfy ${lastStatus}: ${lastBody || "Request failed"}`);
 }
 
 async function fetchDirectCards(boardId: string, token: string) {
   const sessionId = crypto.randomUUID();
   const cards: Record<string, unknown>[] = [];
-  let offset = 0;
+  let page = 0;
   const limit = 100;
   let total = Infinity;
 
-  while (offset < total && offset < 5000) {
+  while (page * limit < total && page < 50) {
     const payload = await goalfyFetch(
-      `https://api.goalfy.com.br/api/cards/board/${boardId}/filter?limit=${limit}&offset=${offset}&search=`,
+      `https://api.goalfy.com.br/api/cards/board/${boardId}/filter?limit=${limit}&offset=${page}&search=`,
       token,
       sessionId,
     );
-    const batch = Array.isArray(payload) ? payload : Array.isArray(payload?.cards) ? payload.cards : [];
-    total = Number(payload?.cardsCount ?? payload?.total ?? payload?.count ?? batch.length);
+    const body = payload && typeof payload === "object" && payload.data && typeof payload.data === "object"
+      ? payload.data as Record<string, unknown>
+      : payload as Record<string, unknown>;
+    const batch = Array.isArray(payload)
+      ? payload
+      : Array.isArray(body?.cards)
+        ? body.cards
+        : [];
+    total = Number(body?.cardsCount ?? body?.total ?? body?.count ?? batch.length);
     cards.push(...batch);
     if (!batch.length || batch.length < limit) break;
-    offset += batch.length;
+    page += 1;
   }
 
   const details: Record<string, unknown>[] = [];
@@ -379,6 +396,28 @@ async function fetchExternalReport(reportId: string, apiKey: string) {
   return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
 }
 
+async function fetchReportCatalog(boardId: string, apiKey: string) {
+  const response = await fetch(
+    `https://api.goalfy.com.br/api/reports/board/${boardId}?apiKey=${encodeURIComponent(apiKey)}`,
+    { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(20000) },
+  );
+  if (!response.ok) throw new Error(`Goalfy reports ${response.status}`);
+  const payload = await response.json();
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.data)
+      ? payload.data
+      : Array.isArray(payload?.reports)
+        ? payload.reports
+        : [];
+  return rows
+    .map((row) => ({
+      id: textValue(row?.id ?? row?.reportId),
+      name: textValue(row?.name ?? row?.title),
+    }))
+    .filter((row) => row.id);
+}
+
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (request.method !== "POST") return json({ ok: false, error: "Use POST." }, 405);
@@ -404,6 +443,7 @@ Deno.serve(async (request: Request) => {
   if (!boardId) return json({ ok: false, error: "GOALFY_BOARD_ID não configurado." }, 503);
 
   const mode = reportId && apiKey ? "report_external" : "cards_api";
+  let reportCandidates: Array<{ id: string; name: string }> = [];
   const { data: runId, error: beginError } = await admin.rpc("ops_goalfy_begin_sync", {
     p_board_id: boardId,
     p_mode: mode,
@@ -435,9 +475,21 @@ Deno.serve(async (request: Request) => {
       rawCards = await fetchExternalReport(reportId, apiKey);
       totalCards = rawCards.length;
     } else if (accessToken) {
-      const direct = await fetchDirectCards(boardId, accessToken);
-      rawCards = direct.cards;
-      totalCards = direct.total || rawCards.length;
+      try {
+        const direct = await fetchDirectCards(boardId, accessToken);
+        rawCards = direct.cards;
+        totalCards = direct.total || rawCards.length;
+      } catch (error) {
+        if (error instanceof Error && /Goalfy 401|Goalfy 403/.test(error.message)) {
+          try {
+            reportCandidates = await fetchReportCatalog(boardId, accessToken);
+          } catch {
+            // Keep the original authentication error when catalog access is
+            // unavailable as well.
+          }
+        }
+        throw error;
+      }
     } else {
       throw new Error("Credencial Goalfy não configurada. Defina GOALFY_ACCESS_TOKEN ou GOALFY_REPORT_ID + GOALFY_API_KEY.");
     }
@@ -479,19 +531,25 @@ Deno.serve(async (request: Request) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await admin.rpc("ops_goalfy_finish_sync", {
-      p_run_id: runId,
-      p_success: false,
-      p_error: message,
-      p_total_cards: null,
-      p_metadata: { observation_mode: true },
-    }).catch(() => null);
+    try {
+      await admin.rpc("ops_goalfy_finish_sync", {
+        p_run_id: runId,
+        p_success: false,
+        p_error: message,
+        p_total_cards: null,
+        p_metadata: { observation_mode: true },
+      });
+    } catch {
+      // Preserve the original sync error if the failure bookkeeping itself
+      // cannot be completed.
+    }
 
     const needsReportConfig = /401|Unauthorized|Credencial Goalfy/.test(message);
     return json({
       ok: false,
       error: message,
       needs_report_config: needsReportConfig,
+      report_candidates: reportCandidates,
       observation_mode: true,
       setup_hint: needsReportConfig
         ? "Configure GOALFY_REPORT_ID e GOALFY_API_KEY para usar o relatório externo oficial."

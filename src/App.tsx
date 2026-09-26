@@ -2600,6 +2600,7 @@ function GoalfyShippingPanel(props: {
   const sync = props.shipping?.sync;
   const coverage = summary?.coverage_percent;
   const syncError = sync?.status === 'error' ? sync.last_error : null;
+  const tokenRejected = Boolean(syncError && /401|Unauthorized/i.test(syncError));
   const [showSetup, setShowSetup] = useState(false);
   const [accessToken, setAccessToken] = useState('');
   const [reportId, setReportId] = useState(props.connection?.report_id || '');
@@ -2614,7 +2615,7 @@ function GoalfyShippingPanel(props: {
   const connectionLabel = props.connection?.preferred_mode === 'report_external'
     ? 'Relatório conectado'
     : props.connection?.preferred_mode === 'cards_api'
-      ? 'Token conectado'
+      ? tokenRejected ? 'Token rejeitado' : 'Token salvo'
       : 'Conexão pendente';
 
   async function saveConnection() {
@@ -2776,9 +2777,13 @@ function GoalfyShippingPanel(props: {
             <div className="goalfy-warning">
               <AlertTriangle size={17} />
               <div>
-                <strong>Goalfy ainda não sincronizado</strong>
-                <p>{syncError}</p>
-                <span>A integração está isolada e este erro não afeta Carteira, Produção ou Tracking.</span>
+                <strong>{tokenRejected ? 'Credencial Goalfy rejeitada' : 'Goalfy ainda não sincronizado'}</strong>
+                <p>{tokenRejected
+                  ? 'O token está salvo com segurança, mas expirou ou foi revogado pelo Goalfy. Gere um token novo e substitua-o na Conexão.'
+                  : syncError}</p>
+                <span>{tokenRejected
+                  ? 'O acesso direto por API continua configurado; nenhum Report ID é obrigatório quando o token de cards estiver válido.'
+                  : 'A integração está isolada e este erro não afeta Carteira, Produção ou Tracking.'}</span>
               </div>
             </div>
           )}
