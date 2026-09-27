@@ -241,27 +241,47 @@ function extractHistory(detail: unknown) {
   return rows;
 }
 
-function phaseFromTop(detail: Record<string, unknown>, map: Map<string, unknown>) {
+type PhaseLookup = Map<string, { name: string; index: number | null }>;
+
+function phaseFromTop(detail: Record<string, unknown>, map: Map<string, unknown>, phaseLookup: PhaseLookup) {
   const candidates = [detail.currentPhase, detail.phase, detail.current_phase];
   for (const candidate of candidates) {
     if (candidate && typeof candidate === "object") {
       const obj = candidate as Record<string, unknown>;
-      const name = textValue(obj.title ?? obj.name ?? obj.label);
-      if (name) return { id: textValue(obj.id) || null, name, index: Number(obj.index ?? 0) || null };
+      const id = textValue(obj.id ?? obj.phaseId ?? obj.phase_id);
+      const catalog = id ? phaseLookup.get(id) : undefined;
+      const name = textValue(obj.title ?? obj.name ?? obj.label) || catalog?.name || "";
+      if (name || id) return { id: id || null, name, index: Number(obj.index ?? catalog?.index ?? 0) || null };
     }
   }
+
+  const phaseId = textValue(
+    detail.phaseId
+      ?? detail.phase_id
+      ?? pick(map, ["PHASE ID", "PHASEID", "FASE ID"]),
+  );
+  const catalog = phaseId ? phaseLookup.get(phaseId) : undefined;
+  if (catalog) return { id: phaseId, name: catalog.name, index: catalog.index };
+
+  const explicitName = textValue(
+    detail.phaseName
+      ?? detail.phase_name
+      ?? pick(map, ["Fase atual", "Current Phase", "Phase Name", "Nome da fase"]),
+  );
   return {
-    id: textValue(pick(map, ["PHASE ID", "FASE ID"])) || null,
-    name: textValue(pick(map, ["Fase atual", "Current Phase", "Phase"])) || "",
+    id: phaseId || null,
+    name: explicitName || "",
     index: null,
   };
 }
 
-function normalizeCard(raw: Record<string, unknown>, boardId: string, source: "report" | "api") {
+function normalizeCard(raw: Record<string, unknown>, boardId: string, source: "report" | "api", phaseLookup: PhaseLookup = new Map()) {
   const map = source === "report" ? mapFromRow(raw) : collectNamedFields(raw);
-  const phase = phaseFromTop(raw, map);
+  const phase = phaseFromTop(raw, map, phaseLookup);
   const tags = toStringArray(raw.tags ?? pick(map, ["Etiquetas", "Tags", "Tag"]));
-  const dnNumber = textValue(pick(map, ["DN#", "DN Nº", "DN", "Delivery Note", "Numero DN"]));
+  const cardTitle = textValue(raw.title ?? pick(map, ["Título do Card", "Card Title", "Título"]));
+  const dnNumber = textValue(pick(map, ["DN#", "DN Nº", "DN", "Delivery Note", "Numero DN"]))
+    || (cardTitle.match(/\bDN[-\s#]*\d{2,5}\/\d{2,4}\b/i)?.[0] || "");
   const projectDisplay = textValue(pick(map, ["BSP#", "BSP", "BSP Number", "Projeto", "Project"]));
   const projectCore = normalizeProjectCore(projectDisplay);
   const itemsValue = pick(map, ["ITEMS", "Itens", "Itens DN", "Materiais"]);
@@ -284,7 +304,7 @@ function normalizeCard(raw: Record<string, unknown>, boardId: string, source: "r
     project_core: projectCore || null,
     project_display: projectDisplay || null,
     dn_number: dnNumber || null,
-    card_title: textValue(raw.title ?? pick(map, ["Título do Card", "Card Title", "Título"])) || null,
+    card_title: cardTitle || null,
     phase_id: phase.id,
     phase_name: phase.name || null,
     phase_index: phase.index,
@@ -454,6 +474,7 @@ Deno.serve(async (request: Request) => {
 
   try {
     let phases: unknown[] = [];
+    const phaseLookup: PhaseLookup = new Map();
     if (accessToken) {
       try {
         const phasePayload = await goalfyFetch(
@@ -462,6 +483,17 @@ Deno.serve(async (request: Request) => {
           crypto.randomUUID(),
         );
         phases = Array.isArray(phasePayload) ? phasePayload : [];
+        for (const phase of phases) {
+          if (!phase || typeof phase !== "object") continue;
+          const value = phase as Record<string, unknown>;
+          const id = textValue(value.id ?? value.phaseId ?? value.phase_id);
+          const name = textValue(value.title ?? value.name ?? value.label);
+          if (!id || !name) continue;
+          phaseLookup.set(id, {
+            name,
+            index: Number(value.index ?? value.order ?? 0) || null,
+          });
+        }
         await admin.rpc("ops_goalfy_ingest_phases", { p_board_id: boardId, p_phases: phases });
       } catch (error) {
         console.warn("Goalfy phases unavailable:", error instanceof Error ? error.message : String(error));
@@ -495,7 +527,7 @@ Deno.serve(async (request: Request) => {
     }
 
     const normalized = rawCards
-      .map((row) => normalizeCard(row, boardId, mode === "report_external" ? "report" : "api"))
+      .map((row) => normalizeCard(row, boardId, mode === "report_external" ? "report" : "api", phaseLookup))
       .filter((row) => row.card_id);
 
     const batchSize = 100;
