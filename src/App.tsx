@@ -2048,8 +2048,10 @@ function groupSectorLabel(demands: Demand[]) {
 
 function groupOwnerLabel(demands: Demand[]) {
   const owners = [...new Set(demands.map((d) => pmOwnerLabel(d)))];
-  if (owners.length === 1) return owners[0];
-  return owners.length + ' responsáveis';
+  const namedOwners = owners.filter((owner) => owner !== 'PM não informado');
+  if (namedOwners.length === 1) return namedOwners[0];
+  if (namedOwners.length > 1) return namedOwners.length + ' PMs';
+  return 'PM não informado';
 }
 
 function pmOwnerLabel(demand: Pick<Demand, 'pm'>) {
