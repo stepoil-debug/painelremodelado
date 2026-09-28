@@ -2053,7 +2053,8 @@ function groupOwnerLabel(demands: Demand[]) {
 }
 
 function pmOwnerLabel(demand: Pick<Demand, 'pm'>) {
-  return demand.pm ? 'PM · ' + demand.pm : 'PM não informado';
+  const label = pmDisplayLabel(demand.pm);
+  return label === 'Sem PM' ? 'PM não informado' : 'PM · ' + label;
 }
 
 function normalizeSearchValue(value: unknown) {
