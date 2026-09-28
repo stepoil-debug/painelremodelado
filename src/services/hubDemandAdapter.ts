@@ -221,9 +221,10 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       stage: mapped.label,
       sector: mapped.sector,
       originSector: originBySector[mapped.sector],
-      assignedTo: row.hh_status === 'open'
-        ? (row.hh_progress_updated_by_name || row.hh_created_by_name || row.hh_activity_name || 'Apontamento')
-        : (row.pm ? 'PM · ' + row.pm : undefined),
+      // The current responsible person is always the project PM. Human-hours
+      // actors and activities belong only to the execution history/note and
+      // must never replace the PM in the operational ownership field.
+      assignedTo: row.pm ? 'PM · ' + row.pm : 'PM não informado',
       priority: priorityFor(row, status),
       status,
       enteredAt,
