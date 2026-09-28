@@ -3174,7 +3174,7 @@ function AnalyticsPage({ demands, onOpen }: { demands: Demand[]; onOpen: (id: st
   const [selectedStageKey, setSelectedStageKey] = useState<string | null>(null);
   const active = useMemo(() => demands.filter((d) => d.status !== 'completed'), [demands]);
   const completed = useMemo(() => demands.filter((d) => d.status === 'completed'), [demands]);
-  const projectKey = (demand: Demand) => demand.bsp || demand.projectGroupKey || demand.id;
+  const projectKey = (demand: Demand) => demand.projectGroupKey || demand.bsp || demand.id;
   const countProjects = (rows: Demand[]) => new Set(rows.map(projectKey)).size;
   const totalProjects = countProjects(demands);
   const activeProjects = countProjects(active);
@@ -3226,7 +3226,7 @@ function AnalyticsPage({ demands, onOpen }: { demands: Demand[]; onOpen: (id: st
   return <GenericPage title="Dashboard Operacional" subtitle="Visão executiva da carteira, com o total de projetos e a distribuição por etapa.">
     <section className="dashboard-banner">
       <div className="dashboard-banner-icon"><BarChart3 size={24} /></div>
-      <div><span className="eyebrow">Painel de execução</span><strong>Acompanhamento em tempo real da carteira</strong><small>Os números são consolidados por BSP/projeto; os detalhes preservam cada ISO ou demanda.</small></div>
+      <div><span className="eyebrow">Painel de execução</span><strong>Acompanhamento em tempo real da carteira</strong><small>Os números seguem as linhas de projeto ativas do Tracking; os detalhes preservam cada ISO ou demanda.</small></div>
       <div className="dashboard-banner-progress"><span>Avanço médio ativo</span><strong>{averageProgress}%</strong><i><em style={{ width: averageProgress + '%' }} /></i></div>
     </section>
 

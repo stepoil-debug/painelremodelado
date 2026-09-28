@@ -1004,13 +1004,80 @@ Deno.serve(async (request: Request) => {
       ? { p_region: region, p_search: search, p_limit: limit }
       : { p_region: region, p_limit: limit };
 
-    const [{ data, error }, { data: executionOverlay, error: executionError }] = await Promise.all([
+    const [{ data, error }, { data: executionOverlay, error: executionError }, { data: activeProjectRows, error: activeProjectsError }] = await Promise.all([
       admin.rpc(rpcName, rpcArgs),
       admin.rpc("ops_panel_get_execution_overlay"),
+      admin
+        .from("tracking_projects")
+        .select("region,project_row_id,project_number,project_display,client,vessel,project_type,project_status,pm,planned_start,planned_finish,replanned_finish,fabrication_start,overall_progress,weight_kg,m2,source_version,source_updated_at,synced_at")
+        .eq("region", region)
+        .eq("active", true),
     ]);
 
     if (error) return json({ ok: false, error: error.message }, 500);
     if (executionError) console.error("execution overlay error:", executionError.message);
+    if (activeProjectsError) return json({ ok: false, error: activeProjectsError.message }, 500);
+
+    const activeProjects = Array.isArray(activeProjectRows) ? activeProjectRows as Record<string, unknown>[] : [];
+    const activeProjectIds = new Set(activeProjects.map((project) => String(project.project_row_id || "")).filter(Boolean));
+    const rpcRows = Array.isArray(data) ? data as Record<string, unknown>[] : [];
+    const currentRows = rpcRows.filter((item) => {
+      // OPS CORE records are already part of the new operational source. Legacy
+      // records must still belong to an active Tracking project in the main view.
+      return item.source_mode === "ops_core" || activeProjectIds.has(String(item.project_row_id || ""));
+    });
+    const representedProjectIds = new Set(currentRows.map((item) => String(item.project_row_id || "")).filter(Boolean));
+    const normalizedSearch = search.toLowerCase();
+    const missingProjectRows = activeProjects
+      .filter((project) => !representedProjectIds.has(String(project.project_row_id || "")))
+      .filter((project) => {
+        if (!normalizedSearch) return true;
+        return [
+          project.project_number,
+          project.project_display,
+          project.client,
+          project.vessel,
+          project.project_type,
+          project.project_status,
+          project.pm,
+        ].some((value) => String(value || "").toLowerCase().includes(normalizedSearch));
+      })
+      .map((project) => ({
+        region: project.region || region,
+        iso_key: "project-only:" + String(project.project_row_id),
+        project_row_id: project.project_row_id,
+        project_number: project.project_number,
+        iso: "",
+        drawing: null,
+        line_number: null,
+        description: "Projeto ativo sem ISO vinculada no feed atual.",
+        client_tag: null,
+        project_type: project.project_type || null,
+        current_stage: String(project.project_status || "").toUpperCase() === "ON HOLD" ? "On Hold" : null,
+        current_status: project.project_status || "Sem demanda vinculada",
+        planned_start: project.planned_start || null,
+        planned_finish: project.planned_finish || null,
+        fabrication_start: project.fabrication_start || null,
+        overall_progress: project.overall_progress ?? 0,
+        weight_kg: project.weight_kg || null,
+        m2: project.m2 || null,
+        source_version: project.source_version || null,
+        source_updated_at: project.source_updated_at || null,
+        synced_at: project.synced_at || null,
+        project_display: project.project_display || null,
+        client: project.client || null,
+        vessel: project.vessel || null,
+        pm: project.pm || null,
+        project_status: project.project_status || null,
+        replanned_finish: project.replanned_finish || null,
+        archived: false,
+        archive_source: null,
+        archive_rank: null,
+        source_mode: "legacy_tracking",
+        core_project_id: null,
+        core_item_id: null,
+      }));
+    const baseRows = [...currentRows, ...missingProjectRows];
 
     const compact = (value: unknown) =>
       String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -1028,7 +1095,7 @@ Deno.serve(async (request: Request) => {
       if (projectKey && isoNorm) overlayMap.set("project:" + projectKey + ":" + isoNorm, row);
     }
 
-    const merged = (Array.isArray(data) ? data : []).map((item: Record<string, unknown>) => {
+    const merged = baseRows.map((item: Record<string, unknown>) => {
       const projectRowId = String(item.project_row_id || "");
       const projectKey = compact(item.project_number);
       const isoNorm = compact(item.drawing || item.iso);
