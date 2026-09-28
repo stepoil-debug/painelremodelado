@@ -3172,6 +3172,7 @@ function NotificationsPage({ state, setState, onOpen }: { state: OperationalStat
 
 function AnalyticsPage({ demands, onOpen }: { demands: Demand[]; onOpen: (id: string) => void }) {
   const [selectedStageKey, setSelectedStageKey] = useState<string | null>(null);
+  const [expandedStageBspKey, setExpandedStageBspKey] = useState<string | null>(null);
   const active = useMemo(() => demands.filter((d) => d.status !== 'completed'), [demands]);
   const completed = useMemo(() => demands.filter((d) => d.status === 'completed'), [demands]);
   const projectKey = (demand: Demand) => demand.projectGroupKey || demand.bsp || demand.id;
@@ -3213,6 +3214,8 @@ function AnalyticsPage({ demands, onOpen }: { demands: Demand[]; onOpen: (id: st
   }, [active]);
 
   const selectedStage = stageGroups.find((group) => group.key === selectedStageKey) || null;
+  const selectedPendingRows = selectedStage?.rows.filter((demand) => effectiveStatus(demand) !== 'completed' && !demand.archived) ?? [];
+  const selectedPendingGroups = groupDemandsByBsp(selectedPendingRows);
   const maxStageProjects = Math.max(1, ...stageGroups.map((group) => group.projects));
   const statusGroups = [
     { key: 'in_progress', label: 'Em execução', count: active.filter((demand) => demand.status === 'in_progress').length, className: 'in-progress' },
@@ -3244,9 +3247,12 @@ function AnalyticsPage({ demands, onOpen }: { demands: Demand[]; onOpen: (id: st
         <div className="dashboard-stage-grid">
           {stageGroups.map((group) => {
             const percentage = activeProjects ? Math.round(group.projects / activeProjects * 100) : 0;
-            return <button key={group.key} className={'dashboard-stage-tile ' + (selectedStageKey === group.key ? 'selected' : '')} onClick={() => setSelectedStageKey((current) => current === group.key ? null : group.key)}>
+            return <button key={group.key} className={'dashboard-stage-tile ' + (selectedStageKey === group.key ? 'selected' : '')} onClick={() => {
+              setSelectedStageKey((current) => current === group.key ? null : group.key);
+              setExpandedStageBspKey(null);
+            }}>
               <span className="dashboard-stage-number">{String(group.index).padStart(2, '0')}</span>
-              <div className="dashboard-stage-copy"><span>{group.sector}</span><strong>{group.label}</strong><small>{group.rows.length} demandas · {percentage}% da carteira</small><i><em style={{ width: Math.min(100, group.projects / maxStageProjects * 100) + '%' }} /></i></div>
+              <div className="dashboard-stage-copy"><span>{group.sector}</span><strong>{group.label}</strong><small>{group.projects} BSP(s) · {group.rows.length} pendentes · {percentage}% da carteira</small><i><em style={{ width: Math.min(100, group.projects / maxStageProjects * 100) + '%' }} /></i></div>
               <b>{group.projects}</b>
             </button>;
           })}
@@ -3261,9 +3267,28 @@ function AnalyticsPage({ demands, onOpen }: { demands: Demand[]; onOpen: (id: st
     </div>
 
     {selectedStage && <section className="section-card dashboard-detail-card">
-      <div className="section-card-head"><div><span className="section-mono">Detalhamento da etapa</span><h2>{selectedStage.label}</h2></div><span className="count-ref">{selectedStage.rows.length} registros</span></div>
-      <div className="dashboard-detail-list">{selectedStage.rows.slice(0, 40).map((demand) => <button key={demand.id} onClick={() => onOpen(demand.id)}><span><strong>{demand.bsp}</strong><small>{demand.iso}</small></span><span>{demand.client || 'Cliente não informado'}</span><span>{demand.progress}%</span><span className={'status-ref ' + effectiveStatus(demand)}><i />{statusLabel[effectiveStatus(demand)]}</span><ChevronRight size={14} /></button>)}</div>
-      {selectedStage.rows.length > 40 && <p className="dashboard-detail-more">Mostrando os primeiros 40 registros. Abra a Carteira para consultar todos.</p>}
+      <div className="section-card-head"><div><span className="section-mono">Pendências da etapa</span><h2>{selectedStage.label}</h2></div><span className="count-ref">{selectedPendingGroups.length} BSP(s) · {selectedPendingRows.length} tags</span></div>
+      {selectedPendingGroups.length ? <div className="dashboard-stage-pending-list">{selectedPendingGroups.slice(0, 40).map((group) => {
+        const expanded = expandedStageBspKey === group.key;
+        const first = group.demands[0];
+        return <div className={'dashboard-stage-project ' + (expanded ? 'expanded' : '')} key={group.key}>
+          <button className="dashboard-stage-project-head" onClick={() => setExpandedStageBspKey((current) => current === group.key ? null : group.key)} aria-expanded={expanded}>
+            <span className="dashboard-stage-project-bsp"><strong>{group.bsp}</strong><small>{group.demands.length} tag(s) pendente(s)</small></span>
+            <span className="dashboard-stage-project-info"><strong>{first?.project || 'Projeto'}</strong><small>{first?.client || 'Cliente não informado'}</small></span>
+            <span className="dashboard-stage-project-count">{group.demands.length}<small>tags</small></span>
+            <ChevronDown className={expanded ? 'rotate' : ''} size={16} />
+          </button>
+          {expanded && <div className="dashboard-stage-tags" aria-label={'Tags pendentes da ' + group.bsp}>
+            {group.demands.map((demand) => <button className="dashboard-stage-tag" key={demand.id} onClick={() => onOpen(demand.id)}>
+              <span><strong>{demand.iso}</strong><small>{demand.stage}</small></span>
+              <span className={'status-ref ' + effectiveStatus(demand)}><i />{statusLabel[effectiveStatus(demand)]}</span>
+              <span className="dashboard-stage-tag-progress">{demand.progress}%</span>
+              <ChevronRight size={14} />
+            </button>)}
+          </div>}
+        </div>;
+      })}</div> : <div className="dashboard-stage-empty">Nenhuma pendência nesta etapa.</div>}
+      {selectedPendingGroups.length > 40 && <p className="dashboard-detail-more">Mostrando as primeiras 40 BSPs. Abra a Carteira para consultar todas.</p>}
     </section>}
   </GenericPage>;
 }
