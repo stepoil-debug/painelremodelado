@@ -829,7 +829,7 @@ export default function App() {
           <button className={page === 'portfolio' ? 'active' : ''} onClick={() => { setPage('portfolio'); setSelectedId(null); }}>Carteira</button>
           <button className={page === 'live' ? 'active' : ''} onClick={() => { setPage('live'); setSelectedId(null); }}>Produção</button>
           <button className={page === 'blocks' ? 'active' : ''} onClick={() => { setPage('blocks'); setSelectedId(null); }}>Bloqueios</button>
-          <button className={page === 'analytics' ? 'active' : ''} onClick={() => { setPage('analytics'); setSelectedId(null); }}>Indicadores</button>
+          <button className={page === 'analytics' ? 'active' : ''} onClick={() => { setPage('analytics'); setSelectedId(null); }}>Dashboard</button>
           <button className={page === 'archive' ? 'active' : ''} onClick={() => { setPage('archive'); setSelectedId(null); }}>Arquivados</button>
           <button className={page === 'migration' ? 'active' : ''} onClick={() => { setPage('migration'); setSelectedId(null); }}>Cadastro</button>
         </nav>
@@ -920,7 +920,7 @@ export default function App() {
         ) : page === 'archive' ? (
           <ArchivePage />
         ) : (
-          <AnalyticsPage demands={demands} />
+          <AnalyticsPage demands={demands} onOpen={setSelectedId} />
         )}
       </main>
 
@@ -3170,11 +3170,102 @@ function NotificationsPage({ state, setState, onOpen }: { state: OperationalStat
   return <GenericPage title="Notificações" subtitle="Handoffs, alertas de execução e eventos relevantes do fluxo operacional."><div className="section-card notification-reference-list">{items.map((n) => <button key={n.id} className={!n.read ? 'unread' : ''} onClick={() => { void read(n.id); if (n.demandId) onOpen(n.demandId); }}><div className={'notification-icon-ref ' + n.severity}><Bell size={15} /></div><div><strong>{n.title}</strong><p>{n.message}</p><span>{fmtDate(n.createdAt)} · {sectorName(n.sector)}</span></div>{!n.read && <i />}</button>)}</div></GenericPage>;
 }
 
-function AnalyticsPage({ demands }: { demands: Demand[] }) {
-  const active = demands.filter((d) => d.status !== 'completed');
-  const bySector = sectors.map((s) => ({ ...s, count: active.filter((d) => d.sector === s.key).length }));
-  const max = Math.max(1, ...bySector.map((s) => s.count));
-  return <GenericPage title="Indicadores Operacionais" subtitle="Leitura da carteira, WIP e distribuição da carga por setor."><section className="overview-strip analytics-overview"><div className="overview-icon"><BarChart3 size={25} /></div><div className="overview-copy"><strong>Consolidado operacional</strong><span>Estado atual da carteira.</span></div><Metric value={active.length} label="WIP" /><Metric value={active.filter((d) => effectiveStatus(d) === 'late').length} label="Atrasadas" danger /><Metric value={active.filter((d) => d.status === 'blocked').length} label="Bloqueadas" warning /><Metric value={demands.filter((d) => d.status === 'completed').length} label="Concluídas" /></section><div className="section-card"><div className="section-card-head"><div><span className="section-mono">WIP por setor</span><h2>Distribuição atual</h2></div></div><div className="analytics-bars">{bySector.map((s) => <div key={s.key}><div><strong>{s.name}</strong><span>{s.count}</span></div><i><em style={{ width: (s.count / max * 100) + '%' }} /></i></div>)}</div></div></GenericPage>;
+function AnalyticsPage({ demands, onOpen }: { demands: Demand[]; onOpen: (id: string) => void }) {
+  const [selectedStageKey, setSelectedStageKey] = useState<string | null>(null);
+  const active = useMemo(() => demands.filter((d) => d.status !== 'completed'), [demands]);
+  const completed = useMemo(() => demands.filter((d) => d.status === 'completed'), [demands]);
+  const projectKey = (demand: Demand) => demand.bsp || demand.projectGroupKey || demand.id;
+  const countProjects = (rows: Demand[]) => new Set(rows.map(projectKey)).size;
+  const totalProjects = countProjects(demands);
+  const activeProjects = countProjects(active);
+  const completedProjects = countProjects(completed);
+  const averageProgress = active.length
+    ? Math.round(active.reduce((sum, demand) => sum + Number(demand.progress || 0), 0) / active.length)
+    : 0;
+
+  const stageGroups = useMemo(() => {
+    const known = workflowStages.map((stage, index) => {
+      const rows = active.filter((demand) => demand.stageKey === stage.key);
+      return {
+        key: stage.key,
+        label: stage.label,
+        sector: sectorName(stage.sector),
+        index: index + 1,
+        rows,
+        projects: countProjects(rows),
+        late: rows.filter((demand) => effectiveStatus(demand) === 'late').length,
+      };
+    }).filter((group) => group.rows.length > 0);
+
+    const unclassified = active.filter((demand) => !workflowStages.some((stage) => stage.key === demand.stageKey));
+    if (unclassified.length) {
+      known.push({
+        key: 'unclassified',
+        label: 'Etapa não classificada',
+        sector: 'Não classificado',
+        index: known.length + 1,
+        rows: unclassified,
+        projects: countProjects(unclassified),
+        late: unclassified.filter((demand) => effectiveStatus(demand) === 'late').length,
+      });
+    }
+    return known;
+  }, [active]);
+
+  const selectedStage = stageGroups.find((group) => group.key === selectedStageKey) || null;
+  const maxStageProjects = Math.max(1, ...stageGroups.map((group) => group.projects));
+  const statusGroups = [
+    { key: 'in_progress', label: 'Em execução', count: active.filter((demand) => demand.status === 'in_progress').length, className: 'in-progress' },
+    { key: 'new', label: 'Novas', count: active.filter((demand) => demand.status === 'new').length, className: 'new' },
+    { key: 'waiting', label: 'Aguardando', count: active.filter((demand) => demand.status === 'waiting').length, className: 'waiting' },
+    { key: 'blocked', label: 'Bloqueadas', count: active.filter((demand) => demand.status === 'blocked').length, className: 'blocked' },
+    { key: 'late', label: 'Atrasadas', count: active.filter((demand) => effectiveStatus(demand) === 'late').length, className: 'late' },
+  ];
+  const maxStatus = Math.max(1, ...statusGroups.map((group) => group.count));
+
+  return <GenericPage title="Dashboard Operacional" subtitle="Visão executiva da carteira, com o total de projetos e a distribuição por etapa.">
+    <section className="dashboard-banner">
+      <div className="dashboard-banner-icon"><BarChart3 size={24} /></div>
+      <div><span className="eyebrow">Painel de execução</span><strong>Acompanhamento em tempo real da carteira</strong><small>Os números são consolidados por BSP/projeto; os detalhes preservam cada ISO ou demanda.</small></div>
+      <div className="dashboard-banner-progress"><span>Avanço médio ativo</span><strong>{averageProgress}%</strong><i><em style={{ width: averageProgress + '%' }} /></i></div>
+    </section>
+
+    <section className="dashboard-kpi-grid">
+      <div className="dashboard-kpi primary"><span>1. Total de projetos</span><strong>{totalProjects}</strong><small>{activeProjects} ativos na carteira</small></div>
+      <div className="dashboard-kpi blue"><span>2. Projetos em andamento</span><strong>{activeProjects}</strong><small>{active.length} demandas/ISOs ativos</small></div>
+      <div className="dashboard-kpi amber"><span>3. Projetos em atraso</span><strong>{countProjects(active.filter((demand) => effectiveStatus(demand) === 'late'))}</strong><small>Requerem acompanhamento</small></div>
+      <div className="dashboard-kpi red"><span>4. Projetos bloqueados</span><strong>{countProjects(active.filter((demand) => demand.status === 'blocked'))}</strong><small>Pendências impedindo avanço</small></div>
+      <div className="dashboard-kpi green"><span>5. Projetos concluídos</span><strong>{completedProjects}</strong><small>{completed.length} demandas concluídas</small></div>
+    </section>
+
+    <div className="dashboard-grid">
+      <section className="section-card dashboard-stage-card">
+        <div className="section-card-head"><div><span className="section-mono">Distribuição da carteira</span><h2>Projetos por etapa</h2></div><span className="count-ref">{stageGroups.length} etapas ativas</span></div>
+        <div className="dashboard-stage-grid">
+          {stageGroups.map((group) => {
+            const percentage = activeProjects ? Math.round(group.projects / activeProjects * 100) : 0;
+            return <button key={group.key} className={'dashboard-stage-tile ' + (selectedStageKey === group.key ? 'selected' : '')} onClick={() => setSelectedStageKey((current) => current === group.key ? null : group.key)}>
+              <span className="dashboard-stage-number">{String(group.index).padStart(2, '0')}</span>
+              <div className="dashboard-stage-copy"><span>{group.sector}</span><strong>{group.label}</strong><small>{group.rows.length} demandas · {percentage}% da carteira</small><i><em style={{ width: Math.min(100, group.projects / maxStageProjects * 100) + '%' }} /></i></div>
+              <b>{group.projects}</b>
+            </button>;
+          })}
+        </div>
+      </section>
+
+      <aside className="section-card dashboard-status-card">
+        <div className="section-card-head"><div><span className="section-mono">Status operacional</span><h2>Condição atual</h2></div></div>
+        <div className="dashboard-status-list">{statusGroups.map((group) => <div key={group.key}><div><strong>{group.label}</strong><span>{group.count}</span></div><i className={group.className}><em style={{ width: (group.count / maxStatus * 100) + '%' }} /></i></div>)}</div>
+        <div className="dashboard-status-foot"><span>Concluídos / arquivados</span><strong>{completedProjects}</strong></div>
+      </aside>
+    </div>
+
+    {selectedStage && <section className="section-card dashboard-detail-card">
+      <div className="section-card-head"><div><span className="section-mono">Detalhamento da etapa</span><h2>{selectedStage.label}</h2></div><span className="count-ref">{selectedStage.rows.length} registros</span></div>
+      <div className="dashboard-detail-list">{selectedStage.rows.slice(0, 40).map((demand) => <button key={demand.id} onClick={() => onOpen(demand.id)}><span><strong>{demand.bsp}</strong><small>{demand.iso}</small></span><span>{demand.client || 'Cliente não informado'}</span><span>{demand.progress}%</span><span className={'status-ref ' + effectiveStatus(demand)}><i />{statusLabel[effectiveStatus(demand)]}</span><ChevronRight size={14} /></button>)}</div>
+      {selectedStage.rows.length > 40 && <p className="dashboard-detail-more">Mostrando os primeiros 40 registros. Abra a Carteira para consultar todos.</p>}
+    </section>}
+  </GenericPage>;
 }
 
 function GenericPage({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
