@@ -2047,10 +2047,13 @@ function groupSectorLabel(demands: Demand[]) {
 }
 
 function groupOwnerLabel(demands: Demand[]) {
-  const owners = [...new Set(demands.map((d) => d.assignedTo).filter((value): value is string => Boolean(value)))];
-  if (!owners.length) return 'Não atribuída';
+  const owners = [...new Set(demands.map((d) => pmOwnerLabel(d)))];
   if (owners.length === 1) return owners[0];
   return owners.length + ' responsáveis';
+}
+
+function pmOwnerLabel(demand: Pick<Demand, 'pm'>) {
+  return demand.pm ? 'PM · ' + demand.pm : 'PM não informado';
 }
 
 function normalizeSearchValue(value: unknown) {
@@ -2515,7 +2518,7 @@ function BspTreeRow({
                     <span>{demand.archived ? (demand.archiveSource || 'Arquivo OLD') + ' · histórico' : sectorName(demand.sector) + ' · há ' + elapsedLabel(demand.enteredAt)}</span>
                   </div>
                   <div className="owner-ref">
-                    <strong>{demand.assignedTo ?? 'Não atribuída'}</strong>
+                    <strong>{pmOwnerLabel(demand)}</strong>
                     <span>Responsável atual</span>
                   </div>
                   <div className="progress-ref">
@@ -2993,7 +2996,7 @@ function DemandDetail(props: {
         </div>
         <div className="detail-summary-grid">
           <SummaryField label="Etapa atual" value={demand.stage} />
-          <SummaryField label="Responsável" value={demand.assignedTo ?? 'Não atribuída'} />
+          <SummaryField label="Responsável" value={pmOwnerLabel(demand)} />
           <SummaryField label="Entrada no setor" value={fmtDate(demand.enteredAt)} />
           <SummaryField label="SLA da etapa" value={fmtDate(demand.slaDueAt)} />
           <SummaryField label="Evidências" value={props.evidenceLoading ? '...' : String(totalEvidence)} />
