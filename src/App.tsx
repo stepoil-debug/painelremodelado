@@ -2921,7 +2921,15 @@ function DemandDetail(props: {
   const currentIndex = getStageIndex(demand.stageKey);
   const [phaseKey, setPhaseKey] = useState(demand.stageKey);
   const [photoModalIndex, setPhotoModalIndex] = useState<number | null>(null);
-  const phase = getStage(phaseKey) ?? getStage(demand.stageKey)!;
+  const fallbackPhase = {
+    key: demand.stageKey || 'unclassified',
+    label: demand.stage || 'Etapa não classificada',
+    sector: demand.sector,
+    slaMinutes: 0,
+    photoPolicy: 'none' as const,
+    usesPointing: false,
+  };
+  const phase = getStage(phaseKey) ?? getStage(demand.stageKey) ?? fallbackPhase;
   const phaseIndex = getStageIndex(phase.key);
   const isCurrent = phase.key === demand.stageKey;
   const next = getNextStage(demand.stageKey);
