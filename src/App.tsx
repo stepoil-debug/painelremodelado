@@ -3006,10 +3006,11 @@ function DemandDetail(props: {
         <span className="eyebrow">Fases do processo</span>
         <div className="phase-strip">
           {workflowStages.map((stage, index) => {
-            const done = index < currentIndex;
-            const current = index === currentIndex;
+            const finished = status === 'completed';
+            const done = finished || index < currentIndex;
+            const current = !finished && index === currentIndex;
             const future = index > currentIndex;
-            const pct = done ? 100 : current ? demand.progress : 0;
+            const pct = finished ? 100 : done ? 100 : current ? demand.progress : 0;
             return (
               <button key={stage.key} className={'phase-card ' + (phaseKey === stage.key ? 'selected ' : '') + (done ? 'done' : current ? 'current' : future ? 'future' : '')} onClick={() => setPhaseKey(stage.key)}>
                 <div><small>{String(index + 1).padStart(2, '0')}</small><strong>{stage.label}</strong><b>{pct}%</b></div>

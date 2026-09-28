@@ -1020,14 +1020,69 @@ Deno.serve(async (request: Request) => {
 
     const activeProjects = Array.isArray(activeProjectRows) ? activeProjectRows as Record<string, unknown>[] : [];
     const activeProjectIds = new Set(activeProjects.map((project) => String(project.project_row_id || "")).filter(Boolean));
+    const projectByRowId = new Map(activeProjects.map((project) => [String(project.project_row_id || ""), project]));
+    const { data: activeTrackingIsoRows, error: activeTrackingIsosError } = activeProjectIds.size
+      ? await admin
+        .from("tracking_isos")
+        .select("region,project_row_id,iso_key,project_number,iso,drawing,line_number,description,client_tag,project_type,current_stage,current_status,planned_start,planned_finish,fabrication_start,overall_progress,weight_kg,m2,source_version,source_updated_at,synced_at,active")
+        .eq("region", region)
+        .eq("active", true)
+        .in("project_row_id", Array.from(activeProjectIds))
+      : { data: [], error: null };
+
+    if (activeTrackingIsosError) return json({ ok: false, error: activeTrackingIsosError.message }, 500);
+
     const rpcRows = Array.isArray(data) ? data as Record<string, unknown>[] : [];
     const currentRows = rpcRows.filter((item) => {
       // OPS CORE records are already part of the new operational source. Legacy
       // records must still belong to an active Tracking project in the main view.
       return item.source_mode === "ops_core" || activeProjectIds.has(String(item.project_row_id || ""));
     });
-    const representedProjectIds = new Set(currentRows.map((item) => String(item.project_row_id || "")).filter(Boolean));
     const normalizedSearch = search.toLowerCase();
+    const representedIsoKeys = new Set(currentRows.map((item) => String(item.iso_key || "")).filter(Boolean));
+    const trackingIsoFallbackRows = (Array.isArray(activeTrackingIsoRows) ? activeTrackingIsoRows as Record<string, unknown>[] : [])
+      .filter((iso) => {
+        const project = projectByRowId.get(String(iso.project_row_id || ""));
+        if (!project || representedIsoKeys.has(String(iso.iso_key || ""))) return false;
+        if (!normalizedSearch) return true;
+        return [
+          project.project_number,
+          project.project_display,
+          project.client,
+          project.vessel,
+          project.project_type,
+          project.project_status,
+          project.pm,
+          iso.iso_key,
+          iso.project_number,
+          iso.iso,
+          iso.drawing,
+          iso.current_stage,
+          iso.current_status,
+        ].some((value) => String(value || "").toLowerCase().includes(normalizedSearch));
+      })
+      .map((iso) => {
+        const project = projectByRowId.get(String(iso.project_row_id || "")) || {};
+        return {
+          ...iso,
+          project_display: project.project_display || null,
+          client: project.client || null,
+          vessel: project.vessel || null,
+          pm: project.pm || null,
+          project_status: project.project_status || null,
+          replanned_finish: project.replanned_finish || null,
+          archived: false,
+          archive_source: null,
+          archive_rank: null,
+          source_mode: "legacy_tracking",
+          core_project_id: null,
+          core_item_id: null,
+        };
+      });
+    const representedProjectIds = new Set([
+      ...currentRows,
+      ...trackingIsoFallbackRows,
+    ].map((item) => String(item.project_row_id || "")).filter(Boolean));
     const missingProjectRows = activeProjects
       .filter((project) => !representedProjectIds.has(String(project.project_row_id || "")))
       .filter((project) => {
@@ -1077,7 +1132,7 @@ Deno.serve(async (request: Request) => {
         core_project_id: null,
         core_item_id: null,
       }));
-    const baseRows = [...currentRows, ...missingProjectRows];
+    const baseRows = [...currentRows, ...trackingIsoFallbackRows, ...missingProjectRows];
 
     const compact = (value: unknown) =>
       String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
