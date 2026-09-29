@@ -587,7 +587,7 @@ h1,h2,h3,p { margin-top: 0; }
 .dimensional-summary .hold strong { color: #A36500; }
 .dimensional-summary .no { border-color: #F2C4C4; background: #FFF8F8; }
 .dimensional-summary .no strong { color: #C33D45; }
-.dimensional-source-table .source-mini-head,.dimensional-source-table .source-mini-row { grid-template-columns: 1.45fr .7fr 1fr .75fr .58fr; }
+.dimensional-source-table .source-mini-head,.dimensional-source-table .source-mini-row { grid-template-columns: 1.3fr .55fr .8fr 1.05fr .7fr .55fr; }
 .dimensional-indicator { display: inline-flex; min-width: 32px; justify-content: center; padding: 3px 6px; border-radius: 999px; font: 700 8px 'IBM Plex Mono', monospace; }
 .dimensional-indicator.yes { color: #12845E; background: #E7F7EF; }
 .dimensional-indicator.hold { color: #A36500; background: #FFF1C9; }
@@ -612,8 +612,8 @@ h1,h2,h3,p { margin-top: 0; }
   .source-mini-head,.source-mini-row { grid-template-columns: 1.2fr .55fr .9fr; }
   .source-mini-head span:nth-child(4),.source-mini-row span:nth-child(4) { display: none; }
   .dimensional-summary { grid-template-columns: repeat(3,1fr); }
-  .dimensional-source-table .source-mini-head,.dimensional-source-table .source-mini-row { grid-template-columns: 1.2fr .65fr .75fr .58fr; }
-  .dimensional-source-table .source-mini-head span:nth-child(4),.dimensional-source-table .source-mini-row span:nth-child(4) { display: none; }
+  .dimensional-source-table .source-mini-head,.dimensional-source-table .source-mini-row { grid-template-columns: 1.2fr .75fr .65fr .58fr; }
+  .dimensional-source-table .source-mini-head span:nth-child(2),.dimensional-source-table .source-mini-row span:nth-child(2),.dimensional-source-table .source-mini-head span:nth-child(4),.dimensional-source-table .source-mini-row span:nth-child(4) { display: none; }
 }
 
 

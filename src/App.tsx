@@ -1042,7 +1042,9 @@ function textField(record: Record<string, unknown>, key: string, fallback = '—
 }
 
 function dimensionalIndicator(row: Record<string, unknown>) {
-  const value = String(row.indicator ?? row.status ?? row.approval ?? '').trim();
+  const value = [row.approval, row.indicator, row.result, row.status]
+    .map((item) => String(item ?? '').trim())
+    .find(Boolean) || '';
   const normalized = value
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -1979,7 +1981,7 @@ function RealSourcesPanel({ detail, loading, iso }: {
                   <div className="no"><span>NO</span><strong>{no}</strong></div>
                 </div>
                 <div className="source-mini-table dimensional-source-table">
-                  <div className="source-mini-head"><span>Relatório / referência</span><span>Spool</span><span>Etapa</span><span>Emissão</span><span>Indicador</span></div>
+                  <div className="source-mini-head"><span>Relatório / referência</span><span>Spool</span><span>Etapa</span><span>Situação do relatório</span><span>Emissão</span><span>Indicador</span></div>
                   {dimensional.slice(0, 20).map((row, index) => {
                     const indicator = dimensionalIndicator(row);
                     return (
@@ -1987,6 +1989,7 @@ function RealSourcesPanel({ detail, loading, iso }: {
                         <span>{textField(row, 'sob_reference', textField(row, 'report_reference'))}</span>
                         <span>{textField(row, 'spool')}</span>
                         <span>{textField(row, 'inspection_stage')}</span>
+                        <span>{textField(row, 'status')}</span>
                         <span>{dimensionalDate(row)}</span>
                         <span><b className={dimensionalIndicatorClass(indicator)}>{indicator}</b></span>
                       </div>

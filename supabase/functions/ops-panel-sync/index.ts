@@ -169,10 +169,13 @@ function deriveDimensional(cells: Map<string, any>, cellDisplay: Record<string, 
     ...Object.values(cellDisplay),
   ].join(" ");
 
+  const reportStatus = display(cells, "STATUS");
   const indicator = display(cells, "INDICADOR")
     || display(cells, "INDICATOR")
-    || display(cells, "STATUS")
-    || display(cells, "Laudo Aprovação");
+    || display(cells, "Laudo Aprovação")
+    || display(cells, "APPROVAL")
+    || display(cells, "RESULTADO")
+    || reportStatus;
   const reportDate = raw(cells, "Data da Emissão Relatório")
     || raw(cells, "Report Issued Date")
     || raw(cells, "Report Issue Date");
@@ -187,7 +190,7 @@ function deriveDimensional(cells: Map<string, any>, cellDisplay: Record<string, 
     inspection_stage: display(cells, "Pré Solda ou Pós Solda"),
     requester: display(cells, "Requisitante"),
     request_date: raw(cells, "Data da Requisição"),
-    status: indicator,
+    status: reportStatus,
     indicator,
     report_date: reportDate,
     need_date: raw(cells, "Data de Necessidade"),
