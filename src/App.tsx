@@ -147,14 +147,6 @@ function fmtNumber(value: number | string | null | undefined, digits = 2) {
     : '—';
 }
 
-function elapsedLabel(date: string) {
-  const minutes = Math.max(0, Math.round((Date.now() - new Date(date).getTime()) / 60_000));
-  if (minutes < 60) return minutes + ' min';
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return hours + 'h ' + (minutes % 60) + 'min';
-  return Math.floor(hours / 24) + 'd ' + (hours % 24) + 'h';
-}
-
 function sectorKeyFromValue(value?: string | null): SectorKey {
   const normalized = (value || '')
     .normalize('NFD')
@@ -2751,7 +2743,7 @@ function BspTreeRow({
                   </div>
                   <div className="stage-ref">
                     <strong>{demand.stage}</strong>
-                    <span>{demand.archived ? (demand.archiveSource || 'Arquivo OLD') + ' · histórico' : sectorName(demand.sector) + ' · há ' + elapsedLabel(demand.enteredAt)}</span>
+                    <span>{demand.archived ? (demand.archiveSource || 'Arquivo OLD') + ' · histórico' : sectorName(demand.sector)}</span>
                   </div>
                   <div className="measure-ref">
                     <strong>{formatMeasure(demand.weightKg, 'kg')}</strong>
