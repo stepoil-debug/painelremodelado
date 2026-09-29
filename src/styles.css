@@ -1027,6 +1027,67 @@ h1,h2,h3,p { margin-top: 0; }
   font-size: 8px;
   text-align: center;
 }
+.drawing-revision-alert {
+  margin: 0 12px 10px;
+  padding: 11px 12px;
+  border: 1px solid #F0C66E;
+  border-radius: 10px;
+  background: #FFF9E9;
+}
+.drawing-revision-alert-head,
+.drawing-revision-alert-head > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.drawing-revision-alert-head {
+  justify-content: space-between;
+}
+.drawing-revision-alert-head > div { color: #9A6400; }
+.drawing-revision-alert-head strong { font-size: 9px; }
+.drawing-revision-alert-head span {
+  color: #9A6400;
+  font: 700 8px 'IBM Plex Mono', monospace;
+}
+.drawing-revision-alert p {
+  margin: 7px 0 8px;
+  color: #7D6540;
+  font-size: 8px;
+  line-height: 1.4;
+}
+.drawing-revision-diff {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 9px;
+}
+.drawing-revision-diff div {
+  display: grid;
+  grid-template-columns: 110px minmax(0,1fr) 18px minmax(0,1fr);
+  gap: 5px;
+  align-items: center;
+  padding-top: 4px;
+  border-top: 1px solid rgba(240,198,110,.45);
+  font-size: 7px;
+}
+.drawing-revision-diff span { color: #8B7047; font-weight: 700; }
+.drawing-revision-diff b { color: #8E6E3B; font-weight: 500; overflow-wrap: anywhere; }
+.drawing-revision-diff em { color: #B67A17; font-style: normal; text-align: center; }
+.drawing-revision-diff strong { color: #5D430E; overflow-wrap: anywhere; }
+.drawing-revision-apply {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 29px;
+  padding: 0 10px;
+  border: 1px solid #D79823;
+  border-radius: 8px;
+  background: #D79823;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 700;
+}
+.drawing-revision-apply:hover:not(:disabled) { background: #B9790F; }
+.drawing-revision-apply:disabled { opacity: .6; cursor: wait; }
 @media (max-width: 850px) {
   .drawing-revision-summary {
     grid-template-columns: minmax(0,1fr) auto 20px;
@@ -1040,6 +1101,8 @@ h1,h2,h3,p { margin-top: 0; }
   .drawing-revision-summary { gap: 8px; padding: 10px; }
   .drawing-revision-cards { grid-template-columns: 1fr; }
   .drawing-revision-data { grid-template-columns: 1fr 1fr; }
+  .drawing-revision-alert-head { align-items: flex-start; flex-direction: column; }
+  .drawing-revision-diff div { grid-template-columns: 90px minmax(0,1fr) 14px minmax(0,1fr); }
 }
 
 

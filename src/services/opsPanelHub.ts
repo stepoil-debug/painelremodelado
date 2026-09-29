@@ -81,6 +81,7 @@ export interface HubProjectDetail {
   wip: unknown[];
   drawings: unknown[];
   drawing_revisions: unknown[];
+  drawing_revision_alerts?: unknown[];
   job_orders: unknown[];
   tracking_isos: unknown[];
   dimensional: unknown[];
@@ -961,6 +962,15 @@ export async function loadHubDrawingAttachments(projectKey: string, iso = ''): P
     action: 'drawing_attachments',
     projectKey,
     iso,
+  });
+  return response.data;
+}
+
+export async function applyHubDrawingRevision(sourceRowId: number, note?: string | null) {
+  const response = await requestHub<{ ok: true; data: Record<string, unknown>; message?: string }>({
+    action: 'drawing_revision_apply',
+    sourceRowId,
+    note: note || null,
   });
   return response.data;
 }

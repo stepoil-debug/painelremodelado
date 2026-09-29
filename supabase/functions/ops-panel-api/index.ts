@@ -254,6 +254,30 @@ Deno.serve(async (request: Request) => {
     });
   }
 
+  if (action === "drawing_revision_apply") {
+    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode aplicar uma revisão." }, 403);
+
+    const sourceRowId = Number(body.sourceRowId || 0);
+    if (!Number.isSafeInteger(sourceRowId) || sourceRowId <= 0) {
+      return json({ ok: false, error: "sourceRowId é obrigatório." }, 400);
+    }
+
+    const note = body.note == null ? null : String(body.note).trim().slice(0, 500);
+    const { data, error } = await admin.rpc("ops_core_apply_drawing_revision", {
+      p_source_row_id: sourceRowId,
+      p_actor: actor,
+      p_note: note,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+
+    return json({
+      ok: true,
+      data,
+      message: "Revisão aplicada ao OPS Core e registrada no histórico.",
+      generatedAt: new Date().toISOString(),
+    });
+  }
+
 
   if (action === "goalfy_connection_status") {
     const { data, error } = await admin.rpc("ops_goalfy_connection_status");

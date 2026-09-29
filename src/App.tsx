@@ -41,6 +41,7 @@ import {
   loadHubDemands,
   loadHubDrawingAttachments,
   loadHubDrawingAttachmentPdf,
+  applyHubDrawingRevision,
   loadHubEvidence,
   loadHubProject,
   loadHubSyncStatus,
@@ -313,6 +314,16 @@ export default function App() {
       if (showBanner) setBanner(message);
     } finally {
       setLoadingHub(false);
+    }
+  }
+
+  async function refreshProjectDetail() {
+    if (!selected || !['hub_readonly', 'ops_core'].includes(selected.source)) return;
+    setDetailLoading(true);
+    try {
+      setProjectDetail(await loadHubProject(selected.bsp));
+    } finally {
+      setDetailLoading(false);
     }
   }
 
@@ -880,6 +891,7 @@ export default function App() {
             onSaveGoalfyConnection={saveGoalfyConnection}
             detailLoading={detailLoading}
             evidenceLoading={evidenceLoading}
+            onRefreshProject={refreshProjectDetail}
           />
         ) : page === 'portfolio' ? (
           <Portfolio
@@ -1731,10 +1743,11 @@ function StepFlowProjectBlock({ data, error }: {
   );
 }
 
-function RealSourcesPanel({ detail, loading, iso }: {
+function RealSourcesPanel({ detail, loading, iso, onRefreshProject }: {
   detail: Awaited<ReturnType<typeof loadHubProject>> | null;
   loading: boolean;
   iso: string;
+  onRefreshProject: () => Promise<void>;
 }) {
   const projectKey = detail?.project?.project_key || '';
   const [drawingAttachments, setDrawingAttachments] = useState<HubDrawingAttachments | null>(null);
@@ -1746,6 +1759,8 @@ function RealSourcesPanel({ detail, loading, iso }: {
     url: string;
   } | null>(null);
   const [pdfLoadingId, setPdfLoadingId] = useState<number | null>(null);
+  const [applyingRevisionId, setApplyingRevisionId] = useState<number | null>(null);
+  const [revisionApplyError, setRevisionApplyError] = useState('');
 
   useEffect(() => {
     return () => {
@@ -1805,6 +1820,20 @@ function RealSourcesPanel({ detail, loading, iso }: {
     }
   }
 
+  async function applyRevision(sourceRowId: number) {
+    if (!sourceRowId || applyingRevisionId !== null) return;
+    setApplyingRevisionId(sourceRowId);
+    setRevisionApplyError('');
+    try {
+      await applyHubDrawingRevision(sourceRowId);
+      await onRefreshProject();
+    } catch (error) {
+      setRevisionApplyError(error instanceof Error ? error.message : 'Não foi possível aplicar a revisão.');
+    } finally {
+      setApplyingRevisionId(null);
+    }
+  }
+
   function closeDrawingPdf() {
     setPdfViewer((current) => {
       if (current?.url?.startsWith('blob:')) URL.revokeObjectURL(current.url);
@@ -1828,6 +1857,8 @@ function RealSourcesPanel({ detail, loading, iso }: {
   const drawingRowIds = new Set(drawings.map((row) => String(row.source_row_id ?? '')));
   const revisions = asRecords(detail.drawing_revisions)
     .filter((revision) => drawingRowIds.has(String(revision.drawing_row_id ?? '')));
+  const revisionAlerts = asRecords(detail.drawing_revision_alerts);
+  const alertByRow = new Map(revisionAlerts.map((alert) => [String(alert.source_row_id ?? ''), alert]));
   const jobs = asRecords(detail.job_orders);
   const dimensional = asRecords(detail.dimensional);
   const logistics = asRecords(detail.logistics);
@@ -1885,6 +1916,7 @@ function RealSourcesPanel({ detail, loading, iso }: {
           </div>
 
           {attachmentError && <div className="drawing-attachment-error">{attachmentError}</div>}
+          {revisionApplyError && <div className="drawing-attachment-error">{revisionApplyError}</div>}
 
           <div className="drawing-revision-list">
             {drawings.slice(0, 20).map((row, index) => {
@@ -1895,6 +1927,10 @@ function RealSourcesPanel({ detail, loading, iso }: {
                 'current_revision',
                 rowRevisions.length ? String(rowRevisions[rowRevisions.length - 1].revision || '—') : '—',
               );
+              const revisionAlert = alertByRow.get(String(rowId ?? ''));
+              const latestRevision = rowRevisions[rowRevisions.length - 1];
+              const previousRevision = rowRevisions[rowRevisions.length - 2];
+              const revisionDiff = revisionDiffEntries(previousRevision, latestRevision);
 
               return (
                 <details className="drawing-revision-item" key={String(rowId || index)}>
@@ -1921,6 +1957,32 @@ function RealSourcesPanel({ detail, loading, iso }: {
 
                     <ChevronDown className="drawing-revision-chevron" size={16} />
                   </summary>
+
+                  {revisionAlert && (
+                    <div className="drawing-revision-alert" role="alert">
+                      <div className="drawing-revision-alert-head">
+                        <div><AlertTriangle size={15} /><strong>Nova revisão detectada</strong></div>
+                        <span>REV. {String(revisionAlert.from_revision || '—')} → REV. {String(revisionAlert.to_revision || currentRevision)}</span>
+                      </div>
+                      <p>O Drawing foi atualizado. Confira as alterações antes de aplicar esta revisão ao OPS Core.</p>
+                      {!!revisionDiff.length && (
+                        <div className="drawing-revision-diff">
+                          {revisionDiff.map((entry) => (
+                            <div key={entry.key}><span>{entry.label}</span><b>{entry.from}</b><em>→</em><strong>{entry.to}</strong></div>
+                          ))}
+                        </div>
+                      )}
+                      <button
+                        className="drawing-revision-apply"
+                        type="button"
+                        onClick={() => void applyRevision(Number(rowId))}
+                        disabled={applyingRevisionId !== null}
+                      >
+                        {applyingRevisionId === Number(rowId) ? <RefreshCcw size={14} className="spin" /> : <Check size={14} />}
+                        {applyingRevisionId === Number(rowId) ? 'Aplicando revisão...' : 'Aplicar revisão ao painel'}
+                      </button>
+                    </div>
+                  )}
 
                   <RevisionHistory
                     revisions={rowRevisions}
@@ -2117,6 +2179,37 @@ function groupSectorLabel(demands: Demand[]) {
 function pmOwnerLabel(demand: Pick<Demand, 'pm'>) {
   const label = pmDisplayLabel(demand.pm);
   return label === 'Sem PM' ? 'PM não informado' : 'PM · ' + label;
+}
+
+const revisionFieldLabels: Record<string, string> = {
+  draftman: 'Desenhista',
+  reviewer: 'Reviewer',
+  approver: 'Approver',
+  origin_review: 'Motivo da revisão',
+  pm_approval: 'Aprovação PM',
+  approver_approval: 'Aprovação do approver',
+  reviewer_approval: 'Aprovação do reviewer',
+  internally_sent_pm: 'Envio ao PM',
+  last_revision_start: 'Início da revisão',
+  client_comments_date: 'Comentários do cliente',
+  draftman_hh: 'HH desenhista',
+  reviewer_hh: 'HH reviewer',
+  approver_hh: 'HH approver',
+};
+
+function revisionDiffEntries(previous: Record<string, unknown> | undefined, current: Record<string, unknown> | undefined) {
+  if (!previous || !current) return [] as Array<{ key: string; label: string; from: string; to: string }>;
+  const keys = new Set([...Object.keys(previous), ...Object.keys(current)]);
+  return [...keys]
+    .filter((key) => !['revision', 'raw', 'drawing_number'].includes(key))
+    .map((key) => ({
+      key,
+      label: revisionFieldLabels[key] || key.replace(/_/g, ' '),
+      from: revisionMetaValue(previous, key) || '—',
+      to: revisionMetaValue(current, key) || '—',
+    }))
+    .filter((entry) => entry.from !== entry.to)
+    .slice(0, 12);
 }
 
 function sumDemandMeasure(demands: Demand[], field: 'weightKg' | 'm2') {
@@ -2995,6 +3088,7 @@ function DemandDetail(props: {
   onSaveGoalfyConnection: (input: { accessToken?: string; reportId?: string | null; apiKey?: string }) => Promise<string | null>;
   detailLoading: boolean;
   evidenceLoading: boolean;
+  onRefreshProject: () => Promise<void>;
 }) {
   const { demand } = props;
   const status = effectiveStatus(demand);
@@ -3144,7 +3238,7 @@ function DemandDetail(props: {
           )}
 
           {demand.source === 'hub_readonly' && (
-            <RealSourcesPanel detail={props.hubDetail} loading={props.detailLoading} iso={demand.iso} />
+            <RealSourcesPanel detail={props.hubDetail} loading={props.detailLoading} iso={demand.iso} onRefreshProject={props.onRefreshProject} />
           )}
 
           {demand.source !== 'demo' && (
