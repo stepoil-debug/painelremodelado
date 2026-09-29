@@ -1032,35 +1032,26 @@ Deno.serve(async (request: Request) => {
 
     if (activeTrackingIsosError) return json({ ok: false, error: activeTrackingIsosError.message }, 500);
 
+    const compact = (value: unknown) =>
+      String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+    const rowIdentity = (item: Record<string, unknown>) => {
+      const projectRowId = String(item.project_row_id || "");
+      const projectKey = compact(item.project_number);
+      const isoNorm = compact(item.iso_key || item.drawing || item.iso);
+      return projectRowId && isoNorm
+        ? "row:" + projectRowId + ":" + isoNorm
+        : "project:" + projectKey + ":" + isoNorm;
+    };
+
     const rpcRows = Array.isArray(data) ? data as Record<string, unknown>[] : [];
-    const currentRows = rpcRows.filter((item) => {
+    const eligibleRpcRows = rpcRows.filter((item) => {
       // OPS CORE records are already part of the new operational source. Legacy
       // records must still belong to an active Tracking project in the main view.
       return item.source_mode === "ops_core" || activeProjectIds.has(String(item.project_row_id || ""));
     });
     const normalizedSearch = search.toLowerCase();
-    const representedIsoKeys = new Set(currentRows.map((item) => String(item.iso_key || "")).filter(Boolean));
-    const trackingIsoFallbackRows = (Array.isArray(activeTrackingIsoRows) ? activeTrackingIsoRows as Record<string, unknown>[] : [])
-      .filter((iso) => {
-        const project = projectByRowId.get(String(iso.project_row_id || ""));
-        if (!project || representedIsoKeys.has(String(iso.iso_key || ""))) return false;
-        if (!normalizedSearch) return true;
-        return [
-          project.project_number,
-          project.project_display,
-          project.client,
-          project.vessel,
-          project.project_type,
-          project.project_status,
-          project.pm,
-          iso.iso_key,
-          iso.project_number,
-          iso.iso,
-          iso.drawing,
-          iso.current_stage,
-          iso.current_status,
-        ].some((value) => String(value || "").toLowerCase().includes(normalizedSearch));
-      })
+    const trackingRows = (Array.isArray(activeTrackingIsoRows) ? activeTrackingIsoRows as Record<string, unknown>[] : [])
       .map((iso) => {
         const project = projectByRowId.get(String(iso.project_row_id || "")) || {};
         return {
@@ -1078,6 +1069,40 @@ Deno.serve(async (request: Request) => {
           core_project_id: null,
           core_item_id: null,
         };
+      });
+    const liveTrackingByIdentity = new Map(trackingRows.map((row) => [rowIdentity(row), row]));
+
+    // The cache and the live Tracking table can use different casing or
+    // punctuation in iso_key (for example BSP...ISO001SP01 vs bsp...iso001sp01).
+    // Match on a canonical identity and prefer the live active Tracking row for
+    // legacy items, otherwise the same ISO is returned twice with two statuses
+    // and two progress values.
+    const currentRows = eligibleRpcRows.map((item) => {
+      if (item.source_mode === "ops_core") return item;
+      const live = liveTrackingByIdentity.get(rowIdentity(item));
+      return live ? { ...item, ...live } : item;
+    });
+    const representedIdentities = new Set(currentRows.map(rowIdentity));
+    const trackingIsoFallbackRows = trackingRows
+      .filter((iso) => {
+        const project = projectByRowId.get(String(iso.project_row_id || ""));
+        if (!project || representedIdentities.has(rowIdentity(iso))) return false;
+        if (!normalizedSearch) return true;
+        return [
+          project.project_number,
+          project.project_display,
+          project.client,
+          project.vessel,
+          project.project_type,
+          project.project_status,
+          project.pm,
+          iso.iso_key,
+          iso.project_number,
+          iso.iso,
+          iso.drawing,
+          iso.current_stage,
+          iso.current_status,
+        ].some((value) => String(value || "").toLowerCase().includes(normalizedSearch));
       });
     const representedProjectIds = new Set([
       ...currentRows,
@@ -1133,9 +1158,6 @@ Deno.serve(async (request: Request) => {
         core_item_id: null,
       }));
     const baseRows = [...currentRows, ...trackingIsoFallbackRows, ...missingProjectRows];
-
-    const compact = (value: unknown) =>
-      String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 
     const overlayRows = Array.isArray(executionOverlay) ? executionOverlay : [];
     const overlayMap = new Map<string, Record<string, unknown>>();

@@ -49,11 +49,11 @@ function stageMapFromTrackingKey(stageKey?: string | null, label?: string | null
   if (key === 'stock') return { stageKey: 'stock_check', sector: 'suprimentos', label: label || 'Verificação de Estoque' };
   if (key === 'material') return { stageKey: 'material_separation', sector: 'suprimentos', label: label || 'Separação de Material' };
   if (key === 'preassembly') return { stageKey: 'fitup', sector: 'caldeiraria', label: label || 'Pré-Montagem / Fit-up' };
-  if (key === 'welding') return { stageKey: 'welding', sector: 'solda', label: label || 'Solda' };
+  if (key === 'welding') return { stageKey: 'welding', sector: 'solda', label: 'Soldagem' };
   if (key === 'scan-initial') return { stageKey: 'quality_dimensional', sector: 'qualidade', label: label || '3D Scan Inicial' };
   if (key === 'nde') return { stageKey: 'quality_visual', sector: 'qualidade', label: label || 'Aguardando END' };
   if (key === 'scan-final') return { stageKey: 'quality_dimensional', sector: 'qualidade', label: label || '3D Scan Final' };
-  if (key === 'hydro') return { stageKey: 'hydro_test', sector: 'qualidade', label: label || 'TH' };
+  if (key === 'hydro') return { stageKey: 'hydro_test', sector: 'qualidade', label: 'Hydro Test' };
   if (key === 'painting') return { stageKey: 'painting', sector: 'pintura', label: label || 'Pintura' };
   if (key === 'final-inspection') return { stageKey: 'final_inspection', sector: 'qualidade', label: label || 'Unitização e Inspeção' };
   if (key === 'package') return { stageKey: 'dispatch', sector: 'expedicao', label: label || 'Preparado para envio' };
@@ -110,19 +110,19 @@ function stageMap(row: HubDemandRow): StageMap {
     return { stageKey: 'fitup', sector: 'caldeiraria', label: row.current_status || 'Caldeiraria / Fit-up' };
   }
   if (group.includes('solda')) {
-    return { stageKey: 'welding', sector: 'solda', label: row.current_status || 'Solda' };
+    return { stageKey: 'welding', sector: 'solda', label: 'Soldagem' };
   }
   if (group.includes('on hold')) {
     return { stageKey: 'on_hold', sector: 'on_hold', label: 'On Hold' };
   }
   if (group.includes('producao')) {
-    if (status.includes('solda')) return { stageKey: 'welding', sector: 'solda', label: row.current_status || 'Solda' };
+    if (status.includes('solda')) return { stageKey: 'welding', sector: 'solda', label: 'Soldagem' };
     if (status.includes('pre') && status.includes('mont')) return { stageKey: 'fitup', sector: 'caldeiraria', label: row.current_status || 'Pré-Montagem' };
     if (status.includes('corte') || status.includes('limpeza')) return { stageKey: 'cutting', sector: 'caldeiraria', label: row.current_status || 'Corte e Limpeza' };
     return { stageKey: 'fitup', sector: 'caldeiraria', label: row.current_status || 'Produção' };
   }
   if (group.includes('qualidade')) {
-    if (status === 'th' || status.includes('hidro')) return { stageKey: 'hydro_test', sector: 'qualidade', label: row.current_status || 'TH' };
+    if (status === 'th' || status.includes('hidro')) return { stageKey: 'hydro_test', sector: 'qualidade', label: 'Hydro Test' };
     if (status.includes('dimensional') || status.includes('3d')) return { stageKey: 'quality_dimensional', sector: 'qualidade', label: row.current_status || 'Inspeção Dimensional' };
     if (status.includes('end')) return { stageKey: 'quality_visual', sector: 'qualidade', label: row.current_status || 'Aguardando END' };
     return { stageKey: 'quality_visual', sector: 'qualidade', label: row.current_status || 'Qualidade' };
