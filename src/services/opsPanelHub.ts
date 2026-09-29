@@ -82,6 +82,23 @@ export interface HubProjectDetail {
   drawings: unknown[];
   drawing_revisions: unknown[];
   drawing_revision_alerts?: unknown[];
+  source_timeline?: {
+    status?: 'awaiting_drawing' | 'awaiting_fcb' | 'fcb_detected' | string;
+    drawing_registered_at?: string | null;
+    drawing_detected_at?: string | null;
+    drawing_source_created_at?: string | null;
+    drawing_request_date?: string | null;
+    fcb_count?: number | null;
+    fcb_issued_at?: string | null;
+    fcb_detected_at?: string | null;
+    fcb_source_row_id?: number | null;
+    fcb_drawing_number?: string | null;
+    fcb_revision?: string | null;
+    fcb_issued_basis?: string | null;
+    lead_time_status?: 'measured' | 'awaiting_fcb' | 'missing_drawing_date' | 'source_dates_need_review' | string;
+    lead_time_hours?: number | null;
+    lead_time_days?: number | null;
+  };
   job_orders: unknown[];
   tracking_isos: unknown[];
   dimensional: unknown[];

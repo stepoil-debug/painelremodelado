@@ -139,6 +139,14 @@ function fmtDate(date?: string) {
   }).format(new Date(date));
 }
 
+function fmtNumber(value: number | string | null | undefined, digits = 2) {
+  if (value == null || value === '') return '—';
+  const number = Number(value);
+  return Number.isFinite(number)
+    ? number.toLocaleString('pt-BR', { maximumFractionDigits: digits })
+    : '—';
+}
+
 function elapsedLabel(date: string) {
   const minutes = Math.max(0, Math.round((Date.now() - new Date(date).getTime()) / 60_000));
   if (minutes < 60) return minutes + ' min';
@@ -1862,6 +1870,23 @@ function RealSourcesPanel({ detail, loading, iso, onRefreshProject }: {
   const jobs = asRecords(detail.job_orders);
   const dimensional = asRecords(detail.dimensional);
   const logistics = asRecords(detail.logistics);
+  const sourceTimeline = detail.source_timeline;
+  const leadTimeValue = sourceTimeline?.lead_time_status === 'source_dates_need_review'
+    ? 'Revisar datas'
+    : sourceTimeline?.lead_time_days != null
+    ? `${fmtNumber(sourceTimeline.lead_time_days)} dias`
+    : sourceTimeline?.lead_time_hours != null
+      ? `${fmtNumber(sourceTimeline.lead_time_hours)} h`
+      : 'Aguardando FCB';
+  const timelineStatus = sourceTimeline?.lead_time_status === 'source_dates_need_review'
+    ? 'Datas para revisar'
+    : sourceTimeline?.status === 'fcb_detected'
+    ? 'FCB identificado'
+    : sourceTimeline?.status === 'awaiting_fcb'
+      ? 'Aguardando FCB'
+      : sourceTimeline?.status === 'awaiting_drawing'
+        ? 'Aguardando Drawing'
+        : 'Sem informação';
 
   return (
     <div className="section-card real-sources-card">
@@ -1898,6 +1923,28 @@ function RealSourcesPanel({ detail, loading, iso, onRefreshProject }: {
           <SummaryField label="Atualização consolidada" value={fmtDate(project.data_updated_at || undefined)} />
         </div>
       )}
+
+      <div className="source-timeline">
+        <div className="source-timeline-head">
+          <div><span className="section-mono">Linha do tempo documental</span><strong>Drawing → FCB</strong></div>
+          <span className={`source-timeline-status ${sourceTimeline?.status === 'fcb_detected' ? 'done' : 'pending'}`}>{timelineStatus}</span>
+        </div>
+        <div className="source-timeline-grid">
+          <SummaryField label="Cadastro no Drawing" value={fmtDate(sourceTimeline?.drawing_registered_at || undefined)} />
+          <SummaryField label="Identificado pelo painel" value={fmtDate(sourceTimeline?.drawing_detected_at || undefined)} />
+          <SummaryField label="FCB emitido" value={fmtDate(sourceTimeline?.fcb_issued_at || undefined)} />
+          <SummaryField label="Tempo até o FCB" value={leadTimeValue} />
+        </div>
+        {sourceTimeline?.fcb_drawing_number && (
+          <small className="source-timeline-note">
+            Referência: {sourceTimeline.fcb_drawing_number}{sourceTimeline.fcb_revision ? ` · Rev. ${sourceTimeline.fcb_revision}` : ''}
+            {sourceTimeline.fcb_issued_basis ? ` · data baseada em ${sourceTimeline.fcb_issued_basis}` : ''}.
+          </small>
+        )}
+        {sourceTimeline?.status === 'awaiting_fcb' && (
+          <small className="source-timeline-note">O Drawing já foi identificado. O cronômetro será fechado automaticamente assim que o FCB aparecer na fonte sincronizada.</small>
+        )}
+      </div>
 
       <StepFlowProjectBlock data={detail.stepflow} error={detail.stepflow_error} />
 

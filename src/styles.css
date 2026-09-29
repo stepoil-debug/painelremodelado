@@ -559,6 +559,15 @@ h1,h2,h3,p { margin-top: 0; }
 .source-count-grid strong { margin-top: 4px; color: #0B2340; font: 600 16px 'IBM Plex Mono', monospace; }
 .source-project-summary { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; padding: 15px 17px; border-bottom: 1px solid #EDF2F8; }
 .source-project-summary .summary-field { padding: 9px; border: 1px solid #EDF2F8; border-radius: 10px; background: #FBFDFF; }
+.source-timeline { margin: 0 17px 15px; padding: 13px; border: 1px solid #D9E7F4; border-radius: 12px; background: linear-gradient(135deg,#F9FCFF,#F2F8FD); }
+.source-timeline-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.source-timeline-head > div span,.source-timeline-head > div strong { display: block; }
+.source-timeline-head > div strong { margin-top: 3px; color: #0B2340; font-size: 13px; }
+.source-timeline-status { padding: 5px 9px; border-radius: 999px; color: #8A5A00; background: #FFF4D8; font-size: 9px; font-weight: 700; }
+.source-timeline-status.done { color: #087A57; background: #E5F7EF; }
+.source-timeline-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 9px; margin-top: 10px; }
+.source-timeline-grid .summary-field { padding: 9px; border: 1px solid #E0EBF4; border-radius: 9px; background: rgba(255,255,255,.7); }
+.source-timeline-note { display: block; margin-top: 9px; color: #6F8498; font-size: 9px; line-height: 1.45; }
 .source-block { padding: 0 17px 16px; border-top: 1px solid #EDF2F8; }
 .source-block-head { display: flex; justify-content: space-between; gap: 10px; padding: 13px 0 9px; }
 .source-block-head strong { color: #24374B; font-size: 10px; }
@@ -602,6 +611,7 @@ h1,h2,h3,p { margin-top: 0; }
   .panel-login-form-wrap { min-height: auto; padding: 24px 16px 50px; }
   .source-count-grid { grid-template-columns: repeat(4,1fr); }
   .source-project-summary { grid-template-columns: repeat(2,1fr); }
+  .source-timeline-grid { grid-template-columns: repeat(2,1fr); }
 }
 @media (max-width: 560px) {
   .panel-login-visual { padding: 28px 18px; }
@@ -609,6 +619,7 @@ h1,h2,h3,p { margin-top: 0; }
   .panel-login-card { padding: 21px; }
   .source-count-grid { grid-template-columns: repeat(2,1fr); }
   .source-project-summary { grid-template-columns: 1fr; }
+  .source-timeline-grid { grid-template-columns: 1fr; }
   .source-card-grid { grid-template-columns: 1fr; }
   .source-mini-head,.source-mini-row { grid-template-columns: 1.2fr .55fr .9fr; }
   .source-mini-head span:nth-child(4),.source-mini-row span:nth-child(4) { display: none; }
