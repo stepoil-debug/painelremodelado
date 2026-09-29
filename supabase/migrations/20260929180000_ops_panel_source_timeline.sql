@@ -18,6 +18,7 @@ source_project as (
     d.current_revision,
     d.approval_date,
     sr.first_seen_at,
+    sr.payload->'cells'->>'UNIT' as unit,
     case
       when nullif(sr.payload->>'createdAt','') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
         then (sr.payload->>'createdAt')::timestamptz
@@ -43,6 +44,9 @@ drawing_candidates as (
   from source_project
   where not is_fcb
     and nullif(btrim(coalesce(drawing_number,document_title,'')),'') is not null
+    and not (upper(coalesce(drawing_number,'')) ~ '(^|-)SUP-'
+      or upper(coalesce(document_title,'')) ~ '(^|[^A-Z0-9])PS0?[1-6]([^A-Z0-9]|$)'
+      or upper(coalesce(unit,'')) like '%KG (STR)%')
 ),
 drawing_timeline as (
   select
@@ -97,6 +101,7 @@ revision_alerts as (
 timeline as (
   select jsonb_build_object(
     'status', case
+      when dt.registered_at is null and ft.fcb_count=0 then 'not_applicable'
       when dt.registered_at is null then 'awaiting_drawing'
       when ft.fcb_count=0 then 'awaiting_fcb'
       else 'fcb_detected'
@@ -113,6 +118,7 @@ timeline as (
     'fcb_revision', fp.current_revision,
     'fcb_issued_basis', fp.issued_basis,
     'lead_time_status', case
+      when dt.registered_at is null and ft.fcb_count=0 then 'not_applicable'
       when dt.registered_at is null then 'missing_drawing_date'
       when fp.issued_at is null then 'awaiting_fcb'
       when fp.issued_at < dt.registered_at then 'source_dates_need_review'

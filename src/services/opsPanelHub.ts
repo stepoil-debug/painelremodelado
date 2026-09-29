@@ -83,7 +83,7 @@ export interface HubProjectDetail {
   drawing_revisions: unknown[];
   drawing_revision_alerts?: unknown[];
   source_timeline?: {
-    status?: 'awaiting_drawing' | 'awaiting_fcb' | 'fcb_detected' | string;
+    status?: 'awaiting_drawing' | 'awaiting_fcb' | 'fcb_detected' | 'not_applicable' | string;
     drawing_registered_at?: string | null;
     drawing_detected_at?: string | null;
     drawing_source_created_at?: string | null;

@@ -15,6 +15,7 @@ with key as (
 source_project as (
   select d.project_key,d.source_row_id,d.drawing_number,d.document_title,d.is_fcb,d.current_revision,d.approval_date,
     sr.first_seen_at,
+    sr.payload->'cells'->>'UNIT' as unit,
     case when nullif(sr.payload->>'createdAt','') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' then (sr.payload->>'createdAt')::timestamptz end as source_created_at,
     case when nullif(sr.payload->'cells'->>'Date of request','') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then ((sr.payload->'cells'->>'Date of request') || 'T00:00:00Z')::timestamptz end as request_date
   from ops_panel.drawings_current d
@@ -26,6 +27,9 @@ drawing_candidates as (
   select source_row_id,coalesce(source_created_at,request_date,first_seen_at) as registered_at,first_seen_at as detected_at,source_created_at,request_date
   from source_project
   where not is_fcb and nullif(btrim(coalesce(drawing_number,document_title,'')),'') is not null
+    and not (upper(coalesce(drawing_number,'')) ~ '(^|-)SUP-'
+      or upper(coalesce(document_title,'')) ~ '(^|[^A-Z0-9])PS0?[1-6]([^A-Z0-9]|$)'
+      or upper(coalesce(unit,'')) like '%KG (STR)%')
 ),
 drawing_timeline as (
   select min(registered_at) as registered_at,min(detected_at) as detected_at,min(source_created_at) as source_created_at,min(request_date) as request_date
@@ -56,10 +60,10 @@ revision_alerts as (
 ),
 timeline as (
   select jsonb_build_object(
-    'status',case when dt.registered_at is null then 'awaiting_drawing' when ft.fcb_count=0 then 'awaiting_fcb' else 'fcb_detected' end,
+    'status',case when dt.registered_at is null and ft.fcb_count=0 then 'not_applicable' when dt.registered_at is null then 'awaiting_drawing' when ft.fcb_count=0 then 'awaiting_fcb' else 'fcb_detected' end,
     'drawing_registered_at',dt.registered_at,'drawing_detected_at',dt.detected_at,'drawing_source_created_at',dt.source_created_at,'drawing_request_date',dt.request_date,
     'fcb_count',coalesce(ft.fcb_count,0),'fcb_issued_at',fp.issued_at,'fcb_detected_at',ft.detected_at,'fcb_source_row_id',fp.source_row_id,'fcb_drawing_number',fp.drawing_number,'fcb_revision',fp.current_revision,'fcb_issued_basis',fp.issued_basis,
-    'lead_time_status',case when dt.registered_at is null then 'missing_drawing_date' when fp.issued_at is null then 'awaiting_fcb' when fp.issued_at < dt.registered_at then 'source_dates_need_review' else 'measured' end,
+    'lead_time_status',case when dt.registered_at is null and ft.fcb_count=0 then 'not_applicable' when dt.registered_at is null then 'missing_drawing_date' when fp.issued_at is null then 'awaiting_fcb' when fp.issued_at < dt.registered_at then 'source_dates_need_review' else 'measured' end,
     'lead_time_hours',case when dt.registered_at is not null and fp.issued_at is not null and fp.issued_at >= dt.registered_at then round((extract(epoch from(fp.issued_at-dt.registered_at))/3600.0)::numeric,2) end,
     'lead_time_days',case when dt.registered_at is not null and fp.issued_at is not null and fp.issued_at >= dt.registered_at then round((extract(epoch from(fp.issued_at-dt.registered_at))/86400.0)::numeric,2) end
   ) as data

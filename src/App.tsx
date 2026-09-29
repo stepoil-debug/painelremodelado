@@ -1652,6 +1652,22 @@ function drawingMatchesItem(
   );
 }
 
+function isSupportDrawing(row: Record<string, unknown>) {
+  const rawCells = row.raw_cells && typeof row.raw_cells === 'object'
+    ? row.raw_cells as Record<string, unknown>
+    : {};
+  const haystack = [
+    row.drawing_number,
+    row.document_title,
+    rawCells['Doc. Ref.Client / Title'],
+    rawCells['Drawing Number (Rev. A)'],
+  ].map((value) => String(value ?? '').toUpperCase()).join(' ');
+  const unit = String(rawCells.UNIT ?? '').toUpperCase();
+  return /(^|-)SUP-/.test(haystack)
+    || /(^|[^A-Z0-9])PS0?[1-6]([^A-Z0-9]|$)/.test(haystack)
+    || unit.includes('KG (STR)');
+}
+
 function stepflowClosedPhase(value: unknown) {
   const normalized = String(value || '').trim().toLowerCase();
   return ['po enviada', 'processos cancelados', 'recebido', 'cancelado', 'nao diligenciavel'].includes(normalized);
@@ -1862,6 +1878,7 @@ function RealSourcesPanel({ detail, loading, iso, onRefreshProject }: {
   const wip = asRecords(detail.wip);
   const allDrawings = asRecords(detail.drawings);
   const drawings = allDrawings.filter((row) => drawingMatchesItem(row, iso, projectKey));
+  const supportOnly = drawings.length > 0 && drawings.every(isSupportDrawing);
   const drawingRowIds = new Set(drawings.map((row) => String(row.source_row_id ?? '')));
   const revisions = asRecords(detail.drawing_revisions)
     .filter((revision) => drawingRowIds.has(String(revision.drawing_row_id ?? '')));
@@ -1885,7 +1902,9 @@ function RealSourcesPanel({ detail, loading, iso, onRefreshProject }: {
     : sourceTimeline?.status === 'awaiting_fcb'
       ? 'Aguardando FCB'
       : sourceTimeline?.status === 'awaiting_drawing'
-        ? 'Aguardando Drawing'
+      ? 'Aguardando Drawing'
+      : sourceTimeline?.status === 'not_applicable'
+        ? 'Não se aplica'
         : 'Sem informação';
 
   return (
@@ -1924,7 +1943,7 @@ function RealSourcesPanel({ detail, loading, iso, onRefreshProject }: {
         </div>
       )}
 
-      <div className="source-timeline">
+      {!supportOnly && sourceTimeline?.status !== 'not_applicable' && <div className="source-timeline">
         <div className="source-timeline-head">
           <div><span className="section-mono">Linha do tempo documental</span><strong>Drawing → FCB</strong></div>
           <span className={`source-timeline-status ${sourceTimeline?.status === 'fcb_detected' ? 'done' : 'pending'}`}>{timelineStatus}</span>
@@ -1944,7 +1963,7 @@ function RealSourcesPanel({ detail, loading, iso, onRefreshProject }: {
         {sourceTimeline?.status === 'awaiting_fcb' && (
           <small className="source-timeline-note">O Drawing já foi identificado. O cronômetro será fechado automaticamente assim que o FCB aparecer na fonte sincronizada.</small>
         )}
-      </div>
+      </div>}
 
       <StepFlowProjectBlock data={detail.stepflow} error={detail.stepflow_error} />
 
