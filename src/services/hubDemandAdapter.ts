@@ -83,6 +83,14 @@ function hhStageMappingIsReliable(row: HubDemandRow) {
 function stageMap(row: HubDemandRow): StageMap {
   const group = normalize(row.current_stage);
   const status = normalize(row.current_status);
+  const progress = Number(row.overall_progress || 0);
+  const dispatchComplete = progress >= 100 && (
+    group.includes('exped')
+    || group.includes('logistica')
+    || group.includes('enviado')
+    || status.includes('enviado')
+    || status.includes('finalizado')
+  );
 
   if (row.source_mode === 'ops_core') {
     const coreStage = stageMapFromTrackingKey(row.current_stage, row.current_status);
@@ -131,7 +139,7 @@ function stageMap(row: HubDemandRow): StageMap {
     return { stageKey: 'painting', sector: 'pintura', label: row.current_status || 'Pintura' };
   }
   if (group.includes('logistica') || group.includes('expedicao')) {
-    return { stageKey: 'dispatch', sector: 'expedicao', label: row.current_status || 'Expedição' };
+    return { stageKey: 'dispatch', sector: 'expedicao', label: dispatchComplete ? 'Enviado' : row.current_status || 'Expedição' };
   }
   if (group.includes('enviado')) {
     return { stageKey: 'dispatch', sector: 'expedicao', label: 'Enviado' };
@@ -158,6 +166,11 @@ function statusFor(row: HubDemandRow): DemandStatus {
   const group = normalize(row.current_stage);
   const status = normalize(row.current_status);
   const progress = Number(row.overall_progress || 0);
+  const dispatchComplete = progress >= 100 && (
+    group.includes('exped')
+    || group.includes('logistica')
+    || group.includes('enviado')
+  );
 
   if (row.hh_status === 'open') {
     return 'in_progress';
@@ -166,6 +179,7 @@ function statusFor(row: HubDemandRow): DemandStatus {
   if (
     group.includes('enviado')
     || status.includes('finalizado')
+    || dispatchComplete
     || normalize(row.project_status).includes('finished')
     || normalize(row.project_status).includes('enviado')
   ) return 'completed';
