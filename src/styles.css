@@ -208,11 +208,13 @@ h1,h2,h3,p { margin-top: 0; }
 .row-main:hover { background: #F9FCFF; }
 .bsp-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .bsp-orb { width: 38px; height: 38px; flex: none; display: grid; place-items: center; border-radius: 50%; background: linear-gradient(140deg,#EAF3FD,#D6E9FC); color: #1355C2; font: 700 9px 'IBM Plex Mono', monospace; border: 1px solid #D5E6F7; }
-.bsp-cell strong,.bsp-cell span,.project-cell strong,.project-cell span,.stage-ref strong,.stage-ref span,.owner-ref strong,.owner-ref span { display: block; min-width: 0; }
+.bsp-cell strong,.bsp-cell span,.project-cell strong,.project-cell span,.stage-ref strong,.stage-ref span,.owner-ref strong,.owner-ref span,.measure-ref strong,.measure-ref span { display: block; min-width: 0; }
 .bsp-cell strong { color: #0B2340; font: 600 11px 'IBM Plex Mono', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bsp-cell span { color: #1E86D8; font: 10px 'IBM Plex Mono', monospace; margin-top: 3px; }
 .project-cell strong,.stage-ref strong,.owner-ref strong { color: #24374B; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .project-cell span,.stage-ref span,.owner-ref span { color: #7B8FA2; font-size: 9px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.measure-ref strong { color: #24374B; font: 600 10px 'IBM Plex Mono', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.measure-ref span { color: #7B8FA2; font: 9px 'IBM Plex Mono', monospace; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .progress-ref strong { font: 600 10px 'IBM Plex Mono', monospace; color: #24374B; }
 .progress-ref > div { height: 4px; margin-top: 6px; background: #E7EFF9; border-radius: 2px; overflow: hidden; }
 .progress-ref i { display: block; height: 100%; border-radius: inherit; background: #17A9E8; }
@@ -438,8 +440,7 @@ h1,h2,h3,p { margin-top: 0; }
 
 @media (max-width: 1100px) {
   .header-nav { display: none; }
-  .table-head,.row-main { grid-template-columns: 1.2fr 1.35fr 1.35fr .8fr .8fr 24px; }
-  .owner-ref { display: none; }
+  .table-head,.row-main { grid-template-columns: 1.2fr 1.35fr 1.35fr .9fr .8fr .85fr 24px; }
   .detail-summary-grid { grid-template-columns: repeat(3,1fr); }
   .detail-content { grid-template-columns: 1fr; }
   .phase-data-grid { grid-template-columns: repeat(2,1fr); }
@@ -462,7 +463,7 @@ h1,h2,h3,p { margin-top: 0; }
   .search-field { flex-basis: 100%; width: 100%; }
   .table-head { display: none; }
   .row-main { grid-template-columns: 1fr auto; gap: 10px; padding: 12px; }
-  .project-cell,.owner-ref,.progress-ref { grid-column: 1; padding-left: 48px; }
+  .project-cell,.measure-ref,.progress-ref { grid-column: 1; padding-left: 48px; }
   .stage-ref { grid-column: 1; padding-left: 48px; }
   .row-main > div:nth-child(6) { grid-column: 1; padding-left: 48px; }
   .row-main > svg { grid-column: 2; grid-row: 1; }
@@ -731,9 +732,8 @@ h1,h2,h3,p { margin-top: 0; }
 }
 @media (max-width: 1100px) {
   .bsp-child-main {
-    grid-template-columns: 1.1fr 1.4fr .8fr 1fr auto;
+    grid-template-columns: 1.1fr 1.4fr .9fr .8fr 1fr auto;
   }
-  .bsp-child-main > .owner-ref { display: none; }
 }
 @media (max-width: 760px) {
   .bsp-tree-children { padding-left: 22px; padding-right: 8px; }
@@ -743,13 +743,12 @@ h1,h2,h3,p { margin-top: 0; }
     gap: 7px 10px;
     padding: 10px;
   }
-  .bsp-child-iso,.bsp-child-main > .stage-ref,.bsp-child-main > .progress-ref,.bsp-child-status {
+  .bsp-child-iso,.bsp-child-main > .stage-ref,.bsp-child-main > .measure-ref,.bsp-child-main > .progress-ref,.bsp-child-status {
     grid-column: 1;
   }
-  .bsp-child-main > .stage-ref,.bsp-child-main > .progress-ref,.bsp-child-status {
+  .bsp-child-main > .stage-ref,.bsp-child-main > .measure-ref,.bsp-child-main > .progress-ref,.bsp-child-status {
     padding-left: 0;
   }
-  .bsp-child-main > .owner-ref { display: none; }
   .open-child {
     grid-column: 2;
     grid-row: 1;

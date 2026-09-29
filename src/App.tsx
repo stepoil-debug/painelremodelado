@@ -2114,17 +2114,22 @@ function groupSectorLabel(demands: Demand[]) {
   return sectorKeys.length + ' setores';
 }
 
-function groupOwnerLabel(demands: Demand[]) {
-  const owners = [...new Set(demands.map((d) => pmOwnerLabel(d)))];
-  const namedOwners = owners.filter((owner) => owner !== 'PM não informado');
-  if (namedOwners.length === 1) return namedOwners[0];
-  if (namedOwners.length > 1) return namedOwners.length + ' PMs';
-  return 'PM não informado';
-}
-
 function pmOwnerLabel(demand: Pick<Demand, 'pm'>) {
   const label = pmDisplayLabel(demand.pm);
   return label === 'Sem PM' ? 'PM não informado' : 'PM · ' + label;
+}
+
+function sumDemandMeasure(demands: Demand[], field: 'weightKg' | 'm2') {
+  const values = demands
+    .map((demand) => demand[field])
+    .filter((value): value is number => value != null && Number.isFinite(Number(value)))
+    .map(Number);
+  return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
+}
+
+function formatMeasure(value: number | null | undefined, unit: 'kg' | 'm²') {
+  if (value == null || !Number.isFinite(Number(value))) return '—';
+  return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(Number(value)) + ' ' + unit;
 }
 
 function normalizeSearchValue(value: unknown) {
@@ -2452,7 +2457,7 @@ function Portfolio(props: {
             <span>BSP / ISO</span>
             <span>Projeto / Cliente</span>
             <span>Etapa atual</span>
-            <span>Responsável</span>
+            <span>Peso / m²</span>
             <button
               type="button"
               className={'table-sort-button ' + (progressSort !== 'none' ? 'active' : '')}
@@ -2528,7 +2533,8 @@ function BspTreeRow({
   const progress = groupProgress(group.demands);
   const stageLabel = groupStageLabel(group.demands);
   const sectorLabel = groupSectorLabel(group.demands);
-  const ownerLabel = groupOwnerLabel(group.demands);
+  const groupWeightKg = sumDemandMeasure(group.demands, 'weightKg');
+  const groupM2 = sumDemandMeasure(group.demands, 'm2');
   const differentStages = new Set(group.demands.map((d) => d.stage)).size > 1;
 
   return (
@@ -2553,9 +2559,9 @@ function BspTreeRow({
           <strong>{stageLabel}</strong>
           <span>{differentStages ? 'Itens distribuídos em ' + sectorLabel : sectorLabel}</span>
         </div>
-        <div className="owner-ref">
-          <strong>{ownerLabel}</strong>
-          <span>{group.demands.length} item(ns) na árvore</span>
+        <div className="measure-ref">
+          <strong>{formatMeasure(groupWeightKg, 'kg')}</strong>
+          <span>{formatMeasure(groupM2, 'm²')}</span>
         </div>
         <div className="progress-ref">
           <strong>{progress}%</strong>
@@ -2588,9 +2594,9 @@ function BspTreeRow({
                     <strong>{demand.stage}</strong>
                     <span>{demand.archived ? (demand.archiveSource || 'Arquivo OLD') + ' · histórico' : sectorName(demand.sector) + ' · há ' + elapsedLabel(demand.enteredAt)}</span>
                   </div>
-                  <div className="owner-ref">
-                    <strong>{pmOwnerLabel(demand)}</strong>
-                    <span>Responsável atual</span>
+                  <div className="measure-ref">
+                    <strong>{formatMeasure(demand.weightKg, 'kg')}</strong>
+                    <span>{formatMeasure(demand.m2, 'm²')}</span>
                   </div>
                   <div className="progress-ref">
                     <strong>{demand.progress}%</strong>

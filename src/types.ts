@@ -82,6 +82,8 @@ export interface Demand {
   completedAt?: string;
   slaDueAt?: string;
   progress: number;
+  weightKg?: number | null;
+  m2?: number | null;
   hhMinutes?: number;
   source: DemandSource;
   sourceMode?: 'legacy_tracking' | 'ops_core' | 'archived' | 'pending_validation';

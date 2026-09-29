@@ -197,6 +197,12 @@ function progressFor(row: HubDemandRow) {
   return Math.max(0, Math.min(100, Math.round(raw * 10) / 10));
 }
 
+function numericOrNull(value: number | string | null | undefined) {
+  if (value == null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalState {
   const demands: Demand[] = rows.map((row) => {
     const mapped = stageMap(row);
@@ -234,6 +240,8 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       completedAt: status === 'completed' ? enteredAt : undefined,
       slaDueAt: dateAtEndOfDay(row.replanned_finish || row.planned_finish),
       progress,
+      weightKg: numericOrNull(row.weight_kg),
+      m2: numericOrNull(row.m2),
       hhMinutes: row.hh_total_hh != null ? Math.round(Number(row.hh_total_hh) * 60) : undefined,
       activityKey: row.hh_activity_key || undefined,
       source: row.source_mode === 'ops_core' ? 'ops_core' : 'hub_readonly',
