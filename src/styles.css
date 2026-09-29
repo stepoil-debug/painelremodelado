@@ -576,6 +576,23 @@ h1,h2,h3,p { margin-top: 0; }
 .source-data-card span,.source-data-card strong { display: block; }
 .source-data-card span { color: #93A6B8; font-size: 7px; text-transform: uppercase; }
 .source-data-card strong { margin-top: 2px; color: #2C3E50; font-size: 8px; overflow-wrap: anywhere; }
+.dimensional-summary { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 7px; margin-bottom: 9px; }
+.dimensional-summary > div { padding: 8px 9px; border: 1px solid #E8EEF6; border-radius: 9px; background: #FBFDFF; }
+.dimensional-summary span,.dimensional-summary strong { display: block; }
+.dimensional-summary span { color: #8B9CAD; font-size: 7px; text-transform: uppercase; letter-spacing: .06em; }
+.dimensional-summary strong { margin-top: 3px; color: #0B2340; font: 600 14px 'IBM Plex Mono', monospace; }
+.dimensional-summary .yes { border-color: #BFE8D6; background: #F4FCF8; }
+.dimensional-summary .yes strong { color: #12845E; }
+.dimensional-summary .hold { border-color: #F2D59A; background: #FFFBF1; }
+.dimensional-summary .hold strong { color: #A36500; }
+.dimensional-summary .no { border-color: #F2C4C4; background: #FFF8F8; }
+.dimensional-summary .no strong { color: #C33D45; }
+.dimensional-source-table .source-mini-head,.dimensional-source-table .source-mini-row { grid-template-columns: 1.45fr .7fr 1fr .75fr .58fr; }
+.dimensional-indicator { display: inline-flex; min-width: 32px; justify-content: center; padding: 3px 6px; border-radius: 999px; font: 700 8px 'IBM Plex Mono', monospace; }
+.dimensional-indicator.yes { color: #12845E; background: #E7F7EF; }
+.dimensional-indicator.hold { color: #A36500; background: #FFF1C9; }
+.dimensional-indicator.no { color: #C33D45; background: #FFE6E6; }
+.dimensional-indicator.unknown { color: #5B7185; background: #EEF3F7; }
 
 @media (max-width: 900px) {
   .panel-login-page { grid-template-columns: 1fr; background: #F4F8FB; }
@@ -594,6 +611,9 @@ h1,h2,h3,p { margin-top: 0; }
   .source-card-grid { grid-template-columns: 1fr; }
   .source-mini-head,.source-mini-row { grid-template-columns: 1.2fr .55fr .9fr; }
   .source-mini-head span:nth-child(4),.source-mini-row span:nth-child(4) { display: none; }
+  .dimensional-summary { grid-template-columns: repeat(3,1fr); }
+  .dimensional-source-table .source-mini-head,.dimensional-source-table .source-mini-row { grid-template-columns: 1.2fr .65fr .75fr .58fr; }
+  .dimensional-source-table .source-mini-head span:nth-child(4),.dimensional-source-table .source-mini-row span:nth-child(4) { display: none; }
 }
 
 

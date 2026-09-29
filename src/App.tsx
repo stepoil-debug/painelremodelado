@@ -1041,6 +1041,47 @@ function textField(record: Record<string, unknown>, key: string, fallback = '—
   return String(value);
 }
 
+function dimensionalIndicator(row: Record<string, unknown>) {
+  const value = String(row.indicator ?? row.status ?? row.approval ?? '').trim();
+  const normalized = value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
+
+  if (!normalized) return '—';
+  if (normalized.includes('HOLD') || normalized.includes('PEND') || normalized === '!') return 'HOLD';
+  if (normalized === 'YES' || normalized === 'SIM' || normalized === 'OK' || normalized === '✓' || normalized === 'CHECK') return 'YES';
+  if (normalized === 'NO' || normalized === 'NAO' || normalized === 'X' || normalized === '✕' || normalized === 'N') return 'NO';
+  return value;
+}
+
+function dimensionalDate(row: Record<string, unknown>) {
+  const value = row.report_date ?? row.report_issued_date ?? row.issue_date ?? row.emission_date;
+  if (value === null || value === undefined || value === '') return 'Não emitido';
+
+  const text = String(value).trim();
+  const dayFirst = text.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);
+  if (dayFirst) {
+    const year = dayFirst[3].length === 2 ? 2000 + Number(dayFirst[3]) : Number(dayFirst[3]);
+    return new Intl.DateTimeFormat('pt-BR').format(new Date(year, Number(dayFirst[2]) - 1, Number(dayFirst[1]), 12));
+  }
+
+  const isoDate = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoDate) {
+    return new Intl.DateTimeFormat('pt-BR').format(new Date(Number(isoDate[1]), Number(isoDate[2]) - 1, Number(isoDate[3]), 12));
+  }
+
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? text : new Intl.DateTimeFormat('pt-BR').format(parsed);
+}
+
+function dimensionalIndicatorClass(indicator: string) {
+  if (indicator === 'YES') return 'dimensional-indicator yes';
+  if (indicator === 'HOLD') return 'dimensional-indicator hold';
+  if (indicator === 'NO') return 'dimensional-indicator no';
+  return 'dimensional-indicator unknown';
+}
+
 function asRecords(value: unknown[] | undefined) {
   return (value || []).filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
 }
@@ -1920,18 +1961,42 @@ function RealSourcesPanel({ detail, loading, iso }: {
 
       {dimensional.length > 0 && (
         <div className="source-block">
-          <div className="source-block-head"><strong>3D / Dimensional</strong><span>{dimensional.length} registro(s)</span></div>
-          <div className="source-mini-table dimensional-source-table">
-            <div className="source-mini-head"><span>Referência</span><span>Spool</span><span>Etapa</span><span>Status</span></div>
-            {dimensional.slice(0, 10).map((row, index) => (
-              <div className="source-mini-row" key={String(row.source_row_id || index)}>
-                <span>{textField(row, 'sob_reference')}</span>
-                <span>{textField(row, 'spool')}</span>
-                <span>{textField(row, 'inspection_stage')}</span>
-                <span>{textField(row, 'status')}</span>
-              </div>
-            ))}
-          </div>
+          {(() => {
+            const indicators = dimensional.map(dimensionalIndicator);
+            const emitted = dimensional.filter((row) => dimensionalDate(row) !== 'Não emitido').length;
+            const yes = indicators.filter((value) => value === 'YES').length;
+            const hold = indicators.filter((value) => value === 'HOLD').length;
+            const no = indicators.filter((value) => value === 'NO').length;
+
+            return (
+              <>
+                <div className="source-block-head"><strong>3D / Dimensional Control · BSP</strong><span>{dimensional.length} registro(s) referenciado(s)</span></div>
+                <div className="dimensional-summary" aria-label="Resumo dos relatórios dimensionais">
+                  <div><span>Relatórios</span><strong>{dimensional.length}</strong></div>
+                  <div><span>Emitidos</span><strong>{emitted}</strong></div>
+                  <div className="yes"><span>YES</span><strong>{yes}</strong></div>
+                  <div className="hold"><span>HOLD</span><strong>{hold}</strong></div>
+                  <div className="no"><span>NO</span><strong>{no}</strong></div>
+                </div>
+                <div className="source-mini-table dimensional-source-table">
+                  <div className="source-mini-head"><span>Relatório / referência</span><span>Spool</span><span>Etapa</span><span>Emissão</span><span>Indicador</span></div>
+                  {dimensional.slice(0, 20).map((row, index) => {
+                    const indicator = dimensionalIndicator(row);
+                    return (
+                      <div className="source-mini-row" key={String(row.source_row_id || index)}>
+                        <span>{textField(row, 'sob_reference', textField(row, 'report_reference'))}</span>
+                        <span>{textField(row, 'spool')}</span>
+                        <span>{textField(row, 'inspection_stage')}</span>
+                        <span>{dimensionalDate(row)}</span>
+                        <span><b className={dimensionalIndicatorClass(indicator)}>{indicator}</b></span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {dimensional.length > 20 && <div className="source-more">+ {dimensional.length - 20} registro(s) dimensional(is) vinculados à BSP.</div>}
+              </>
+            );
+          })()}
         </div>
       )}
 
