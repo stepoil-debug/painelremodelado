@@ -76,14 +76,14 @@ function modeLabel(mode?: string | null) {
   return 'Pendente';
 }
 
-function isNewDrawingCandidate(candidate: HubRegistrationCandidate) {
+function isNewRegistrationCandidate(candidate: HubRegistrationCandidate) {
   const detection = candidate.suggested_data?.detection;
   return Boolean(
-    (candidate.source_systems?.includes('fcb') || candidate.fcb_status === 'detected')
-    && detection
+    detection
     && typeof detection === 'object'
-    && (detection as Record<string, unknown>).source === 'fcb'
+    && ['drawing', 'fcb'].includes(String((detection as Record<string, unknown>).source || ''))
     && (detection as Record<string, unknown>).new_project === true
+    && !candidate.source_systems?.includes('legacy_snapshot')
   );
 }
 
@@ -280,12 +280,12 @@ export default function CoreMigrationPage() {
       await refreshCoreRegistration();
       const [migration, queue] = await Promise.all([
         loadCoreMigrationStatus(),
-        loadRegistrationCandidates('', 500),
+        loadRegistrationCandidates('validation_required', 500),
       ]);
       setStatus(migration);
       setCandidates(queue);
 
-      const newDrawing = queue.filter(isNewDrawingCandidate);
+      const newDrawing = queue.filter(isNewRegistrationCandidate);
       setNotice(
         completed
           ? 'FCB atualizado. ' + newDrawing.length + ' nova(s) BSP(s) do FCB aguardando validação.'
@@ -299,7 +299,7 @@ export default function CoreMigrationPage() {
   }
 
   const newDrawingCount = useMemo(
-    () => candidates.filter(isNewDrawingCandidate).length,
+    () => candidates.filter(isNewRegistrationCandidate).length,
     [candidates],
   );
 
@@ -347,7 +347,7 @@ export default function CoreMigrationPage() {
         <article><span>No OPS CORE</span><strong>{status?.projects.cutover ?? '—'}</strong><small>sem leitura do Tracking</small></article>
         <article><span>Legado</span><strong>{status?.projects.legacy ?? '—'}</strong><small>aguardando validação</small></article>
         <article><span>Fila de validação</span><strong>{status?.candidates.pending ?? '—'}</strong><small>fontes operacionais</small></article>
-        <article className={newDrawingCount > 0 ? 'core-kpi-alert' : ''}><span>Novas do FCB</span><strong>{newDrawingCount}</strong><small>{newDrawingCount > 0 ? 'requer conferência' : 'nenhuma nova BSP'}</small></article>
+        <article className={newDrawingCount > 0 ? 'core-kpi-alert' : ''}><span>Novas do Drawing</span><strong>{newDrawingCount}</strong><small>{newDrawingCount > 0 ? 'requer conferência' : 'nenhuma nova BSP'}</small></article>
         <article><span>Itens migrados</span><strong>{status?.items.total ?? '—'}</strong><small>com histórico de etapas</small></article>
       </div>
 
@@ -373,7 +373,7 @@ export default function CoreMigrationPage() {
                   <small>{(item.source_systems || []).join(' + ') || 'fonte pendente'} · FCB {candidateFcbStatus(item) === 'detected' ? 'detectado' : 'aguardando'}</small>
                 </div>
                 <div className="core-candidate-meta">
-                  {isNewDrawingCandidate(item) && <em className="mode drawing-new">NOVA DO FCB</em>}
+                  {isNewRegistrationCandidate(item) && <em className="mode drawing-new">NOVA DO DRAWING</em>}
                   <em className={'mode ' + (item.source_mode || 'pending')}>{modeLabel(item.source_mode)}</em>
                   <span>{item.item_count ?? 0} itens</span>
                   <ChevronRight size={16} />
