@@ -3336,6 +3336,7 @@ function DemandDetail(props: {
   const canOperate = demand.source === 'demo'
     || demand.source === 'ops_core'
     || (demand.source === 'hub_readonly' && Boolean(demand.legacyProjectRowId && demand.legacyIsoKey && demand.iso));
+  const canAdvance = demand.status === 'in_progress' || demand.status === 'late';
   const progressChoices = [25, 50, 75, 90].filter((value) => value > demand.progress);
   const goalfyStatus = props.goalfyShipping?.summary?.shipping_status;
   const goalfySent = goalfyStatus === 'complete' || goalfyStatus === 'partial' || goalfyStatus === 'shipping_evidence';
@@ -3446,8 +3447,8 @@ function DemandDetail(props: {
                 {canOperate && demand.status !== 'completed' && (
                   <div className="detail-actions">
                     {demand.status === 'new' && <button className="primary-ref" onClick={props.onAssume}><UserCheck size={14} /> Assumir demanda</button>}
-                    {demand.status === 'in_progress' && <button className="primary-ref" onClick={() => { setAdvanceProgress(progressChoices[0] ?? 90); setAdvanceOpen(true); }}><Activity size={14} /> Avançar etapa</button>}
-                    {demand.status === 'in_progress' && <button className="soft-btn" onClick={props.onWait}><PauseCircle size={14} /> Aguardar</button>}
+                    {canAdvance && <button className="primary-ref" onClick={() => { setAdvanceProgress(progressChoices[0] ?? 90); setAdvanceOpen(true); }}><Activity size={14} /> Avançar etapa</button>}
+                    {canAdvance && <button className="soft-btn" onClick={props.onWait}><PauseCircle size={14} /> Aguardar</button>}
                     {(demand.status === 'waiting' || demand.status === 'blocked') && <button className="soft-btn" onClick={props.onResume}><PlayCircle size={14} /> Retomar</button>}
                     {demand.status !== 'blocked' && <button className="danger-ref" onClick={props.onBlock}><XCircle size={14} /> Bloquear</button>}
                     {(demand.source === 'demo' || demand.source === 'ops_core') && !hasStart && <button className="soft-btn" onClick={() => startPhotoInput.current?.click()}><ImagePlus size={14} /> Foto início</button>}
