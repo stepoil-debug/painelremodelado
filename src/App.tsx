@@ -2437,7 +2437,7 @@ function Portfolio(props: {
 
   const bspOptions = useMemo(() => {
     return groupDemandsByBsp(props.demands)
-      .map((group) => ({ key: group.key, label: group.bsp, count: group.demands.length }))
+      .map((group) => ({ key: bspFilterKey(group.bsp), label: group.bsp, count: group.demands.length }))
       .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { numeric: true, sensitivity: 'base' }));
   }, [props.demands]);
 
