@@ -545,7 +545,7 @@ Deno.serve(async (request: Request) => {
       }
 
       const sheet = await loadSheet(token, source);
-      const { data: runId, error: beginError } = await admin.rpc("ops_panel_begin_sync", {
+      const { data: begin, error: beginError } = await admin.rpc("ops_panel_try_begin_sync", {
         p_source_key: source.source_key,
         p_source_version: version,
         p_metadata: {
@@ -555,7 +555,18 @@ Deno.serve(async (request: Request) => {
           total_row_count: sheet.totalRowCount,
         },
       });
-      if (beginError || !runId) throw new Error(beginError?.message || "Falha ao iniciar sync.");
+      if (beginError) throw new Error(beginError.message);
+      if (!begin?.acquired) {
+        results.push({
+          source: source.source_key,
+          status: "in_progress",
+          version,
+          run_id: begin?.run_id ?? null,
+          started_at: begin?.started_at ?? null,
+        });
+        continue;
+      }
+      const runId = String(begin.run_id);
 
       const batchSize = 200;
       for (let i = 0; i < sheet.rows.length; i += batchSize) {
