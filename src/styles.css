@@ -149,6 +149,110 @@ h1,h2,h3,p { margin-top: 0; }
 .status-filter {
   width: 100%;
 }
+.stage-filter-control {
+  position: relative;
+  z-index: 8;
+  overflow: visible;
+}
+.filter-trigger {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #18324D;
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.filter-trigger svg { flex: none; color: #193A59; transition: transform .16s ease; }
+.stage-filter-control:has(.filter-trigger[aria-expanded="true"]) .filter-trigger svg { transform: rotate(180deg); }
+.stage-filter-menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  min-width: 280px;
+  max-width: min(360px, 80vw);
+  padding: 12px;
+  border: 1px solid #DCE8F4;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 14px 32px rgba(22, 61, 100, .16);
+  z-index: 20;
+}
+.stage-filter-bsp {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #EDF2F7;
+}
+.stage-filter-bsp > span {
+  flex: none;
+  color: #8297AA;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.stage-filter-bsp select {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #18324D;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.stage-filter-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0 7px;
+}
+.stage-filter-menu-head strong,
+.stage-filter-menu-head small { display: block; }
+.stage-filter-menu-head strong { color: #163B60; font-size: 11px; }
+.stage-filter-menu-head small { margin-top: 3px; color: #8397A9; font-size: 9px; }
+.stage-filter-menu-head button {
+  border: 0;
+  background: transparent;
+  color: #176BB0;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.stage-filter-options {
+  display: grid;
+  gap: 3px;
+  max-height: 230px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.stage-filter-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 7px;
+  border-radius: 7px;
+  color: #38556C;
+  font-size: 10px;
+  cursor: pointer;
+}
+.stage-filter-option:hover { background: #F3F8FD; }
+.stage-filter-option input { width: 14px; height: 14px; accent-color: #0D8BC7; }
+.stage-filter-empty { display: block; padding: 12px 6px; color: #8397A9; font-size: 10px; }
 .flag-filter {
   height: 38px;
   width: 100%;

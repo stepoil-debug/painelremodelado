@@ -220,7 +220,8 @@ export default function App() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [mode, setMode] = useState<ListMode>('table');
   const [search, setSearch] = useState('');
-  const [pmFilter, setPmFilter] = useState('all');
+  const [bspFilter, setBspFilter] = useState('all');
+  const [stageFilters, setStageFilters] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<PortfolioStatusFilter>('all');
   const [priorityOnly, setPriorityOnly] = useState(false);
   const [lateOnly, setLateOnly] = useState(false);
@@ -930,8 +931,10 @@ export default function App() {
             setMode={setMode}
             search={search}
             setSearch={setSearch}
-            pmFilter={pmFilter}
-            setPmFilter={setPmFilter}
+            bspFilter={bspFilter}
+            setBspFilter={setBspFilter}
+            stageFilters={stageFilters}
+            setStageFilters={setStageFilters}
             statusFilter={statusFilter}
             setStatusFilter={setStatusFilter}
             priorityOnly={priorityOnly}
@@ -2407,8 +2410,10 @@ function Portfolio(props: {
   setMode: (value: ListMode) => void;
   search: string;
   setSearch: (value: string) => void;
-  pmFilter: string;
-  setPmFilter: (value: string) => void;
+  bspFilter: string;
+  setBspFilter: (value: string) => void;
+  stageFilters: string[];
+  setStageFilters: (value: string[]) => void;
   statusFilter: PortfolioStatusFilter;
   setStatusFilter: (value: PortfolioStatusFilter) => void;
   priorityOnly: boolean;
@@ -2428,42 +2433,39 @@ function Portfolio(props: {
 }) {
   const [progressSort, setProgressSort] = useState<'none' | 'desc' | 'asc'>('none');
   const [statusSort, setStatusSort] = useState<'none' | 'desc' | 'asc'>('none');
+  const [stageFilterOpen, setStageFilterOpen] = useState(false);
 
-  const pmOptions = useMemo(() => {
-    const options = new Map<string, { key: string; label: string; raw: string }>();
-    for (const demand of props.demands) {
-      const raw = String(demand.pm ?? '').trim();
-      const key = normalizePmKey(raw);
-      if (!key) continue;
-
-      const label = pmDisplayLabel(raw);
-      const current = options.get(key);
-      const shouldReplace = !current
-        || (current.raw.includes('@') && !raw.includes('@'))
-        || label.length > current.label.length;
-
-      if (shouldReplace) options.set(key, { key, label, raw });
-    }
-
-    return [...options.values()]
-      .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' }));
+  const bspOptions = useMemo(() => {
+    return groupDemandsByBsp(props.demands)
+      .map((group) => ({ key: group.key, label: group.bsp, count: group.demands.length }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { numeric: true, sensitivity: 'base' }));
   }, [props.demands]);
 
-  const pmBspKeys = useMemo(() => {
-    if (props.pmFilter === 'all') return null;
+  const stageOptions = useMemo(() => {
+    const source = props.bspFilter === 'all'
+      ? props.demands
+      : props.demands.filter((demand) => bspFilterKey(demand.bsp) === props.bspFilter);
+    const options = new Map<string, { key: string; label: string }>();
 
-    const keys = new Set<string>();
-    for (const demand of props.demands) {
-      if (normalizePmKey(demand.pm) === props.pmFilter) {
-        keys.add(bspFilterKey(demand.bsp));
-      }
+    for (const demand of source) {
+      const key = String(demand.stageKey || 'unclassified');
+      const label = String(demand.stage || getStage(key)?.label || 'Etapa não classificada');
+      const current = options.get(key);
+      if (!current || label.length > current.label.length) options.set(key, { key, label });
     }
-    return keys;
-  }, [props.demands, props.pmFilter]);
+
+    return [...options.values()].sort((a, b) => {
+      const aIndex = getStageIndex(a.key);
+      const bIndex = getStageIndex(b.key);
+      if (aIndex !== bIndex) return (aIndex < 0 ? 999 : aIndex) - (bIndex < 0 ? 999 : bIndex);
+      return a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' });
+    });
+  }, [props.demands, props.bspFilter]);
 
   const filtered = useMemo(() => {
     return props.demands
-      .filter((d) => !pmBspKeys || pmBspKeys.has(bspFilterKey(d.bsp)))
+      .filter((d) => props.bspFilter === 'all' || bspFilterKey(d.bsp) === props.bspFilter)
+      .filter((d) => !props.stageFilters.length || props.stageFilters.includes(String(d.stageKey || 'unclassified')))
       .filter((d) => props.sector === 'all' || d.sector === props.sector)
       .filter((d) =>
         props.statusFilter === 'all'
@@ -2473,7 +2475,16 @@ function Portfolio(props: {
       .filter((d) => !props.lateOnly || effectiveStatus(d) === 'late')
       .filter((d) => matchesDemandSearch(d, props.search))
       .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority] || new Date(a.enteredAt).getTime() - new Date(b.enteredAt).getTime());
-  }, [props.demands, props.pmFilter, pmBspKeys, props.sector, props.statusFilter, props.priorityOnly, props.lateOnly, props.search]);
+  }, [props.demands, props.bspFilter, props.stageFilters, props.sector, props.statusFilter, props.priorityOnly, props.lateOnly, props.search]);
+
+  const selectedBspLabel = props.bspFilter === 'all'
+    ? 'Todas as BSPs'
+    : bspOptions.find((option) => option.key === props.bspFilter)?.label || props.bspFilter;
+  const stageFilterSummary = props.stageFilters.length === 0
+    ? 'Todas as etapas'
+    : props.stageFilters.length === 1
+      ? '1 etapa selecionada'
+      : props.stageFilters.length + ' etapas selecionadas';
 
   const grouped = useMemo(() => {
     const groups = groupDemandsByBsp(filtered);
@@ -2598,13 +2609,65 @@ function Portfolio(props: {
           />
           {props.search && <button type="button" className="search-clear" onClick={() => props.setSearch('')}>Limpar</button>}
         </label>
-        <label className="filter-field select-filter pm-filter">
-          <span>PM</span>
-          <select value={props.pmFilter} onChange={(e) => props.setPmFilter(e.target.value)}>
-            <option value="all">Todos os PMs</option>
-            {pmOptions.map((pm) => <option key={pm.key} value={pm.key}>{pm.label}</option>)}
-          </select>
-        </label>
+        <div className="filter-field select-filter stage-filter-control">
+          <span>Etapas</span>
+          <button
+            type="button"
+            className="filter-trigger"
+            aria-expanded={stageFilterOpen}
+            onClick={() => setStageFilterOpen((open) => !open)}
+            title="Escolha uma BSP e uma ou mais etapas"
+          >
+            <span>{stageFilterSummary}</span>
+            <ChevronDown size={14} />
+          </button>
+          {stageFilterOpen && (
+            <div className="stage-filter-menu">
+              <label className="stage-filter-bsp">
+                <span>BSP</span>
+                <select
+                  value={props.bspFilter}
+                  onChange={(event) => {
+                    props.setBspFilter(event.target.value);
+                    props.setStageFilters([]);
+                  }}
+                >
+                  <option value="all">Todas as BSPs</option>
+                  {bspOptions.map((option) => (
+                    <option key={option.key} value={option.key}>{option.label} · {option.count} itens</option>
+                  ))}
+                </select>
+              </label>
+              <div className="stage-filter-menu-head">
+                <div>
+                  <strong>{selectedBspLabel}</strong>
+                  <small>Selecione uma ou mais etapas</small>
+                </div>
+                {props.stageFilters.length > 0 && (
+                  <button type="button" onClick={() => props.setStageFilters([])}>Limpar</button>
+                )}
+              </div>
+              <div className="stage-filter-options">
+                {stageOptions.length ? stageOptions.map((option) => (
+                  <label key={option.key} className="stage-filter-option">
+                    <input
+                      type="checkbox"
+                      checked={props.stageFilters.includes(option.key)}
+                      onChange={(event) => {
+                        props.setStageFilters(event.target.checked
+                          ? [...props.stageFilters, option.key]
+                          : props.stageFilters.filter((key) => key !== option.key));
+                      }}
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                )) : (
+                  <small className="stage-filter-empty">Nenhuma etapa disponível para esta BSP.</small>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
         <label className="filter-field select-filter sector-filter">
           <span>Setor</span>
           <select value={props.sector} onChange={(e) => props.setSector(e.target.value as SectorFilter)}>
