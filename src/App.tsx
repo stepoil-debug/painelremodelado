@@ -3316,8 +3316,14 @@ function DemandDetail(props: {
   const hhStartPhotos = hhPhotos.filter((photo) => photoMoment(photo) === 'start');
   const hhFinishPhotos = hhPhotos.filter((photo) => photoMoment(photo) === 'finish');
   const hhExtraPhotos = hhPhotos.filter((photo) => photoMoment(photo) === 'extra');
-  const hasStart = demand.evidences.some((e) => e.type === 'start') || (demand.source === 'ops_core' ? panelStartPhotos.length > 0 : hhStartPhotos.length > 0);
-  const hasFinish = demand.evidences.some((e) => e.type === 'finish') || (demand.source === 'ops_core' ? panelFinishPhotos.length > 0 : hhFinishPhotos.length > 0);
+  const demandStartPhotos = demand.evidences.filter((e) => e.type === 'start').length;
+  const demandFinishPhotos = demand.evidences.filter((e) => e.type === 'finish').length;
+  const demandExtraPhotos = demand.evidences.filter((e) => e.type === 'extra').length;
+  const sourceStartPhotos = demand.source === 'ops_core' ? panelStartPhotos : hhStartPhotos;
+  const sourceFinishPhotos = demand.source === 'ops_core' ? panelFinishPhotos : hhFinishPhotos;
+  const sourceExtraPhotos = demand.source === 'ops_core' ? panelExtraPhotos : hhExtraPhotos;
+  const hasStart = demandStartPhotos > 0 || sourceStartPhotos.length > 0;
+  const hasFinish = demandFinishPhotos > 0 || sourceFinishPhotos.length > 0;
   const totalEvidence = demand.evidences.length + hhPhotos.length + panelPhotos.length;
   const canOperate = demand.source === 'demo' || demand.source === 'ops_core';
   const progressChoices = [25, 50, 75, 90].filter((value) => value > demand.progress);
@@ -3422,9 +3428,9 @@ function DemandDetail(props: {
                 <div className="detail-progress-block"><div><span>Avanço da etapa</span><strong>{demand.progress}%</strong></div><div className="detail-progress"><i style={{ width: demand.progress + '%' }} /></div></div>
                 {demand.blocker && <div className="reference-warning"><AlertTriangle size={17} /><div><strong>Bloqueio ativo</strong><p>{demand.blocker.note}</p></div></div>}
                 <div className="evidence-reference">
-                  <div className={hasStart ? 'ready' : ''}><ImagePlus size={16} /><span>Foto inicial</span><strong>{props.evidenceLoading ? '...' : hasStart ? (demand.source === 'ops_core' ? panelStartPhotos.length : hhStartPhotos.length) + ' disponível(is)' : 'Pendente'}</strong></div>
-                  <div className={hasFinish ? 'ready' : ''}><ImagePlus size={16} /><span>Foto final</span><strong>{props.evidenceLoading ? '...' : hasFinish ? (demand.source === 'ops_core' ? panelFinishPhotos.length : hhFinishPhotos.length) + ' disponível(is)' : 'Pendente'}</strong></div>
-                  <div><FileText size={16} /><span>Extras</span><strong>{props.evidenceLoading ? '...' : (demand.source === 'ops_core' ? panelExtraPhotos.length : hhExtraPhotos.length) + demand.evidences.filter((e) => e.type === 'extra').length}</strong></div>
+                  <div className={hasStart ? 'ready' : ''}><ImagePlus size={16} /><span>Foto inicial</span><strong>{props.evidenceLoading ? '...' : hasStart ? demandStartPhotos + sourceStartPhotos.length + ' disponível(is)' : 'Pendente'}</strong></div>
+                  <div className={hasFinish ? 'ready' : ''}><ImagePlus size={16} /><span>Foto final</span><strong>{props.evidenceLoading ? '...' : hasFinish ? demandFinishPhotos + sourceFinishPhotos.length + ' disponível(is)' : 'Pendente'}</strong></div>
+                  <div><FileText size={16} /><span>Extras</span><strong>{props.evidenceLoading ? '...' : sourceExtraPhotos.length + demandExtraPhotos}</strong></div>
                 </div>
 
                 {canOperate && demand.status !== 'completed' && (
