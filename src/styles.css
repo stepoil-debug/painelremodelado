@@ -186,32 +186,6 @@ h1,h2,h3,p { margin-top: 0; }
   box-shadow: 0 14px 32px rgba(22, 61, 100, .16);
   z-index: 20;
 }
-.stage-filter-bsp {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #EDF2F7;
-}
-.stage-filter-bsp > span {
-  flex: none;
-  color: #8297AA;
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: .07em;
-  text-transform: uppercase;
-}
-.stage-filter-bsp select {
-  min-width: 0;
-  flex: 1;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: #18324D;
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
 .stage-filter-menu-head {
   display: flex;
   align-items: center;

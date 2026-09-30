@@ -220,7 +220,6 @@ export default function App() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [mode, setMode] = useState<ListMode>('table');
   const [search, setSearch] = useState('');
-  const [bspFilter, setBspFilter] = useState('all');
   const [stageFilters, setStageFilters] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<PortfolioStatusFilter>('all');
   const [priorityOnly, setPriorityOnly] = useState(false);
@@ -931,8 +930,6 @@ export default function App() {
             setMode={setMode}
             search={search}
             setSearch={setSearch}
-            bspFilter={bspFilter}
-            setBspFilter={setBspFilter}
             stageFilters={stageFilters}
             setStageFilters={setStageFilters}
             statusFilter={statusFilter}
@@ -2329,14 +2326,6 @@ function normalizeIdentifierSearch(value: unknown) {
     .replace(/^spl/, '');
 }
 
-function normalizePmKey(value: unknown) {
-  let raw = String(value ?? '').trim().replace(/^PM\s*[·:\-]?\s*/i, '');
-  if (raw.includes('@')) {
-    raw = raw.split('@')[0].replace(/[._-]+/g, ' ');
-  }
-  return normalizeSearchValue(raw);
-}
-
 function pmDisplayLabel(value: unknown) {
   let raw = String(value ?? '').trim().replace(/^PM\s*[·:\-]?\s*/i, '');
   if (!raw) return 'Sem PM';
@@ -2346,13 +2335,6 @@ function pmDisplayLabel(value: unknown) {
       .replace(/\b\w/g, (char) => char.toUpperCase());
   }
   return raw;
-}
-
-function bspFilterKey(value: unknown) {
-  return String(value ?? '')
-    .toUpperCase()
-    .replace(/^BSP[\s_-]*/i, '')
-    .replace(/[^A-Z0-9]/g, '');
 }
 
 function matchesDemandSearch(demand: Demand, rawQuery: string) {
@@ -2410,8 +2392,6 @@ function Portfolio(props: {
   setMode: (value: ListMode) => void;
   search: string;
   setSearch: (value: string) => void;
-  bspFilter: string;
-  setBspFilter: (value: string) => void;
   stageFilters: string[];
   setStageFilters: (value: string[]) => void;
   statusFilter: PortfolioStatusFilter;
@@ -2435,16 +2415,10 @@ function Portfolio(props: {
   const [statusSort, setStatusSort] = useState<'none' | 'desc' | 'asc'>('none');
   const [stageFilterOpen, setStageFilterOpen] = useState(false);
 
-  const bspOptions = useMemo(() => {
-    return groupDemandsByBsp(props.demands)
-      .map((group) => ({ key: bspFilterKey(group.bsp), label: group.bsp, count: group.demands.length }))
-      .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { numeric: true, sensitivity: 'base' }));
-  }, [props.demands]);
-
   const stageOptions = useMemo(() => {
-    const source = props.bspFilter === 'all'
-      ? props.demands
-      : props.demands.filter((demand) => bspFilterKey(demand.bsp) === props.bspFilter);
+    const source = props.search.trim()
+      ? props.demands.filter((demand) => matchesDemandSearch(demand, props.search))
+      : props.demands;
     const options = new Map<string, { key: string; label: string }>();
 
     for (const demand of source) {
@@ -2460,11 +2434,10 @@ function Portfolio(props: {
       if (aIndex !== bIndex) return (aIndex < 0 ? 999 : aIndex) - (bIndex < 0 ? 999 : bIndex);
       return a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' });
     });
-  }, [props.demands, props.bspFilter]);
+  }, [props.demands, props.search]);
 
   const filtered = useMemo(() => {
     return props.demands
-      .filter((d) => props.bspFilter === 'all' || bspFilterKey(d.bsp) === props.bspFilter)
       .filter((d) => !props.stageFilters.length || props.stageFilters.includes(String(d.stageKey || 'unclassified')))
       .filter((d) => props.sector === 'all' || d.sector === props.sector)
       .filter((d) =>
@@ -2475,16 +2448,30 @@ function Portfolio(props: {
       .filter((d) => !props.lateOnly || effectiveStatus(d) === 'late')
       .filter((d) => matchesDemandSearch(d, props.search))
       .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority] || new Date(a.enteredAt).getTime() - new Date(b.enteredAt).getTime());
-  }, [props.demands, props.bspFilter, props.stageFilters, props.sector, props.statusFilter, props.priorityOnly, props.lateOnly, props.search]);
+  }, [props.demands, props.stageFilters, props.sector, props.statusFilter, props.priorityOnly, props.lateOnly, props.search]);
 
-  const selectedBspLabel = props.bspFilter === 'all'
-    ? 'Todas as BSPs'
-    : bspOptions.find((option) => option.key === props.bspFilter)?.label || props.bspFilter;
+  const searchScopeGroups = useMemo(() => {
+    const source = props.search.trim()
+      ? props.demands.filter((demand) => matchesDemandSearch(demand, props.search))
+      : props.demands;
+    return groupDemandsByBsp(source);
+  }, [props.demands, props.search]);
+  const selectedBspLabel = props.search.trim()
+    ? searchScopeGroups.length === 1
+      ? 'BSP ' + searchScopeGroups[0].bsp
+      : searchScopeGroups.length + ' BSPs encontradas'
+    : 'Todas as BSPs';
   const stageFilterSummary = props.stageFilters.length === 0
     ? 'Todas as etapas'
     : props.stageFilters.length === 1
       ? '1 etapa selecionada'
       : props.stageFilters.length + ' etapas selecionadas';
+
+  useEffect(() => {
+    const validStageKeys = new Set(stageOptions.map((option) => option.key));
+    const nextStageFilters = props.stageFilters.filter((key) => validStageKeys.has(key));
+    if (nextStageFilters.length !== props.stageFilters.length) props.setStageFilters(nextStageFilters);
+  }, [props.stageFilters, props.setStageFilters, stageOptions]);
 
   const grouped = useMemo(() => {
     const groups = groupDemandsByBsp(filtered);
@@ -2616,32 +2603,17 @@ function Portfolio(props: {
             className="filter-trigger"
             aria-expanded={stageFilterOpen}
             onClick={() => setStageFilterOpen((open) => !open)}
-            title="Escolha uma BSP e uma ou mais etapas"
+            title="Pesquise uma BSP no campo de busca e selecione uma ou mais etapas"
           >
             <span>{stageFilterSummary}</span>
             <ChevronDown size={14} />
           </button>
           {stageFilterOpen && (
             <div className="stage-filter-menu">
-              <label className="stage-filter-bsp">
-                <span>BSP</span>
-                <select
-                  value={props.bspFilter}
-                  onChange={(event) => {
-                    props.setBspFilter(event.target.value);
-                    props.setStageFilters([]);
-                  }}
-                >
-                  <option value="all">Todas as BSPs</option>
-                  {bspOptions.map((option) => (
-                    <option key={option.key} value={option.key}>{option.label} · {option.count} itens</option>
-                  ))}
-                </select>
-              </label>
               <div className="stage-filter-menu-head">
                 <div>
                   <strong>{selectedBspLabel}</strong>
-                  <small>Selecione uma ou mais etapas</small>
+                  <small>{props.search.trim() ? 'Etapas da busca atual' : 'Digite uma BSP no campo de busca'}</small>
                 </div>
                 {props.stageFilters.length > 0 && (
                   <button type="button" onClick={() => props.setStageFilters([])}>Limpar</button>
