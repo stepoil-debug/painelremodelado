@@ -618,10 +618,6 @@ Deno.serve(async (request: Request) => {
       : reconciled;
   }
 
-  if (results.some((row) => row.source === "wip" || row.source === "drawing" || row.source === "tracking")) {
-    await admin.rpc("ops_core_refresh_registration");
-  }
-
   let demandCache: unknown = null;
   if (results.some((row) => ["tracking", "wip", "drawing"].includes(String(row.source || "")) && row.status !== "error")) {
     const { data: cacheData, error: cacheError } = await admin.rpc("ops_core_refresh_demand_feed_cache");

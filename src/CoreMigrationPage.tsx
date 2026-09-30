@@ -277,7 +277,6 @@ export default function CoreMigrationPage() {
         }
       }
 
-      await refreshCoreRegistration();
       const [migration, queue] = await Promise.all([
         loadCoreMigrationStatus(),
         loadRegistrationCandidates('validation_required', 500),
@@ -288,7 +287,7 @@ export default function CoreMigrationPage() {
       const newDrawing = queue.filter(isNewRegistrationCandidate);
       setNotice(
         completed
-          ? 'FCB atualizado. ' + newDrawing.length + ' nova(s) BSP(s) do FCB aguardando validação.'
+          ? 'Drawing atualizado. ' + newDrawing.length + ' nova(s) BSP(s) aguardando validação.'
           : 'Atualização do Drawing continua em processamento. A fila será atualizada automaticamente ao concluir.'
       );
     } catch (reason) {
