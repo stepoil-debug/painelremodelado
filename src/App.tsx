@@ -14,7 +14,6 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDot,
-  Clock3,
   Eye,
   EyeOff,
   FileText,
@@ -1317,7 +1316,7 @@ function HHEvidenceGallery({ evidence, loading, onOpenPhoto }: {
   if (loading) {
     return (
       <div className="section-card hh-evidence-card">
-        <div className="real-source-loading"><RefreshCcw size={18} className="spin" /> Buscando fotos privadas do Apontamento HH...</div>
+        <div className="real-source-loading"><RefreshCcw size={18} className="spin" /> Buscando fotos históricas da etapa...</div>
       </div>
     );
   }
@@ -1326,12 +1325,12 @@ function HHEvidenceGallery({ evidence, loading, onOpenPhoto }: {
     return (
       <div className="section-card hh-evidence-card">
         <div className="section-card-head">
-          <div><span className="section-mono">Apontamento HH</span><h2>Evidências fotográficas</h2></div>
+          <div><span className="section-mono">Fonte histórica</span><h2>Evidências fotográficas</h2></div>
           <span className="count-ref">0</span>
         </div>
         <div className="hh-empty-evidence">
           <ImagePlus size={22} />
-          <div><strong>Nenhuma foto encontrada para este ISO/SPL.</strong><span>O vínculo é feito por BSP + ISO/SPL sem alterar o apontamento.</span></div>
+          <div><strong>Nenhuma foto encontrada para este ISO/SPL.</strong><span>O vínculo é feito por BSP + ISO/SPL sem alterar a fonte histórica.</span></div>
         </div>
       </div>
     );
@@ -1342,13 +1341,12 @@ function HHEvidenceGallery({ evidence, loading, onOpenPhoto }: {
   return (
     <div className="section-card hh-evidence-card">
       <div className="section-card-head">
-        <div><span className="section-mono">Apontamento HH</span><h2>Evidências por etapa do processo</h2></div>
+        <div><span className="section-mono">Fonte histórica</span><h2>Evidências por etapa do processo</h2></div>
         <span className="live-source-badge"><i /> {evidence.photos.length} FOTO(S) · {groups.length} ETAPA(S)</span>
       </div>
 
       <div className="hh-stage-groups">
         {groups.map((group, groupIndex) => {
-          const totalHH = group.sessions.reduce((sum, session) => sum + Number(session.total_hh || 0), 0);
           const workers = [...new Set(group.sessions.flatMap((session) => (session.workers || []).map((worker) => worker.worker_name)))];
 
           return (
@@ -1361,7 +1359,6 @@ function HHEvidenceGallery({ evidence, loading, onOpenPhoto }: {
                 </div>
                 <div className="hh-stage-summary">
                   <span><ImagePlus size={13} /> {group.photos.length} foto(s)</span>
-                  {totalHH > 0 && <span><Clock3 size={13} /> {totalHH.toFixed(2)} HH</span>}
                   {workers.length > 0 && <span><Users size={13} /> {workers.length} pessoa(s)</span>}
                 </div>
               </div>
@@ -3494,7 +3491,7 @@ function DemandDetail(props: {
               <div><span>Origem</span><strong>{sectorName(demand.originSector)}</strong></div>
               <div><span>Próximo setor</span><strong>{next ? sectorName(next.sector) : 'Encerramento'}</strong></div>
               <div><span>Prioridade</span><strong>{priorityLabel[demand.priority]}</strong></div>
-              <div><span>Fonte</span><strong>{demand.archived ? 'Tracking histórico · ' + (demand.archiveSource || 'OLD') : demand.source === 'hub_readonly' ? 'Tracking + Apontamento HH' : demand.source === 'ops_core' ? 'OPS Core · operacional' : demand.source === 'hh_readonly' ? 'HH · leitura' : 'Demonstração'}</strong></div>
+              <div><span>Fonte</span><strong>{demand.archived ? 'Tracking histórico · ' + (demand.archiveSource || 'OLD') : demand.source === 'hub_readonly' ? 'Tracking legado · somente leitura' : demand.source === 'ops_core' ? 'OPS Core · operacional' : demand.source === 'hh_readonly' ? 'Fonte histórica · leitura' : 'Demonstração'}</strong></div>
             </div>
           </div>
 
@@ -3523,7 +3520,7 @@ function DemandDetail(props: {
             </div>
           </div>
 
-          <div className="secure-note"><ShieldCheck size={17} /><div><strong>{demand.source === 'hub_readonly' ? 'Dados reais · somente leitura' : demand.source === 'ops_core' ? 'Dados reais · OPS Core' : 'Ambiente isolado'}</strong><span>{demand.source === 'hub_readonly' ? 'Os dados vêm do hub operacional e esta tela não escreve no Smartsheet.' : demand.source === 'ops_core' ? 'As ações passam pela API autenticada e ficam registradas no histórico.' : 'As ações da demo não escrevem no Apontamento HH.'}</span></div></div>
+          <div className="secure-note"><ShieldCheck size={17} /><div><strong>{demand.source === 'hub_readonly' ? 'Dados reais · somente leitura' : demand.source === 'ops_core' ? 'Dados reais · OPS Core' : 'Ambiente isolado'}</strong><span>{demand.source === 'hub_readonly' ? 'Os dados vêm do Tracking legado e esta tela não escreve na fonte.' : demand.source === 'ops_core' ? 'As ações passam pela API autenticada e ficam registradas no histórico.' : 'As ações da demo não escrevem em dados reais.'}</span></div></div>
         </aside>
       </section>
 
