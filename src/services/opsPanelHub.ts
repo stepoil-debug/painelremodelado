@@ -1,3 +1,5 @@
+import type { EvidenceType } from '../types';
+
 export interface HubSourceStatus {
   source_key: string;
   sheet_id: number | null;
@@ -940,6 +942,59 @@ export async function loadHubEvidence(bsp: string, iso: string): Promise<HubHHEv
     action: 'evidence',
     bsp,
     iso,
+  });
+  return response.data;
+}
+
+export interface HubStageEvidencePhoto {
+  id: string;
+  item_id: string;
+  item_stage_id: string;
+  photo_type: 'start' | 'finish' | 'extra' | string;
+  caption?: string | null;
+  taken_at?: string | null;
+  uploaded_by_name?: string | null;
+  content_type?: string | null;
+  file_size_bytes?: number | null;
+  signed_url: string;
+}
+
+export interface HubStageEvidence {
+  item_id: string;
+  item_stage_id: string;
+  photos: HubStageEvidencePhoto[];
+  generatedAt?: string;
+}
+
+export async function loadStageEvidence(itemId: string): Promise<HubStageEvidence> {
+  const response = await requestHub<{ ok: true; data: HubStageEvidence }>({
+    action: 'stage_evidence',
+    itemId,
+  });
+  return response.data;
+}
+
+export async function uploadStageEvidence(
+  itemId: string,
+  photoType: EvidenceType,
+  file: File,
+  caption = '',
+): Promise<HubStageEvidencePhoto> {
+  const content = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Não foi possível ler a foto selecionada.'));
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.readAsDataURL(file);
+  });
+
+  const response = await requestHub<{ ok: true; data: HubStageEvidencePhoto }>({
+    action: 'stage_evidence_upload',
+    itemId,
+    photoType,
+    fileName: file.name,
+    contentType: file.type || 'application/octet-stream',
+    content,
+    caption,
   });
   return response.data;
 }

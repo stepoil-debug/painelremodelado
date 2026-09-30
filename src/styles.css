@@ -463,6 +463,8 @@ h1,h2,h3,p { margin-top: 0; }
 .evidence-reference > div.ready strong { color: #0F8A6A; }
 .detail-actions { display: flex; flex-wrap: wrap; gap: 7px; padding: 13px 17px 17px; border-top: 1px solid #EDF2F8; }
 .detail-actions .action-note { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 11px; border: 1px solid #F0DBA9; border-radius: 10px; background: #FFF9E9; color: #916200; font-size: 9px; font-weight: 600; }
+.hidden-file-input { display: none; }
+.stage-evidence-grid .hh-photo-card { text-decoration: none; color: inherit; }
 .advance-modal { position: fixed; z-index: 80; inset: 0; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(11,35,64,.28); }
 .advance-dialog { width: min(410px,100%); border: 1px solid #DCE7F3; border-radius: 16px; background: #fff; box-shadow: 0 18px 60px rgba(11,35,64,.2); overflow: hidden; }
 .advance-dialog > header { display: flex; align-items: flex-start; gap: 12px; padding: 17px 18px 13px; border-bottom: 1px solid #EDF2F8; }

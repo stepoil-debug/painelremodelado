@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -45,6 +45,7 @@ import {
   loadHubDrawingAttachmentPdf,
   applyHubDrawingRevision,
   loadHubEvidence,
+  loadStageEvidence,
   loadHubProject,
   loadHubSyncStatus,
   loadGoalfyShipping,
@@ -54,12 +55,14 @@ import {
   loadCoreNotifications,
   markCoreNotificationRead,
   mutateCoreDemand,
+  uploadStageEvidence,
   triggerHubSync,
   triggerGoalfySync,
   saveGoalfyCredentials,
   type HubDrawingAttachment,
   type HubDrawingAttachments,
   type HubHHEvidence,
+  type HubStageEvidence,
   type HubGoalfyShipping,
   type HubGoalfyConnectionStatus,
   type HubNewBspAlert,
@@ -234,6 +237,7 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [projectDetail, setProjectDetail] = useState<Awaited<ReturnType<typeof loadHubProject>> | null>(null);
   const [hhEvidence, setHhEvidence] = useState<HubHHEvidence | null>(null);
+  const [stageEvidence, setStageEvidence] = useState<HubStageEvidence | null>(null);
   const [goalfyShipping, setGoalfyShipping] = useState<HubGoalfyShipping | null>(null);
   const [goalfyConnection, setGoalfyConnection] = useState<HubGoalfyConnectionStatus | null>(null);
   const [goalfyLoading, setGoalfyLoading] = useState(false);
@@ -414,6 +418,7 @@ export default function App() {
     if (!hubConfigured || !panelUser || !selected || !['hub_readonly', 'ops_core'].includes(selected.source)) {
       setProjectDetail(null);
       setHhEvidence(null);
+      setStageEvidence(null);
       setGoalfyShipping(null);
       setGoalfyConnection(null);
       setGoalfyLoading(false);
@@ -448,6 +453,18 @@ export default function App() {
       .finally(() => {
         if (active) setEvidenceLoading(false);
       });
+
+    if (selected.source === 'ops_core' && selected.coreItemId) {
+      loadStageEvidence(selected.coreItemId)
+        .then((evidence) => {
+          if (active) setStageEvidence(evidence);
+        })
+        .catch(() => {
+          if (active) setStageEvidence(null);
+        });
+    } else {
+      setStageEvidence(null);
+    }
 
     Promise.all([
       loadGoalfyShipping(selected.bsp),
@@ -688,11 +705,28 @@ export default function App() {
     setBanner(demand.bsp + ' bloqueada.');
   }
 
-  function addEvidence(id: string, type: EvidenceType) {
+  async function addEvidence(id: string, type: EvidenceType, file?: File) {
     const demand = demands.find((d) => d.id === id);
     if (!demand) return;
     if (demand.source === 'ops_core') {
-      setBanner('As evidências das etapas de execução são registradas pelo Apontamento HH para preservar a rastreabilidade.');
+      if (!file || !demand.coreItemId) {
+        setBanner('Selecione uma foto para registrar a evidência da etapa.');
+        return;
+      }
+      if (!file.type.startsWith('image/')) {
+        setBanner('Escolha um arquivo de imagem.');
+        return;
+      }
+      setEvidenceLoading(true);
+      try {
+        await uploadStageEvidence(demand.coreItemId, type, file);
+        setStageEvidence(await loadStageEvidence(demand.coreItemId));
+        setBanner((type === 'start' ? 'Foto inicial' : type === 'finish' ? 'Foto final' : 'Evidência') + ' adicionada à etapa.');
+      } catch (error) {
+        setBanner(error instanceof Error ? error.message : 'Não foi possível salvar a foto.');
+      } finally {
+        setEvidenceLoading(false);
+      }
       return;
     }
     if (demand.source !== 'demo') return;
@@ -913,10 +947,11 @@ export default function App() {
             onWait={() => waitDemand(selected.id)}
             onResume={() => resumeDemand(selected.id)}
             onBlock={() => blockDemand(selected.id)}
-            onEvidence={(type) => addEvidence(selected.id, type)}
+            onEvidence={(type, file) => addEvidence(selected.id, type, file)}
             onComplete={() => completeDemand(selected.id)}
             hubDetail={projectDetail}
             hhEvidence={hhEvidence}
+            stageEvidence={stageEvidence}
             goalfyShipping={goalfyShipping}
             goalfyConnection={goalfyConnection}
             goalfyLoading={goalfyLoading}
@@ -972,7 +1007,7 @@ export default function App() {
 
       <footer className="status-bar">
         <span>{selected ? 'Arquivo operacional aberto' : (sector === 'all' ? 'Todos os setores · visão completa da etapa atual' : sectorName(sector) + ' · visibilidade por responsabilidade atual')}</span>
-        <span>{hubConfigured ? 'OPS CORE · Tracking somente para BSPs ainda não validadas' : 'Demonstração pública · sem escrita no Apontamento HH'}</span>
+        <span>{hubConfigured ? 'OPS CORE · Tracking somente para BSPs ainda não validadas' : 'Demonstração pública · avanço e fotos em modo isolado'}</span>
       </footer>
     </div>
   );
@@ -1359,6 +1394,32 @@ function HHEvidenceGallery({ evidence, loading, onOpenPhoto }: {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function StageEvidenceGallery({ evidence, loading }: { evidence: HubStageEvidence | null; loading: boolean }) {
+  const photos = evidence?.photos ?? [];
+  return (
+    <div className="section-card hh-evidence-card">
+      <div className="section-card-head">
+        <div><span className="section-mono">Evidência operacional</span><h2>Fotos da etapa</h2></div>
+        <span className="live-source-badge"><i /> {photos.length} FOTO(S)</span>
+      </div>
+      {loading ? (
+        <div className="hh-empty-evidence"><ImagePlus size={19} /><div><strong>Carregando fotos da etapa...</strong><span>Aguarde a leitura das evidências.</span></div></div>
+      ) : !photos.length ? (
+        <div className="hh-empty-evidence"><ImagePlus size={19} /><div><strong>Nenhuma foto registrada ainda.</strong><span>Use “Foto início” ou “Foto fim” para evidenciar o avanço.</span></div></div>
+      ) : (
+        <div className="hh-photo-grid stage-evidence-grid">
+          {photos.map((photo) => (
+            <a className="hh-photo-card" href={photo.signed_url} target="_blank" rel="noreferrer" key={photo.id}>
+              <div className="hh-photo-frame"><img src={photo.signed_url} alt={photo.caption || 'Foto da etapa'} loading="lazy" /><span className={'hh-photo-badge ' + photo.photo_type}>{photo.photo_type === 'start' ? 'Foto inicial' : photo.photo_type === 'finish' ? 'Foto final' : 'Extra'}</span></div>
+              <div className="hh-photo-meta"><strong>{photo.caption || 'Evidência da etapa'}</strong><span>{fmtDate(photo.taken_at || undefined)}{photo.uploaded_by_name ? ' · ' + photo.uploaded_by_name : ''}</span></div>
+            </a>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -3214,10 +3275,11 @@ function DemandDetail(props: {
   onWait: () => void;
   onResume: () => void;
   onBlock: () => void;
-  onEvidence: (type: EvidenceType) => void;
+  onEvidence: (type: EvidenceType, file?: File) => void | Promise<void>;
   onComplete: () => void;
   hubDetail: Awaited<ReturnType<typeof loadHubProject>> | null;
   hhEvidence: HubHHEvidence | null;
+  stageEvidence: HubStageEvidence | null;
   goalfyShipping: HubGoalfyShipping | null;
   goalfyConnection: HubGoalfyConnectionStatus | null;
   goalfyLoading: boolean;
@@ -3235,6 +3297,8 @@ function DemandDetail(props: {
   const [photoModalIndex, setPhotoModalIndex] = useState<number | null>(null);
   const [advanceOpen, setAdvanceOpen] = useState(false);
   const [advanceProgress, setAdvanceProgress] = useState(25);
+  const startPhotoInput = useRef<HTMLInputElement>(null);
+  const finishPhotoInput = useRef<HTMLInputElement>(null);
   const fallbackPhase = {
     key: demand.stageKey || 'unclassified',
     label: demand.stage || 'Etapa não classificada',
@@ -3248,16 +3312,17 @@ function DemandDetail(props: {
   const isCurrent = phase.key === demand.stageKey;
   const next = getNextStage(demand.stageKey);
   const hhPhotos = props.hhEvidence?.photos ?? [];
-  const hhSessions = props.hhEvidence?.sessions ?? [];
+  const panelPhotos = props.stageEvidence?.photos ?? [];
+  const panelStartPhotos = panelPhotos.filter((photo) => photo.photo_type === 'start');
+  const panelFinishPhotos = panelPhotos.filter((photo) => photo.photo_type === 'finish');
+  const panelExtraPhotos = panelPhotos.filter((photo) => photo.photo_type === 'extra');
   const hhStartPhotos = hhPhotos.filter((photo) => photoMoment(photo) === 'start');
   const hhFinishPhotos = hhPhotos.filter((photo) => photoMoment(photo) === 'finish');
   const hhExtraPhotos = hhPhotos.filter((photo) => photoMoment(photo) === 'extra');
-  const hasStart = demand.evidences.some((e) => e.type === 'start') || hhStartPhotos.length > 0;
-  const hasFinish = demand.evidences.some((e) => e.type === 'finish') || hhFinishPhotos.length > 0;
-  const totalEvidence = demand.evidences.length + hhPhotos.length;
-  const hhTotal = hhSessions.reduce((sum, session) => sum + Number(session.total_hh || 0), 0);
+  const hasStart = demand.evidences.some((e) => e.type === 'start') || (demand.source === 'ops_core' ? panelStartPhotos.length > 0 : hhStartPhotos.length > 0);
+  const hasFinish = demand.evidences.some((e) => e.type === 'finish') || (demand.source === 'ops_core' ? panelFinishPhotos.length > 0 : hhFinishPhotos.length > 0);
+  const totalEvidence = demand.evidences.length + hhPhotos.length + panelPhotos.length;
   const canOperate = demand.source === 'demo' || demand.source === 'ops_core';
-  const pointingControlled = demand.source === 'ops_core' && phase.usesPointing;
   const progressChoices = [25, 50, 75, 90].filter((value) => value > demand.progress);
   const goalfyStatus = props.goalfyShipping?.summary?.shipping_status;
   const goalfySent = goalfyStatus === 'complete' || goalfyStatus === 'partial' || goalfyStatus === 'shipping_evidence';
@@ -3296,6 +3361,12 @@ function DemandDetail(props: {
     if (index >= 0) setPhotoModalIndex(index);
   }
 
+  function selectEvidence(type: EvidenceType, input: HTMLInputElement) {
+    const file = input.files?.[0];
+    input.value = '';
+    if (file) void props.onEvidence(type, file);
+  }
+
   return (
     <>
       <section className="detail-top">
@@ -3313,7 +3384,7 @@ function DemandDetail(props: {
           <SummaryField label="Entrada no setor" value={fmtDate(demand.enteredAt)} />
           <SummaryField label="SLA da etapa" value={fmtDate(demand.slaDueAt)} />
           <SummaryField label="Evidências" value={props.evidenceLoading ? '...' : String(totalEvidence)} />
-          <SummaryField label="HH / duração" value={hhTotal > 0 ? hhTotal.toFixed(2) + ' HH' : demand.hhMinutes ? demand.hhMinutes + ' min' : '—'} />
+          <SummaryField label="Fotos da etapa" value={props.evidenceLoading ? '...' : String(totalEvidence)} />
           <SummaryField label="Expedição Goalfy" value={goalfyStatus ? shippingStatusLabel(goalfyStatus) : 'Aguardando leitura'} />
         </div>
       </section>
@@ -3344,7 +3415,7 @@ function DemandDetail(props: {
             <div className="section-card-head"><div><span className="section-mono">{isCurrent ? 'Etapa atual' : phaseIndex < currentIndex ? 'Fase concluída' : 'Fase futura'}</span><h2>{phase.label}</h2></div><span className="phase-sector">{sectorName(phase.sector)}</span></div>
             <div className="phase-data-grid">
               <SummaryField label="Política de evidência" value={photoPolicyLabel(phase.photoPolicy)} />
-              <SummaryField label="Apontamento HH" value={phase.usesPointing ? 'Vinculado ao apontador' : 'Não obrigatório'} />
+              <SummaryField label="Controle do avanço" value="Painel operacional" />
               <SummaryField label="SLA configurado" value={Math.round(phase.slaMinutes / 60 * 10) / 10 + ' horas'} />
               <SummaryField label="Próximo destino" value={isCurrent ? (next ? sectorName(next.sector) : 'Encerramento') : '—'} />
             </div>
@@ -3354,22 +3425,25 @@ function DemandDetail(props: {
                 <div className="detail-progress-block"><div><span>Avanço da etapa</span><strong>{demand.progress}%</strong></div><div className="detail-progress"><i style={{ width: demand.progress + '%' }} /></div></div>
                 {demand.blocker && <div className="reference-warning"><AlertTriangle size={17} /><div><strong>Bloqueio ativo</strong><p>{demand.blocker.note}</p></div></div>}
                 <div className="evidence-reference">
-                  <div className={hasStart ? 'ready' : ''}><ImagePlus size={16} /><span>Foto inicial</span><strong>{props.evidenceLoading ? '...' : hasStart ? hhStartPhotos.length + ' disponível(is)' : 'Pendente'}</strong></div>
-                  <div className={hasFinish ? 'ready' : ''}><ImagePlus size={16} /><span>Foto final</span><strong>{props.evidenceLoading ? '...' : hasFinish ? hhFinishPhotos.length + ' disponível(is)' : 'Pendente'}</strong></div>
-                  <div><FileText size={16} /><span>Extras</span><strong>{props.evidenceLoading ? '...' : hhExtraPhotos.length + demand.evidences.filter((e) => e.type === 'extra').length}</strong></div>
+                  <div className={hasStart ? 'ready' : ''}><ImagePlus size={16} /><span>Foto inicial</span><strong>{props.evidenceLoading ? '...' : hasStart ? (demand.source === 'ops_core' ? panelStartPhotos.length : hhStartPhotos.length) + ' disponível(is)' : 'Pendente'}</strong></div>
+                  <div className={hasFinish ? 'ready' : ''}><ImagePlus size={16} /><span>Foto final</span><strong>{props.evidenceLoading ? '...' : hasFinish ? (demand.source === 'ops_core' ? panelFinishPhotos.length : hhFinishPhotos.length) + ' disponível(is)' : 'Pendente'}</strong></div>
+                  <div><FileText size={16} /><span>Extras</span><strong>{props.evidenceLoading ? '...' : (demand.source === 'ops_core' ? panelExtraPhotos.length : hhExtraPhotos.length) + demand.evidences.filter((e) => e.type === 'extra').length}</strong></div>
                 </div>
 
                 {canOperate && demand.status !== 'completed' && (
                   <div className="detail-actions">
                     {demand.status === 'new' && <button className="primary-ref" onClick={props.onAssume}><UserCheck size={14} /> Assumir demanda</button>}
-                    {demand.status === 'in_progress' && !pointingControlled && <button className="primary-ref" onClick={() => { setAdvanceProgress(progressChoices[0] ?? 90); setAdvanceOpen(true); }}><Activity size={14} /> Avançar etapa</button>}
-                    {demand.status === 'in_progress' && pointingControlled && <span className="action-note"><LockKeyhole size={14} /> Avanço controlado pelo Apontamento HH</span>}
+                    {demand.status === 'in_progress' && <button className="primary-ref" onClick={() => { setAdvanceProgress(progressChoices[0] ?? 90); setAdvanceOpen(true); }}><Activity size={14} /> Avançar etapa</button>}
                     {demand.status === 'in_progress' && <button className="soft-btn" onClick={props.onWait}><PauseCircle size={14} /> Aguardar</button>}
                     {(demand.status === 'waiting' || demand.status === 'blocked') && <button className="soft-btn" onClick={props.onResume}><PlayCircle size={14} /> Retomar</button>}
                     {demand.status !== 'blocked' && <button className="danger-ref" onClick={props.onBlock}><XCircle size={14} /> Bloquear</button>}
-                    {demand.source === 'demo' && !hasStart && <button className="soft-btn" onClick={() => props.onEvidence('start')}><ImagePlus size={14} /> Foto início</button>}
-                    {demand.source === 'demo' && !hasFinish && <button className="soft-btn" onClick={() => props.onEvidence('finish')}><ImagePlus size={14} /> Foto fim</button>}
-                    {(demand.status === 'in_progress' || demand.status === 'waiting' || demand.status === 'late') && !pointingControlled && <button className="success-ref" onClick={props.onComplete}><CheckCircle2 size={14} /> Concluir etapa</button>}
+                    {(demand.source === 'demo' || demand.source === 'ops_core') && !hasStart && <button className="soft-btn" onClick={() => startPhotoInput.current?.click()}><ImagePlus size={14} /> Foto início</button>}
+                    {(demand.source === 'demo' || demand.source === 'ops_core') && !hasFinish && <button className="soft-btn" onClick={() => finishPhotoInput.current?.click()}><ImagePlus size={14} /> Foto fim</button>}
+                    {(demand.status === 'in_progress' || demand.status === 'waiting' || demand.status === 'late') && <button className="success-ref" onClick={props.onComplete}><CheckCircle2 size={14} /> Concluir etapa</button>}
+                    {(demand.source === 'demo' || demand.source === 'ops_core') && <>
+                      <input ref={startPhotoInput} className="hidden-file-input" type="file" accept="image/*" onChange={(event) => selectEvidence('start', event.currentTarget)} />
+                      <input ref={finishPhotoInput} className="hidden-file-input" type="file" accept="image/*" onChange={(event) => selectEvidence('finish', event.currentTarget)} />
+                    </>}
                   </div>
                 )}
               </>
@@ -3378,6 +3452,10 @@ function DemandDetail(props: {
 
           {demand.source === 'hub_readonly' && (
             <HHEvidenceGallery evidence={props.hhEvidence} loading={props.evidenceLoading} onOpenPhoto={openPhoto} />
+          )}
+
+          {demand.source === 'ops_core' && (
+            <StageEvidenceGallery evidence={props.stageEvidence} loading={props.evidenceLoading} />
           )}
 
           {demand.source === 'hub_readonly' && (
@@ -3427,15 +3505,21 @@ function DemandDetail(props: {
           <div className="side-section">
             <span className="section-mono">Evidências e anexos</span>
             <div className="docs-list">
-              {hhPhotos.slice(0, 6).map((photo) => (
+              {demand.source === 'ops_core' && panelPhotos.slice(0, 6).map((photo) => (
+                <a className="side-photo-link" href={photo.signed_url} target="_blank" rel="noreferrer" key={photo.id}>
+                  <img src={photo.signed_url} alt={photo.caption || 'Foto da etapa'} loading="lazy" />
+                  <div><strong>{photo.caption || (photo.photo_type === 'start' ? 'Foto inicial' : photo.photo_type === 'finish' ? 'Foto final' : 'Evidência extra')}</strong><small>{fmtDate(photo.taken_at || undefined)}{photo.uploaded_by_name ? ' · ' + photo.uploaded_by_name : ''}</small></div>
+                </a>
+              ))}
+              {demand.source !== 'ops_core' && hhPhotos.slice(0, 6).map((photo) => (
                 <button className="side-photo-link" type="button" onClick={() => openPhoto(photo.id)} key={photo.id}>
                   <img src={photo.signed_url} alt={photoLabel(photo)} loading="lazy" />
                   <div><strong>{photoStageLabel(props.hhEvidence, photo.id) || photoLabel(photo)}</strong><small>{photoLabel(photo)} · {fmtDate(photo.taken_at || undefined)}</small></div>
                 </button>
               ))}
               {demand.evidences.map((e) => <div key={e.id}><span>IMG</span><div><strong>{e.label}</strong><small>{fmtDate(e.at)}</small></div></div>)}
-              {!props.evidenceLoading && !hhPhotos.length && !demand.evidences.length && <p className="muted-side">Nenhuma evidência vinculada a este ISO/SPL.</p>}
-              {props.evidenceLoading && <p className="muted-side">Buscando imagens do Apontamento HH...</p>}
+              {!props.evidenceLoading && !hhPhotos.length && !panelPhotos.length && !demand.evidences.length && <p className="muted-side">Nenhuma evidência vinculada a este ISO/SPL.</p>}
+              {props.evidenceLoading && <p className="muted-side">Buscando fotos da etapa...</p>}
             </div>
           </div>
 
@@ -3505,8 +3589,8 @@ function PriorityPill({ priority }: { priority: Priority }) {
 }
 
 function LivePage({ demands, loading, onOpen }: { demands: Demand[]; loading: boolean; onOpen: (id: string) => void }) {
-  const live = demands.filter((d) => getStage(d.stageKey)?.usesPointing && d.status !== 'completed');
-  return <GenericPage title="Produção ao Vivo" subtitle="Atividades que dependem do apontamento, mantendo a mesma leitura de carteira."><div className="section-card"><div className="section-card-head"><div><span className="section-mono">Apontamento HH</span><h2>Sessões em acompanhamento</h2></div><span className="count-ref">{loading ? '...' : live.length}</span></div><div className="simple-table"><div className="simple-head"><span>BSP / ISO</span><span>Atividade</span><span>Setor</span><span>Avanço</span><span>Evidências</span></div>{live.map((d) => <button key={d.id} onClick={() => onOpen(d.id)}><span><strong>{d.bsp}</strong><small>{d.iso}</small></span><span>{d.stage}</span><span>{sectorName(d.sector)}</span><span>{d.progress}%</span><span>{d.evidences.length}</span></button>)}</div></div></GenericPage>;
+  const live = demands.filter((d) => d.status === 'in_progress' || d.status === 'waiting' || d.status === 'late');
+  return <GenericPage title="Produção ao Vivo" subtitle="Etapas em execução, com avanço e evidências pelo painel."><div className="section-card"><div className="section-card-head"><div><span className="section-mono">Execução operacional</span><h2>Etapas em acompanhamento</h2></div><span className="count-ref">{loading ? '...' : live.length}</span></div><div className="simple-table"><div className="simple-head"><span>BSP / ISO</span><span>Atividade</span><span>Setor</span><span>Avanço</span><span>Evidências</span></div>{live.map((d) => <button key={d.id} onClick={() => onOpen(d.id)}><span><strong>{d.bsp}</strong><small>{d.iso}</small></span><span>{d.stage}</span><span>{sectorName(d.sector)}</span><span>{d.progress}%</span><span>{d.evidences.length}</span></button>)}</div></div></GenericPage>;
 }
 
 function BlocksPage({ demands, onOpen, onResume }: { demands: Demand[]; onOpen: (id: string) => void; onResume: (id: string) => void }) {

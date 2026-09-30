@@ -869,6 +869,118 @@ Deno.serve(async (request: Request) => {
     return json({ ok: true, data, generatedAt: new Date().toISOString() });
   }
 
+  if (action === "stage_evidence" || action === "stage_evidence_upload") {
+    const itemId = String(body.itemId || "").trim();
+    if (!itemId) return json({ ok: false, error: "itemId é obrigatório." }, 400);
+
+    const { data: item, error: itemError } = await admin
+      .schema("ops_core")
+      .from("items")
+      .select("id,current_stage_key,project_id")
+      .eq("id", itemId)
+      .maybeSingle();
+    if (itemError) return json({ ok: false, error: itemError.message }, 500);
+    if (!item) return json({ ok: false, error: "Item operacional não encontrado." }, 404);
+
+    const { data: stage, error: stageError } = await admin
+      .schema("ops_core")
+      .from("item_stages")
+      .select("id,stage_key")
+      .eq("item_id", itemId)
+      .eq("stage_key", String(item.current_stage_key || ""))
+      .maybeSingle();
+    if (stageError) return json({ ok: false, error: stageError.message }, 500);
+    if (!stage) return json({ ok: false, error: "Etapa atual do item não encontrada." }, 409);
+
+    if (action === "stage_evidence_upload") {
+      if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode anexar evidências." }, 403);
+
+      const photoType = String(body.photoType || "extra").trim().toLowerCase();
+      if (!["start", "finish", "extra"].includes(photoType)) return json({ ok: false, error: "Tipo de foto inválido." }, 400);
+
+      const content = String(body.content || "");
+      const match = content.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+      if (!match) return json({ ok: false, error: "Envie uma imagem JPG, PNG ou WebP válida." }, 400);
+      if (content.length > 12_000_000) return json({ ok: false, error: "A foto excede o limite de 8 MB." }, 413);
+
+      const binary = Uint8Array.from(atob(match[2]), (character) => character.charCodeAt(0));
+      if (binary.byteLength > 8 * 1024 * 1024) return json({ ok: false, error: "A foto excede o limite de 8 MB." }, 413);
+
+      const originalName = String(body.fileName || "foto").replace(/[^a-zA-Z0-9._-]/g, "_").slice(-120);
+      const storagePath = `${itemId}/${String(stage.id)}/${crypto.randomUUID()}-${originalName}`;
+      const bucket = "ops-evidence";
+      const { error: uploadError } = await admin.storage.from(bucket).upload(storagePath, binary, {
+        contentType: match[1],
+        upsert: false,
+      });
+      if (uploadError) return json({ ok: false, error: uploadError.message }, 500);
+
+      const actorName = sessionUser
+        ? String(sessionUser.name || sessionUser.username || sessionUser.email || actor)
+        : "system-backend";
+      const { data: inserted, error: insertError } = await admin
+        .schema("ops_core")
+        .from("stage_evidence")
+        .insert({
+          item_id: itemId,
+          item_stage_id: stage.id,
+          photo_type: photoType,
+          storage_bucket: bucket,
+          storage_path: storagePath,
+          caption: String(body.caption || "").trim().slice(0, 200) || null,
+          uploaded_by_email: actor,
+          uploaded_by_name: actorName,
+          content_type: match[1],
+          file_size_bytes: binary.byteLength,
+        })
+        .select("id,item_id,item_stage_id,photo_type,caption,taken_at,uploaded_by_name,content_type,file_size_bytes,storage_bucket,storage_path")
+        .single();
+      if (insertError) {
+        await admin.storage.from(bucket).remove([storagePath]);
+        return json({ ok: false, error: insertError.message }, 500);
+      }
+
+      const { data: signed, error: signedError } = await admin.storage.from(bucket).createSignedUrl(storagePath, 4 * 60 * 60);
+      if (signedError || !signed?.signedUrl) return json({ ok: false, error: signedError?.message || "Foto salva, mas não foi possível gerar a visualização." }, 500);
+
+      return json({
+        ok: true,
+        data: { ...inserted, signed_url: signed.signedUrl },
+        generatedAt: new Date().toISOString(),
+      });
+    }
+
+    const { data: rows, error: rowsError } = await admin
+      .schema("ops_core")
+      .from("stage_evidence")
+      .select("id,item_id,item_stage_id,photo_type,caption,taken_at,uploaded_by_name,content_type,file_size_bytes,storage_bucket,storage_path")
+      .eq("item_id", itemId)
+      .eq("item_stage_id", stage.id)
+      .order("taken_at", { ascending: true })
+      .limit(100);
+    if (rowsError) return json({ ok: false, error: rowsError.message }, 500);
+
+    const photos = await Promise.all((rows || []).map(async (row: Record<string, unknown>) => {
+      const bucket = String(row.storage_bucket || "ops-evidence");
+      const path = String(row.storage_path || "");
+      const { data: signed, error: signedError } = await admin.storage.from(bucket).createSignedUrl(path, 4 * 60 * 60);
+      return {
+        id: row.id,
+        item_id: row.item_id,
+        item_stage_id: row.item_stage_id,
+        photo_type: row.photo_type,
+        caption: row.caption,
+        taken_at: row.taken_at,
+        uploaded_by_name: row.uploaded_by_name,
+        content_type: row.content_type,
+        file_size_bytes: row.file_size_bytes,
+        signed_url: signedError ? "" : signed?.signedUrl || "",
+      };
+    }));
+
+    return json({ ok: true, data: { item_id: itemId, item_stage_id: stage.id, photos, generatedAt: new Date().toISOString() } });
+  }
+
 
   if (action === "core_stage_action") {
     const itemId = String(body.itemId || "").trim();
