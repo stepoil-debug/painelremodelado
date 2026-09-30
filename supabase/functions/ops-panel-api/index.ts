@@ -1023,6 +1023,47 @@ Deno.serve(async (request: Request) => {
     return json({ ok: true, data, generatedAt: new Date().toISOString() });
   }
 
+  if (action === "legacy_stage_action") {
+    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode editar os avanços operacionais." }, 403);
+
+    const region = String(body.region || "BR").trim() || "BR";
+    const projectRowId = String(body.projectRowId || "").trim();
+    const projectNumber = String(body.projectNumber || "").trim();
+    const iso = String(body.iso || "").trim();
+    const operation = String(body.operation || "").trim().toLowerCase();
+    const note = String(body.note || "").trim().slice(0, 500);
+    const progressRaw = body.progress;
+    const progress = progressRaw === null || progressRaw === undefined || progressRaw === ""
+      ? null
+      : Number(progressRaw);
+
+    if (!projectRowId || !iso || !operation) {
+      return json({ ok: false, error: "projectRowId, iso e operation são obrigatórios." }, 400);
+    }
+    if (progress !== null && !Number.isFinite(progress)) {
+      return json({ ok: false, error: "Progress inválido." }, 400);
+    }
+
+    const actorName = sessionUser
+      ? String(sessionUser.name || sessionUser.username || sessionUser.email || actor)
+      : "system-backend";
+    const { data, error } = await admin.rpc("ops_core_apply_panel_legacy_stage_action", {
+      p_region: region,
+      p_project_row_id: projectRowId,
+      p_project_number: projectNumber,
+      p_iso: iso,
+      p_action: operation,
+      p_actor_email: actor,
+      p_actor_name: actorName,
+      p_progress: progress,
+      p_note: note || null,
+    });
+    if (error) return json({ ok: false, error: error.message }, 409);
+
+    await refreshDemandCache();
+    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
   if (action === "new_bsp_alerts") {
     if (!mayManageCore) return json({ ok: true, data: [], generatedAt: new Date().toISOString() });
 
@@ -1140,9 +1181,10 @@ Deno.serve(async (request: Request) => {
       ? { p_region: region, p_search: search, p_limit: limit }
       : { p_region: region, p_limit: limit };
 
-    const [{ data, error }, { data: executionOverlay, error: executionError }, { data: activeProjectRows, error: activeProjectsError }] = await Promise.all([
+    const [{ data, error }, { data: executionOverlay, error: executionError }, { data: panelAdvanceOverlay, error: panelAdvanceError }, { data: activeProjectRows, error: activeProjectsError }] = await Promise.all([
       admin.rpc(rpcName, rpcArgs),
       admin.rpc("ops_panel_get_execution_overlay"),
+      admin.rpc("ops_core_get_panel_legacy_stage_advances", { p_region: region }),
       admin
         .from("tracking_projects")
         .select("region,project_row_id,project_number,project_display,client,vessel,project_type,project_status,pm,planned_start,planned_finish,replanned_finish,fabrication_start,overall_progress,weight_kg,m2,source_version,source_updated_at,synced_at")
@@ -1152,6 +1194,7 @@ Deno.serve(async (request: Request) => {
 
     if (error) return json({ ok: false, error: error.message }, 500);
     if (executionError) console.error("execution overlay error:", executionError.message);
+    if (panelAdvanceError) console.error("panel advance overlay error:", panelAdvanceError.message);
     if (activeProjectsError) return json({ ok: false, error: activeProjectsError.message }, 500);
 
     const activeProjects = Array.isArray(activeProjectRows) ? activeProjectRows as Record<string, unknown>[] : [];
@@ -1308,6 +1351,17 @@ Deno.serve(async (request: Request) => {
       if (projectKey && isoNorm) overlayMap.set("project:" + projectKey + ":" + isoNorm, row);
     }
 
+    const panelAdvanceRows = Array.isArray(panelAdvanceOverlay) ? panelAdvanceOverlay : [];
+    const panelAdvanceMap = new Map<string, Record<string, unknown>>();
+    for (const item of panelAdvanceRows) {
+      const row = item as Record<string, unknown>;
+      const projectRowId = String(row.project_row_id || "");
+      const projectKey = compact(row.project_number);
+      const isoNorm = compact(row.iso_key || row.drawing || row.iso);
+      if (projectRowId && isoNorm) panelAdvanceMap.set("row:" + projectRowId + ":" + isoNorm, row);
+      if (projectKey && isoNorm) panelAdvanceMap.set("project:" + projectKey + ":" + isoNorm, row);
+    }
+
     const merged = baseRows.map((item: Record<string, unknown>) => {
       const projectRowId = String(item.project_row_id || "");
       const projectKey = compact(item.project_number);
@@ -1315,11 +1369,26 @@ Deno.serve(async (request: Request) => {
       const execution =
         overlayMap.get("row:" + projectRowId + ":" + isoNorm)
         || overlayMap.get("project:" + projectKey + ":" + isoNorm);
+      const panelAdvance =
+        panelAdvanceMap.get("row:" + projectRowId + ":" + isoNorm)
+        || panelAdvanceMap.get("project:" + projectKey + ":" + isoNorm);
 
-      if (!execution) return item;
+      const withPanelAdvance = panelAdvance
+        ? {
+            ...item,
+            current_status: panelAdvance.current_status || item.current_status,
+            overall_progress: panelAdvance.overall_progress ?? item.overall_progress,
+            panel_advance_status: panelAdvance.panel_advance_status || null,
+            panel_advance_updated_at: panelAdvance.panel_advance_updated_at || null,
+            panel_advance_last_action: panelAdvance.panel_advance_last_action || null,
+            panel_advance_last_actor: panelAdvance.panel_advance_last_actor || null,
+          }
+        : item;
+
+      if (!execution) return withPanelAdvance;
 
       return {
-        ...item,
+        ...withPanelAdvance,
         hh_session_id: execution.session_id || null,
         hh_status: execution.hh_status || null,
         hh_activity_key: execution.activity_key || null,

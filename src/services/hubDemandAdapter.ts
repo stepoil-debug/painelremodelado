@@ -176,6 +176,9 @@ function statusFor(row: HubDemandRow): DemandStatus {
     return 'in_progress';
   }
 
+  if (status.includes('bloquead') || status.includes('blocked')) return 'blocked';
+  if (status.includes('aguardando') || status.includes('waiting')) return 'waiting';
+
   if (
     group.includes('enviado')
     || status.includes('finalizado')
@@ -260,6 +263,9 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       activityKey: row.hh_activity_key || undefined,
       source: row.source_mode === 'ops_core' ? 'ops_core' : 'hub_readonly',
       sourceMode: row.source_mode || undefined,
+      sourceRegion: row.region || undefined,
+      legacyProjectRowId: row.project_row_id || undefined,
+      legacyIsoKey: row.iso_key || undefined,
       coreProjectId: row.core_project_id || undefined,
       coreItemId: row.core_item_id || undefined,
       archived: Boolean(row.archived),

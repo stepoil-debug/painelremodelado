@@ -946,6 +946,29 @@ export async function loadHubEvidence(bsp: string, iso: string): Promise<HubHHEv
   return response.data;
 }
 
+export async function mutateLegacyDemand(
+  input: {
+    region?: string;
+    projectRowId: string;
+    projectNumber?: string;
+    iso: string;
+  },
+  operation: CoreDemandAction,
+  options: { progress?: number | null; note?: string } = {},
+) {
+  const response = await requestHub<{ ok: true; data: Record<string, unknown> }>({
+    action: 'legacy_stage_action',
+    region: input.region || 'BR',
+    projectRowId: input.projectRowId,
+    projectNumber: input.projectNumber || '',
+    iso: input.iso,
+    operation,
+    progress: options.progress ?? null,
+    note: options.note || '',
+  });
+  return response.data;
+}
+
 export interface HubStageEvidencePhoto {
   id: string;
   item_id: string;

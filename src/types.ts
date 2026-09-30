@@ -87,6 +87,9 @@ export interface Demand {
   hhMinutes?: number;
   source: DemandSource;
   sourceMode?: 'legacy_tracking' | 'ops_core' | 'archived' | 'pending_validation';
+  sourceRegion?: string;
+  legacyProjectRowId?: string;
+  legacyIsoKey?: string;
   coreProjectId?: string;
   coreItemId?: string;
   archived?: boolean;

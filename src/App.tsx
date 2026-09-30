@@ -54,6 +54,7 @@ import {
   loadCoreNotifications,
   markCoreNotificationRead,
   mutateCoreDemand,
+  mutateLegacyDemand,
   uploadStageEvidence,
   triggerHubSync,
   triggerGoalfySync,
@@ -567,14 +568,21 @@ export default function App() {
     options: { progress?: number | null; note?: string } = {},
     successMessage = 'Demanda atualizada.',
   ) {
-    if (demand.source === 'hub_readonly') {
-      setBanner('Esta BSP ainda usa o Tracking legado. Valide o cadastro em Cadastro para habilitar ações operacionais.');
-      return false;
-    }
-    if (demand.source !== 'ops_core' || !demand.coreItemId) return false;
-
     try {
-      const result = await mutateCoreDemand(demand.coreItemId, operation, options);
+      let result: Record<string, unknown>;
+      if (demand.source === 'ops_core' && demand.coreItemId) {
+        result = await mutateCoreDemand(demand.coreItemId, operation, options);
+      } else if (demand.source === 'hub_readonly' && demand.legacyProjectRowId && demand.legacyIsoKey) {
+        result = await mutateLegacyDemand({
+          region: demand.sourceRegion,
+          projectRowId: demand.legacyProjectRowId,
+          projectNumber: demand.bsp,
+          iso: demand.legacyIsoKey,
+        }, operation, options);
+      } else {
+        setBanner('Este registro não possui um ISO ativo vinculado para edição.');
+        return false;
+      }
       await refreshHub(false, search, true);
       const projectArchive = result && typeof result === 'object'
         ? (result as { project_archive?: { archived?: boolean } }).project_archive
@@ -3325,7 +3333,9 @@ function DemandDetail(props: {
   const hasStart = demandStartPhotos > 0 || sourceStartPhotos.length > 0;
   const hasFinish = demandFinishPhotos > 0 || sourceFinishPhotos.length > 0;
   const totalEvidence = demand.evidences.length + hhPhotos.length + panelPhotos.length;
-  const canOperate = demand.source === 'demo' || demand.source === 'ops_core';
+  const canOperate = demand.source === 'demo'
+    || demand.source === 'ops_core'
+    || (demand.source === 'hub_readonly' && Boolean(demand.legacyProjectRowId && demand.legacyIsoKey && demand.iso));
   const progressChoices = [25, 50, 75, 90].filter((value) => value > demand.progress);
   const goalfyStatus = props.goalfyShipping?.summary?.shipping_status;
   const goalfySent = goalfyStatus === 'complete' || goalfyStatus === 'partial' || goalfyStatus === 'shipping_evidence';
@@ -3497,7 +3507,7 @@ function DemandDetail(props: {
               <div><span>Origem</span><strong>{sectorName(demand.originSector)}</strong></div>
               <div><span>Próximo setor</span><strong>{next ? sectorName(next.sector) : 'Encerramento'}</strong></div>
               <div><span>Prioridade</span><strong>{priorityLabel[demand.priority]}</strong></div>
-              <div><span>Fonte</span><strong>{demand.archived ? 'Tracking histórico · ' + (demand.archiveSource || 'OLD') : demand.source === 'hub_readonly' ? 'Tracking legado · somente leitura' : demand.source === 'ops_core' ? 'OPS Core · operacional' : demand.source === 'hh_readonly' ? 'Fonte histórica · leitura' : 'Demonstração'}</strong></div>
+              <div><span>Fonte</span><strong>{demand.archived ? 'Tracking histórico · ' + (demand.archiveSource || 'OLD') : demand.source === 'hub_readonly' ? 'Tracking legado · avanço pelo painel' : demand.source === 'ops_core' ? 'OPS Core · operacional' : demand.source === 'hh_readonly' ? 'Fonte histórica · leitura' : 'Demonstração'}</strong></div>
             </div>
           </div>
 
@@ -3526,7 +3536,7 @@ function DemandDetail(props: {
             </div>
           </div>
 
-          <div className="secure-note"><ShieldCheck size={17} /><div><strong>{demand.source === 'hub_readonly' ? 'Dados reais · somente leitura' : demand.source === 'ops_core' ? 'Dados reais · OPS Core' : 'Ambiente isolado'}</strong><span>{demand.source === 'hub_readonly' ? 'Os dados vêm do Tracking legado e esta tela não escreve na fonte.' : demand.source === 'ops_core' ? 'As ações passam pela API autenticada e ficam registradas no histórico.' : 'As ações da demo não escrevem em dados reais.'}</span></div></div>
+          <div className="secure-note"><ShieldCheck size={17} /><div><strong>{demand.source === 'hub_readonly' ? 'Dados reais · avanço controlado' : demand.source === 'ops_core' ? 'Dados reais · OPS Core' : 'Ambiente isolado'}</strong><span>{demand.source === 'hub_readonly' ? 'O Tracking permanece histórico; os avanços feitos aqui ficam registrados na camada operacional do painel.' : demand.source === 'ops_core' ? 'As ações passam pela API autenticada e ficam registradas no histórico.' : 'As ações da demo não escrevem em dados reais.'}</span></div></div>
         </aside>
       </section>
 
