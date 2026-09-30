@@ -446,6 +446,15 @@ export interface HubDemandRow {
   hh_tracking_stage_order?: number | null;
   hh_source_progress_column?: string | null;
   hh_source_actual_column?: string | null;
+  panel_stage_overrides?: Array<{
+    stage_key?: string | null;
+    tracking_stage_key?: string | null;
+    progress?: number | null;
+    status?: string | null;
+    updated_at?: string | null;
+    last_action?: string | null;
+    last_actor?: string | null;
+  }> | null;
 }
 
 export async function loadHubDemands(region = 'BR', limit = 2000, search = ''): Promise<HubDemandRow[]> {
@@ -802,12 +811,13 @@ export type CoreDemandAction = 'accept' | 'start' | 'progress' | 'wait' | 'resum
 export async function mutateCoreDemand(
   itemId: string,
   operation: CoreDemandAction,
-  options: { progress?: number | null; note?: string } = {},
+  options: { progress?: number | null; note?: string; stageKey?: string } = {},
 ) {
   const response = await requestHub<{ ok: true; data: Record<string, unknown> }>({
     action: 'core_stage_action',
     itemId,
     operation,
+    stageKey: options.stageKey || null,
     progress: options.progress ?? null,
     note: options.note || '',
   });
@@ -952,9 +962,11 @@ export async function mutateLegacyDemand(
     projectRowId: string;
     projectNumber?: string;
     iso: string;
+    stageKey?: string;
+    trackingStageKey?: string;
   },
   operation: CoreDemandAction,
-  options: { progress?: number | null; note?: string } = {},
+  options: { progress?: number | null; note?: string; stageKey?: string; trackingStageKey?: string } = {},
 ) {
   const response = await requestHub<{ ok: true; data: Record<string, unknown> }>({
     action: 'legacy_stage_action',
@@ -962,6 +974,8 @@ export async function mutateLegacyDemand(
     projectRowId: input.projectRowId,
     projectNumber: input.projectNumber || '',
     iso: input.iso,
+    stageKey: input.stageKey || options.stageKey || null,
+    trackingStageKey: input.trackingStageKey || options.trackingStageKey || null,
     operation,
     progress: options.progress ?? null,
     note: options.note || '',

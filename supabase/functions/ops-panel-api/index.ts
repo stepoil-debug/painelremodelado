@@ -984,6 +984,7 @@ Deno.serve(async (request: Request) => {
 
   if (action === "core_stage_action") {
     const itemId = String(body.itemId || "").trim();
+    const stageKey = String(body.stageKey || "").trim();
     const operation = String(body.operation || "").trim().toLowerCase();
     const note = String(body.note || "").trim();
     const progressRaw = body.progress;
@@ -1008,8 +1009,10 @@ Deno.serve(async (request: Request) => {
         : String(sessionUser.sector || ""))
       : String(body.actorSector || "");
 
-    const { data, error } = await admin.rpc("ops_core_stage_action", {
+    const rpcName = stageKey ? "ops_core_stage_action_for_stage" : "ops_core_stage_action";
+    const { data, error } = await admin.rpc(rpcName, {
       p_item_id: itemId,
+      ...(stageKey ? { p_stage_key: stageKey } : {}),
       p_action: operation,
       p_actor_email: actor,
       p_actor_name: actorName,
@@ -1030,6 +1033,8 @@ Deno.serve(async (request: Request) => {
     const projectRowId = String(body.projectRowId || "").trim();
     const projectNumber = String(body.projectNumber || "").trim();
     const iso = String(body.iso || "").trim();
+    const stageKey = String(body.stageKey || "").trim();
+    const trackingStageKey = String(body.trackingStageKey || "").trim();
     const operation = String(body.operation || "").trim().toLowerCase();
     const note = String(body.note || "").trim().slice(0, 500);
     const progressRaw = body.progress;
@@ -1037,8 +1042,8 @@ Deno.serve(async (request: Request) => {
       ? null
       : Number(progressRaw);
 
-    if (!projectRowId || !iso || !operation) {
-      return json({ ok: false, error: "projectRowId, iso e operation são obrigatórios." }, 400);
+    if (!projectRowId || !iso || !operation || !stageKey || !trackingStageKey) {
+      return json({ ok: false, error: "projectRowId, iso, stageKey, trackingStageKey e operation são obrigatórios." }, 400);
     }
     if (progress !== null && !Number.isFinite(progress)) {
       return json({ ok: false, error: "Progress inválido." }, 400);
@@ -1052,6 +1057,8 @@ Deno.serve(async (request: Request) => {
       p_project_row_id: projectRowId,
       p_project_number: projectNumber,
       p_iso: iso,
+      p_stage_key: stageKey,
+      p_tracking_stage_key: trackingStageKey,
       p_action: operation,
       p_actor_email: actor,
       p_actor_name: actorName,
@@ -1376,12 +1383,7 @@ Deno.serve(async (request: Request) => {
       const withPanelAdvance = panelAdvance
         ? {
             ...item,
-            current_status: panelAdvance.current_status || item.current_status,
-            overall_progress: panelAdvance.overall_progress ?? item.overall_progress,
-            panel_advance_status: panelAdvance.panel_advance_status || null,
-            panel_advance_updated_at: panelAdvance.panel_advance_updated_at || null,
-            panel_advance_last_action: panelAdvance.panel_advance_last_action || null,
-            panel_advance_last_actor: panelAdvance.panel_advance_last_actor || null,
+            panel_stage_overrides: Array.isArray(panelAdvance.stage_overrides) ? panelAdvance.stage_overrides : [],
           }
         : item;
 

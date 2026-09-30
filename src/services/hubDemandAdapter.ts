@@ -162,7 +162,13 @@ function dateAtEndOfDay(value?: string | null) {
   return value + 'T23:59:59-03:00';
 }
 
-function statusFor(row: HubDemandRow): DemandStatus {
+function statusFor(row: HubDemandRow, stageKey?: string): DemandStatus {
+  const overrideStatus = normalize(row.panel_stage_overrides?.find((item) => item.stage_key === stageKey)?.status);
+  if (overrideStatus === 'blocked') return 'blocked';
+  if (overrideStatus === 'waiting') return 'waiting';
+  if (overrideStatus === 'completed') return 'completed';
+  if (overrideStatus === 'in_progress') return 'in_progress';
+
   const group = normalize(row.current_stage);
   const status = normalize(row.current_status);
   const progress = Number(row.overall_progress || 0);
@@ -206,7 +212,11 @@ function priorityFor(row: HubDemandRow, status: DemandStatus): Priority {
   return 'normal';
 }
 
-function progressFor(row: HubDemandRow) {
+function progressFor(row: HubDemandRow, stageKey?: string) {
+  const overrideProgress = row.panel_stage_overrides?.find((item) => item.stage_key === stageKey)?.progress;
+  if (overrideProgress != null && Number.isFinite(Number(overrideProgress))) {
+    return Math.max(0, Math.min(100, Math.round(Number(overrideProgress) * 10) / 10));
+  }
   const raw = hhStageMappingIsReliable(row) && row.hh_progress_percent != null
     ? Number(row.hh_progress_percent)
     : Number(row.overall_progress || 0);
@@ -223,11 +233,17 @@ function numericOrNull(value: number | string | null | undefined) {
 export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalState {
   const demands: Demand[] = rows.map((row) => {
     const mapped = stageMap(row);
-    const status = statusFor(row);
+    const status = statusFor(row, mapped.stageKey);
     const enteredAt = row.hh_status === 'open'
       ? (row.hh_start_at || row.hh_execution_updated_at || row.source_updated_at || row.synced_at || new Date().toISOString())
       : (row.source_updated_at || row.synced_at || new Date().toISOString());
-    const progress = progressFor(row);
+    const progress = progressFor(row, mapped.stageKey);
+    const stageProgress = Object.fromEntries((row.panel_stage_overrides || [])
+      .filter((item) => item.stage_key)
+      .map((item) => [String(item.stage_key), Math.max(0, Math.min(100, Number(item.progress || 0)))]));
+    const stageStatuses = Object.fromEntries((row.panel_stage_overrides || [])
+      .filter((item) => item.stage_key && item.status)
+      .map((item) => [String(item.stage_key), String(item.status)]));
     const vessel = row.vessel ? ' · ' + row.vessel : '';
     const sourceStatus = [row.current_stage, row.current_status].filter(Boolean).join(' / ');
     const bsp = projectKeyFromRow(row);
@@ -257,6 +273,8 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       completedAt: status === 'completed' ? enteredAt : undefined,
       slaDueAt: dateAtEndOfDay(row.replanned_finish || row.planned_finish),
       progress,
+      stageProgress,
+      stageStatuses,
       weightKg: numericOrNull(row.weight_kg),
       m2: numericOrNull(row.m2),
       hhMinutes: row.hh_total_hh != null ? Math.round(Number(row.hh_total_hh) * 60) : undefined,

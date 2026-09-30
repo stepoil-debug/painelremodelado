@@ -565,7 +565,7 @@ export default function App() {
   async function runCoreAction(
     demand: Demand,
     operation: 'accept' | 'start' | 'progress' | 'wait' | 'resume' | 'block' | 'complete',
-    options: { progress?: number | null; note?: string } = {},
+    options: { progress?: number | null; note?: string; stageKey?: string; trackingStageKey?: string } = {},
     successMessage = 'Demanda atualizada.',
   ) {
     try {
@@ -578,6 +578,8 @@ export default function App() {
           projectRowId: demand.legacyProjectRowId,
           projectNumber: demand.bsp,
           iso: demand.legacyIsoKey,
+          stageKey: options.stageKey || demand.stageKey,
+          trackingStageKey: options.trackingStageKey || demand.stageKey,
         }, operation, options);
       } else {
         setBanner('Este registro não possui um ISO ativo vinculado para edição.');
@@ -599,7 +601,7 @@ export default function App() {
     }
   }
 
-  async function assumeDemand(id: string) {
+  async function assumeDemand(id: string, targetStageKey?: string) {
     const demand = demands.find((d) => d.id === id);
     if (!demand) return;
 
@@ -607,7 +609,7 @@ export default function App() {
       await runCoreAction(
         demand,
         'accept',
-        {},
+        { stageKey: targetStageKey || demand.stageKey, trackingStageKey: demand.stageKey },
         demand.bsp + ' assumida pelo setor ' + sectorName(demand.sector) + '.',
       );
       return;
@@ -626,19 +628,23 @@ export default function App() {
     setBanner(demand.bsp + ' assumida pelo setor ' + sectorName(demand.sector) + '.');
   }
 
-  async function progressDemand(id: string, requestedProgress?: number) {
+  async function progressDemand(id: string, requestedProgress?: number, targetStageKey?: string) {
     const demand = demands.find((d) => d.id === id);
     if (!demand) return;
 
+    const stageKey = targetStageKey || demand.stageKey;
+    const currentProgress = targetStageKey
+      ? (demand.stageProgress?.[stageKey] ?? (stageKey === demand.stageKey ? demand.progress : 0))
+      : demand.progress;
     const progress = requestedProgress == null
-      ? Math.min(90, Math.max(25, demand.progress + 25))
-      : Math.min(99, Math.max(demand.progress, requestedProgress));
-    if (progress <= demand.progress) {
+      ? Math.min(90, Math.max(25, currentProgress + 25))
+      : Math.min(99, Math.max(currentProgress, requestedProgress));
+    if (progress <= currentProgress) {
       setBanner('Escolha um avanço maior que o atual.');
       return;
     }
     if (demand.source === 'ops_core' || demand.source === 'hub_readonly') {
-      await runCoreAction(demand, 'progress', { progress }, 'Avanço atualizado para ' + progress + '%.');
+      await runCoreAction(demand, 'progress', { progress, stageKey, trackingStageKey: demand.stageKey }, 'Avanço da etapa atualizado para ' + progress + '%.');
       return;
     }
     if (demand.source !== 'demo') return;
@@ -646,18 +652,20 @@ export default function App() {
     updateDemand(id, (d) => ({
       ...d,
       progress,
+      stageProgress: { ...(d.stageProgress || {}), [stageKey]: progress },
+      stageStatuses: { ...(d.stageStatuses || {}), [stageKey]: 'in_progress' },
       status: 'in_progress',
       history: appendHistory(d, 'progress', 'Avanço registrado', 'Progresso atualizado para ' + progress + '%.'),
     }));
     setBanner('Avanço atualizado para ' + progress + '%.');
   }
 
-  async function waitDemand(id: string) {
+  async function waitDemand(id: string, targetStageKey?: string) {
     const demand = demands.find((d) => d.id === id);
     if (!demand) return;
 
     if (demand.source === 'ops_core' || demand.source === 'hub_readonly') {
-      await runCoreAction(demand, 'wait', {}, demand.bsp + ' movida para Aguardando.');
+      await runCoreAction(demand, 'wait', { stageKey: targetStageKey || demand.stageKey, trackingStageKey: demand.stageKey }, demand.bsp + ' movida para Aguardando.');
       return;
     }
     if (demand.source !== 'demo') return;
@@ -670,12 +678,12 @@ export default function App() {
     setBanner(demand.bsp + ' movida para Aguardando.');
   }
 
-  async function resumeDemand(id: string) {
+  async function resumeDemand(id: string, targetStageKey?: string) {
     const demand = demands.find((d) => d.id === id);
     if (!demand) return;
 
     if (demand.source === 'ops_core' || demand.source === 'hub_readonly') {
-      await runCoreAction(demand, 'resume', {}, demand.bsp + ' retomada.');
+      await runCoreAction(demand, 'resume', { stageKey: targetStageKey || demand.stageKey, trackingStageKey: demand.stageKey }, demand.bsp + ' retomada.');
       return;
     }
     if (demand.source !== 'demo') return;
@@ -689,7 +697,7 @@ export default function App() {
     setBanner(demand.bsp + ' retomada.');
   }
 
-  async function blockDemand(id: string) {
+  async function blockDemand(id: string, targetStageKey?: string) {
     const demand = demands.find((d) => d.id === id);
     if (!demand) return;
 
@@ -697,7 +705,7 @@ export default function App() {
     if (note === null) return;
 
     if (demand.source === 'ops_core' || demand.source === 'hub_readonly') {
-      await runCoreAction(demand, 'block', { note }, demand.bsp + ' bloqueada.');
+      await runCoreAction(demand, 'block', { note, stageKey: targetStageKey || demand.stageKey, trackingStageKey: demand.stageKey }, demand.bsp + ' bloqueada.');
       return;
     }
     if (demand.source !== 'demo') return;
@@ -747,7 +755,7 @@ export default function App() {
     setBanner(label + ' adicionada.');
   }
 
-  async function completeDemand(id: string) {
+  async function completeDemand(id: string, targetStageKey?: string) {
     const demand = demands.find((d) => d.id === id);
     if (!demand) return;
 
@@ -755,7 +763,7 @@ export default function App() {
       await runCoreAction(
         demand,
         'complete',
-        {},
+        { stageKey: targetStageKey || demand.stageKey, trackingStageKey: demand.stageKey },
         demand.bsp + ' · etapa concluída. O próximo setor foi atualizado automaticamente.',
       );
       return;
@@ -950,12 +958,12 @@ export default function App() {
             demand={selected}
             onBack={() => setSelectedId(null)}
             onAssume={() => assumeDemand(selected.id)}
-            onProgress={(progress) => progressDemand(selected.id, progress)}
-            onWait={() => waitDemand(selected.id)}
-            onResume={() => resumeDemand(selected.id)}
-            onBlock={() => blockDemand(selected.id)}
+            onProgress={(progress, stageKey) => progressDemand(selected.id, progress, stageKey)}
+            onWait={(stageKey) => waitDemand(selected.id, stageKey)}
+            onResume={(stageKey) => resumeDemand(selected.id, stageKey)}
+            onBlock={(stageKey) => blockDemand(selected.id, stageKey)}
             onEvidence={(type, file) => addEvidence(selected.id, type, file)}
-            onComplete={() => completeDemand(selected.id)}
+            onComplete={(stageKey) => completeDemand(selected.id, stageKey)}
             hubDetail={projectDetail}
             hhEvidence={hhEvidence}
             stageEvidence={stageEvidence}
@@ -3275,13 +3283,13 @@ function GoalfyShippingSide({ shipping, loading }: { shipping: HubGoalfyShipping
 function DemandDetail(props: {
   demand: Demand;
   onBack: () => void;
-  onAssume: () => void;
-  onProgress: (progress: number) => void;
-  onWait: () => void;
-  onResume: () => void;
-  onBlock: () => void;
+  onAssume: (stageKey?: string) => void;
+  onProgress: (progress: number, stageKey?: string) => void;
+  onWait: (stageKey?: string) => void;
+  onResume: (stageKey?: string) => void;
+  onBlock: (stageKey?: string) => void;
   onEvidence: (type: EvidenceType, file?: File) => void | Promise<void>;
-  onComplete: () => void;
+  onComplete: (stageKey?: string) => void;
   hubDetail: Awaited<ReturnType<typeof loadHubProject>> | null;
   hhEvidence: HubHHEvidence | null;
   stageEvidence: HubStageEvidence | null;
@@ -3315,6 +3323,9 @@ function DemandDetail(props: {
   const phase = getStage(phaseKey) ?? getStage(demand.stageKey) ?? fallbackPhase;
   const phaseIndex = getStageIndex(phase.key);
   const isCurrent = phase.key === demand.stageKey;
+  const phaseProgress = demand.stageProgress?.[phase.key] ?? (isCurrent ? demand.progress : 0);
+  const phaseStatus = (demand.stageStatuses?.[phase.key] as DemandStatus | undefined) || (isCurrent ? demand.status : 'new');
+  const phaseCompleted = phaseStatus === 'completed' || phaseProgress >= 100;
   const next = getNextStage(demand.stageKey);
   const hhPhotos = props.hhEvidence?.photos ?? [];
   const panelPhotos = props.stageEvidence?.photos ?? [];
@@ -3336,8 +3347,9 @@ function DemandDetail(props: {
   const canOperate = demand.source === 'demo'
     || demand.source === 'ops_core'
     || (demand.source === 'hub_readonly' && Boolean(demand.legacyProjectRowId && demand.legacyIsoKey && demand.iso));
-  const canAdvance = demand.status === 'in_progress' || demand.status === 'late';
-  const progressChoices = [25, 50, 75, 90].filter((value) => value > demand.progress);
+  const canAdvance = phaseStatus === 'in_progress' || phaseStatus === 'late' || phaseProgress === 0;
+  const phaseCanOperate = canOperate && !phaseCompleted;
+  const progressChoices = [25, 50, 75, 90].filter((value) => value > phaseProgress);
   const goalfyStatus = props.goalfyShipping?.summary?.shipping_status;
   const goalfySent = goalfyStatus === 'complete' || goalfyStatus === 'partial' || goalfyStatus === 'shipping_evidence';
 
@@ -3408,10 +3420,12 @@ function DemandDetail(props: {
         <div className="phase-strip">
           {workflowStages.map((stage, index) => {
             const finished = status === 'completed';
-            const done = finished || index < currentIndex;
+            const stageOverrideProgress = demand.stageProgress?.[stage.key];
+            const stageOverrideStatus = demand.stageStatuses?.[stage.key];
+            const done = finished || stageOverrideStatus === 'completed' || (stageOverrideProgress != null && stageOverrideProgress >= 100) || (stageOverrideProgress == null && index < currentIndex);
             const current = !finished && index === currentIndex;
             const future = index > currentIndex;
-            const pct = finished ? 100 : done ? 100 : current ? demand.progress : 0;
+            const pct = finished ? 100 : stageOverrideProgress != null ? stageOverrideProgress : done ? 100 : current ? demand.progress : 0;
             return (
               <button key={stage.key} className={'phase-card ' + (phaseKey === stage.key ? 'selected ' : '') + (done ? 'done' : current ? 'current' : future ? 'future' : '')} onClick={() => setPhaseKey(stage.key)}>
                 <div><small>{String(index + 1).padStart(2, '0')}</small><strong>{stage.label}</strong><b>{pct}%</b></div>
@@ -3434,27 +3448,27 @@ function DemandDetail(props: {
               <SummaryField label="Próximo destino" value={isCurrent ? (next ? sectorName(next.sector) : 'Encerramento') : '—'} />
             </div>
 
-            {isCurrent && (
+            {phaseCanOperate && (
               <>
-                <div className="detail-progress-block"><div><span>Avanço da etapa</span><strong>{demand.progress}%</strong></div><div className="detail-progress"><i style={{ width: demand.progress + '%' }} /></div></div>
-                {demand.blocker && <div className="reference-warning"><AlertTriangle size={17} /><div><strong>Bloqueio ativo</strong><p>{demand.blocker.note}</p></div></div>}
-                <div className="evidence-reference">
+                <div className="detail-progress-block"><div><span>Avanço da etapa</span><strong>{phaseProgress}%</strong></div><div className="detail-progress"><i style={{ width: phaseProgress + '%' }} /></div></div>
+                {isCurrent && demand.blocker && <div className="reference-warning"><AlertTriangle size={17} /><div><strong>Bloqueio ativo</strong><p>{demand.blocker.note}</p></div></div>}
+                {isCurrent && <div className="evidence-reference">
                   <div className={hasStart ? 'ready' : ''}><ImagePlus size={16} /><span>Foto inicial</span><strong>{props.evidenceLoading ? '...' : hasStart ? demandStartPhotos + sourceStartPhotos.length + ' disponível(is)' : 'Pendente'}</strong></div>
                   <div className={hasFinish ? 'ready' : ''}><ImagePlus size={16} /><span>Foto final</span><strong>{props.evidenceLoading ? '...' : hasFinish ? demandFinishPhotos + sourceFinishPhotos.length + ' disponível(is)' : 'Pendente'}</strong></div>
                   <div><FileText size={16} /><span>Extras</span><strong>{props.evidenceLoading ? '...' : sourceExtraPhotos.length + demandExtraPhotos}</strong></div>
-                </div>
+                </div>}
 
-                {canOperate && demand.status !== 'completed' && (
+                {phaseCanOperate && (
                   <div className="detail-actions">
-                    {demand.status === 'new' && <button className="primary-ref" onClick={props.onAssume}><UserCheck size={14} /> Assumir demanda</button>}
-                    {canAdvance && <button className="primary-ref" onClick={() => { setAdvanceProgress(progressChoices[0] ?? 90); setAdvanceOpen(true); }}><Activity size={14} /> Avançar etapa</button>}
-                    {canAdvance && <button className="soft-btn" onClick={props.onWait}><PauseCircle size={14} /> Aguardar</button>}
-                    {(demand.status === 'waiting' || demand.status === 'blocked') && <button className="soft-btn" onClick={props.onResume}><PlayCircle size={14} /> Retomar</button>}
-                    {demand.status !== 'blocked' && <button className="danger-ref" onClick={props.onBlock}><XCircle size={14} /> Bloquear</button>}
-                    {(demand.source === 'demo' || demand.source === 'ops_core') && !hasStart && <button className="soft-btn" onClick={() => startPhotoInput.current?.click()}><ImagePlus size={14} /> Foto início</button>}
-                    {(demand.source === 'demo' || demand.source === 'ops_core') && !hasFinish && <button className="soft-btn" onClick={() => finishPhotoInput.current?.click()}><ImagePlus size={14} /> Foto fim</button>}
-                    {(demand.status === 'in_progress' || demand.status === 'waiting' || demand.status === 'late') && <button className="success-ref" onClick={props.onComplete}><CheckCircle2 size={14} /> Concluir etapa</button>}
-                    {(demand.source === 'demo' || demand.source === 'ops_core') && <>
+                    {isCurrent && demand.status === 'new' && <button className="primary-ref" onClick={() => props.onAssume(phase.key)}><UserCheck size={14} /> Assumir demanda</button>}
+                    {canAdvance && <button className="primary-ref" onClick={() => { setAdvanceProgress(progressChoices[0] ?? 90); setAdvanceOpen(true); }}><Activity size={14} /> {phaseProgress === 0 ? 'Iniciar etapa' : 'Avançar etapa'}</button>}
+                    {(phaseStatus === 'in_progress' || phaseStatus === 'late') && <button className="soft-btn" onClick={() => props.onWait(phase.key)}><PauseCircle size={14} /> Aguardar</button>}
+                    {(phaseStatus === 'waiting' || phaseStatus === 'blocked') && <button className="soft-btn" onClick={() => props.onResume(phase.key)}><PlayCircle size={14} /> Retomar</button>}
+                    {phaseStatus !== 'blocked' && <button className="danger-ref" onClick={() => props.onBlock(phase.key)}><XCircle size={14} /> Bloquear</button>}
+                    {isCurrent && (demand.source === 'demo' || demand.source === 'ops_core') && !hasStart && <button className="soft-btn" onClick={() => startPhotoInput.current?.click()}><ImagePlus size={14} /> Foto início</button>}
+                    {isCurrent && (demand.source === 'demo' || demand.source === 'ops_core') && !hasFinish && <button className="soft-btn" onClick={() => finishPhotoInput.current?.click()}><ImagePlus size={14} /> Foto fim</button>}
+                    {(phaseStatus === 'in_progress' || phaseStatus === 'waiting' || phaseStatus === 'late' || phaseProgress > 0) && <button className="success-ref" onClick={() => props.onComplete(phase.key)}><CheckCircle2 size={14} /> Concluir etapa</button>}
+                    {isCurrent && (demand.source === 'demo' || demand.source === 'ops_core') && <>
                       <input ref={startPhotoInput} className="hidden-file-input" type="file" accept="image/*" onChange={(event) => selectEvidence('start', event.currentTarget)} />
                       <input ref={finishPhotoInput} className="hidden-file-input" type="file" accept="image/*" onChange={(event) => selectEvidence('finish', event.currentTarget)} />
                     </>}
@@ -3558,7 +3572,7 @@ function DemandDetail(props: {
               </div>
               <button className="advance-close" onClick={() => setAdvanceOpen(false)} aria-label="Fechar">×</button>
             </header>
-            <div className="advance-current"><span>Avanço atual</span><strong>{demand.progress}%</strong></div>
+            <div className="advance-current"><span>Avanço atual da etapa</span><strong>{phaseProgress}%</strong></div>
             <div className="advance-choices" aria-label="Escolher avanço">
               {progressChoices.length ? progressChoices.map((value) => (
                 <button key={value} className={advanceProgress === value ? 'selected' : ''} onClick={() => setAdvanceProgress(value)}>
@@ -3569,7 +3583,7 @@ function DemandDetail(props: {
             <p className="advance-note"><ShieldCheck size={14} /> A ação será registrada no histórico com seu usuário e horário.</p>
             <footer>
               <button className="soft-btn" onClick={() => setAdvanceOpen(false)}>Cancelar</button>
-              <button className="primary-ref" disabled={!progressChoices.length || advanceProgress <= demand.progress} onClick={() => { setAdvanceOpen(false); props.onProgress(advanceProgress); }}><Activity size={14} /> Salvar avanço</button>
+              <button className="primary-ref" disabled={!progressChoices.length || advanceProgress <= phaseProgress} onClick={() => { setAdvanceOpen(false); props.onProgress(advanceProgress, phase.key); }}><Activity size={14} /> Salvar avanço</button>
             </footer>
           </div>
         </div>
