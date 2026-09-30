@@ -421,12 +421,12 @@ Deno.serve(async(req:Request)=>{
     }
   }));
 
-  let registrationRefresh:any=null;
-  if(!dryRun){
-    const refresh=await admin.rpc("ops_core_refresh_registration");
-    registrationRefresh=refresh.error?{ok:false,error:refresh.error.message}:{ok:true,data:refresh.data};
-    await admin.rpc("ops_core_refresh_demand_feed_cache");
-  }
+  // FCB application already updates the project, candidate and item records
+  // in its transaction. Do not run the full registration rebuild here: the
+  // Drawing sync can dispatch several FCBs at once and that global refresh
+  // would make concurrent imports lock each other until statement timeout.
+  // The registration refresh remains an explicit, serialized maintenance
+  // action; the operational feed is refreshed by the source sync pipeline.
   const failed=results.filter(r=>!r.ok||(r.payload?.validation&&r.payload.validation.passed===false)||(r.parsed&&r.parsed.passed===false));
   if(!dryRun){
     await Promise.all(results.filter(r=>!r.ok&&r.source?.source_row_id).map((r:any)=>admin.rpc("ops_core_record_fcb_ingest_failure",{
@@ -436,5 +436,5 @@ Deno.serve(async(req:Request)=>{
       p_error:String(r.error||"Falha desconhecida na importação do FCB.")
     })));
   }
-  return json({ok:failed.length===0,status:failed.length?"review_required":"parsed",project_core:projectCore(project),sources:allSources.length,processed:results.length,remaining_sources:Math.max(0,allSources.length-results.length),failed:failed.length,registration_refresh:registrationRefresh,results},failed.length?409:200);
+  return json({ok:failed.length===0,status:failed.length?"review_required":"parsed",project_core:projectCore(project),sources:allSources.length,processed:results.length,remaining_sources:Math.max(0,allSources.length-results.length),failed:failed.length,results},failed.length?409:200);
 });

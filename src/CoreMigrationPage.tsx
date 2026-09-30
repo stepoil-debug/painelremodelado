@@ -254,7 +254,11 @@ export default function CoreMigrationPage() {
       const request = await triggerDrawingSync();
       let completed = false;
 
-      for (let attempt = 0; attempt < 20; attempt += 1) {
+      // A leitura completa do Drawing tem cerca de 4.8k linhas e pode levar
+      // mais de 30s mesmo quando o processamento está saudável. Continue
+      // acompanhando a mesma execução por até 90s para não exibir um falso
+      // "continua em processamento" logo após um sync bem-sucedido.
+      for (let attempt = 0; attempt < 60; attempt += 1) {
         await new Promise((resolve) => window.setTimeout(resolve, 1500));
         const sync = await loadHubSyncStatus();
         const drawing = sync.sources.find((source) => source.source_key === 'drawing');
