@@ -15,6 +15,7 @@ import {
   ChevronRight,
   CircleDot,
   Clock3,
+  Download,
   Eye,
   EyeOff,
   FileText,
@@ -33,6 +34,7 @@ import {
   Users,
   XCircle,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import ArchivePage from './ArchivePage';
 import CoreMigrationPage from './CoreMigrationPage';
 import { liveHHReadOnlyEnabled, loadHHSessionsReadOnly } from './services/hhReadOnly';
@@ -145,6 +147,32 @@ function fmtNumber(value: number | string | null | undefined, digits = 2) {
   return Number.isFinite(number)
     ? number.toLocaleString('pt-BR', { maximumFractionDigits: digits })
     : '—';
+}
+
+function downloadPortfolioExcel(demands: Demand[]) {
+  const rows = demands.map((demand) => ({
+    BSP: demand.bsp,
+    'ISO / SPL': demand.iso,
+    Projeto: demand.project,
+    Cliente: demand.client,
+    'Etapa atual': demand.stage,
+    Setor: sectorName(demand.sector),
+    'Avanço (%)': demand.progress,
+    Status: statusLabel[effectiveStatus(demand)],
+    Prioridade: priorityLabel[demand.priority],
+    'Peso (kg)': demand.weightKg ?? null,
+    'Área (m²)': demand.m2 ?? null,
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  worksheet['!cols'] = [
+    { wch: 18 }, { wch: 30 }, { wch: 22 }, { wch: 20 }, { wch: 28 },
+    { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 14 },
+  ];
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Carteira');
+  const date = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(workbook, 'carteira-filtrada-' + date + '.xlsx');
 }
 
 function sectorKeyFromValue(value?: string | null): SectorKey {
@@ -2484,6 +2512,8 @@ function Portfolio(props: {
     return groups;
   }, [filtered, progressSort, statusSort]);
 
+  const exportRows = useMemo(() => grouped.flatMap((group) => group.demands), [grouped]);
+
   const totalByGroup = useMemo(() => {
     const map = new Map<string, number>();
     for (const group of groupDemandsByBsp(props.demands)) {
@@ -2596,6 +2626,15 @@ function Portfolio(props: {
         </label>
         <button className={'flag-filter late-filter ' + (props.lateOnly ? 'active danger' : '')} onClick={() => props.setLateOnly(!props.lateOnly)}><AlertTriangle size={14} /> Só atrasadas</button>
         <button className={'flag-filter priority-filter ' + (props.priorityOnly ? 'active' : '')} onClick={() => props.setPriorityOnly(!props.priorityOnly)}><CircleDot size={14} /> Prioridade</button>
+        <button
+          className="soft-btn portfolio-export-button"
+          type="button"
+          onClick={() => downloadPortfolioExcel(exportRows)}
+          disabled={!exportRows.length}
+          title="Baixar somente os itens que correspondem aos filtros atuais"
+        >
+          <Download size={14} /> Baixar Excel ({exportRows.length})
+        </button>
         {props.search && <div className="search-feedback">
           <strong>{grouped.length}</strong> BSP(s) encontrada(s) para <span>“{props.search}”</span>
           {linkedTotalForVisibleGroups > filtered.length && <em>{filtered.length} item(ns) visível(is) de {linkedTotalForVisibleGroups} vinculado(s)</em>}
