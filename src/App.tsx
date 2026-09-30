@@ -602,11 +602,17 @@ export default function App() {
     setBanner(demand.bsp + ' assumida pelo setor ' + sectorName(demand.sector) + '.');
   }
 
-  async function progressDemand(id: string) {
+  async function progressDemand(id: string, requestedProgress?: number) {
     const demand = demands.find((d) => d.id === id);
     if (!demand) return;
 
-    const progress = Math.min(75, Math.max(25, demand.progress + 25));
+    const progress = requestedProgress == null
+      ? Math.min(90, Math.max(25, demand.progress + 25))
+      : Math.min(99, Math.max(demand.progress, requestedProgress));
+    if (progress <= demand.progress) {
+      setBanner('Escolha um avanço maior que o atual.');
+      return;
+    }
     if (demand.source === 'ops_core' || demand.source === 'hub_readonly') {
       await runCoreAction(demand, 'progress', { progress }, 'Avanço atualizado para ' + progress + '%.');
       return;
@@ -903,7 +909,7 @@ export default function App() {
             demand={selected}
             onBack={() => setSelectedId(null)}
             onAssume={() => assumeDemand(selected.id)}
-            onProgress={() => progressDemand(selected.id)}
+            onProgress={(progress) => progressDemand(selected.id, progress)}
             onWait={() => waitDemand(selected.id)}
             onResume={() => resumeDemand(selected.id)}
             onBlock={() => blockDemand(selected.id)}
@@ -3204,7 +3210,7 @@ function DemandDetail(props: {
   demand: Demand;
   onBack: () => void;
   onAssume: () => void;
-  onProgress: () => void;
+  onProgress: (progress: number) => void;
   onWait: () => void;
   onResume: () => void;
   onBlock: () => void;
@@ -3227,6 +3233,8 @@ function DemandDetail(props: {
   const currentIndex = getStageIndex(demand.stageKey);
   const [phaseKey, setPhaseKey] = useState(demand.stageKey);
   const [photoModalIndex, setPhotoModalIndex] = useState<number | null>(null);
+  const [advanceOpen, setAdvanceOpen] = useState(false);
+  const [advanceProgress, setAdvanceProgress] = useState(25);
   const fallbackPhase = {
     key: demand.stageKey || 'unclassified',
     label: demand.stage || 'Etapa não classificada',
@@ -3248,7 +3256,9 @@ function DemandDetail(props: {
   const hasFinish = demand.evidences.some((e) => e.type === 'finish') || hhFinishPhotos.length > 0;
   const totalEvidence = demand.evidences.length + hhPhotos.length;
   const hhTotal = hhSessions.reduce((sum, session) => sum + Number(session.total_hh || 0), 0);
-  const readOnly = demand.source !== 'demo';
+  const canOperate = demand.source === 'demo' || demand.source === 'ops_core';
+  const pointingControlled = demand.source === 'ops_core' && phase.usesPointing;
+  const progressChoices = [25, 50, 75, 90].filter((value) => value > demand.progress);
   const goalfyStatus = props.goalfyShipping?.summary?.shipping_status;
   const goalfySent = goalfyStatus === 'complete' || goalfyStatus === 'partial' || goalfyStatus === 'shipping_evidence';
 
@@ -3349,16 +3359,17 @@ function DemandDetail(props: {
                   <div><FileText size={16} /><span>Extras</span><strong>{props.evidenceLoading ? '...' : hhExtraPhotos.length + demand.evidences.filter((e) => e.type === 'extra').length}</strong></div>
                 </div>
 
-                {!readOnly && demand.status !== 'completed' && (
+                {canOperate && demand.status !== 'completed' && (
                   <div className="detail-actions">
                     {demand.status === 'new' && <button className="primary-ref" onClick={props.onAssume}><UserCheck size={14} /> Assumir demanda</button>}
-                    {demand.status === 'in_progress' && <button className="soft-btn" onClick={props.onProgress}><Activity size={14} /> Avançar 25%</button>}
+                    {demand.status === 'in_progress' && !pointingControlled && <button className="primary-ref" onClick={() => { setAdvanceProgress(progressChoices[0] ?? 90); setAdvanceOpen(true); }}><Activity size={14} /> Avançar etapa</button>}
+                    {demand.status === 'in_progress' && pointingControlled && <span className="action-note"><LockKeyhole size={14} /> Avanço controlado pelo Apontamento HH</span>}
                     {demand.status === 'in_progress' && <button className="soft-btn" onClick={props.onWait}><PauseCircle size={14} /> Aguardar</button>}
                     {(demand.status === 'waiting' || demand.status === 'blocked') && <button className="soft-btn" onClick={props.onResume}><PlayCircle size={14} /> Retomar</button>}
                     {demand.status !== 'blocked' && <button className="danger-ref" onClick={props.onBlock}><XCircle size={14} /> Bloquear</button>}
-                    {!hasStart && <button className="soft-btn" onClick={() => props.onEvidence('start')}><ImagePlus size={14} /> Foto início</button>}
-                    {!hasFinish && <button className="soft-btn" onClick={() => props.onEvidence('finish')}><ImagePlus size={14} /> Foto fim</button>}
-                    {(demand.status === 'in_progress' || demand.status === 'waiting' || demand.status === 'late') && <button className="success-ref" onClick={props.onComplete}><CheckCircle2 size={14} /> Concluir etapa e enviar</button>}
+                    {demand.source === 'demo' && !hasStart && <button className="soft-btn" onClick={() => props.onEvidence('start')}><ImagePlus size={14} /> Foto início</button>}
+                    {demand.source === 'demo' && !hasFinish && <button className="soft-btn" onClick={() => props.onEvidence('finish')}><ImagePlus size={14} /> Foto fim</button>}
+                    {(demand.status === 'in_progress' || demand.status === 'waiting' || demand.status === 'late') && !pointingControlled && <button className="success-ref" onClick={props.onComplete}><CheckCircle2 size={14} /> Concluir etapa</button>}
                   </div>
                 )}
               </>
@@ -3405,7 +3416,7 @@ function DemandDetail(props: {
               <div><span>Origem</span><strong>{sectorName(demand.originSector)}</strong></div>
               <div><span>Próximo setor</span><strong>{next ? sectorName(next.sector) : 'Encerramento'}</strong></div>
               <div><span>Prioridade</span><strong>{priorityLabel[demand.priority]}</strong></div>
-              <div><span>Fonte</span><strong>{demand.archived ? 'Tracking histórico · ' + (demand.archiveSource || 'OLD') : demand.source === 'hub_readonly' ? 'Tracking + Apontamento HH' : demand.source === 'hh_readonly' ? 'HH · leitura' : 'Demonstração'}</strong></div>
+              <div><span>Fonte</span><strong>{demand.archived ? 'Tracking histórico · ' + (demand.archiveSource || 'OLD') : demand.source === 'hub_readonly' ? 'Tracking + Apontamento HH' : demand.source === 'ops_core' ? 'OPS Core · operacional' : demand.source === 'hh_readonly' ? 'HH · leitura' : 'Demonstração'}</strong></div>
             </div>
           </div>
 
@@ -3428,9 +3439,43 @@ function DemandDetail(props: {
             </div>
           </div>
 
-          <div className="secure-note"><ShieldCheck size={17} /><div><strong>{demand.source === 'hub_readonly' ? 'Dados reais · somente leitura' : 'Ambiente isolado'}</strong><span>{demand.source === 'hub_readonly' ? 'Os dados vêm do hub operacional e esta tela não escreve no Smartsheet.' : 'As ações da demo não escrevem no Apontamento HH.'}</span></div></div>
+          <div className="secure-note"><ShieldCheck size={17} /><div><strong>{demand.source === 'hub_readonly' ? 'Dados reais · somente leitura' : demand.source === 'ops_core' ? 'Dados reais · OPS Core' : 'Ambiente isolado'}</strong><span>{demand.source === 'hub_readonly' ? 'Os dados vêm do hub operacional e esta tela não escreve no Smartsheet.' : demand.source === 'ops_core' ? 'As ações passam pela API autenticada e ficam registradas no histórico.' : 'As ações da demo não escrevem no Apontamento HH.'}</span></div></div>
         </aside>
       </section>
+
+      {advanceOpen && (
+        <div
+          className="advance-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="advance-modal-title"
+          onMouseDown={(event) => { if (event.currentTarget === event.target) setAdvanceOpen(false); }}
+        >
+          <div className="advance-dialog">
+            <header>
+              <div>
+                <span className="section-mono">Atualizar etapa</span>
+                <h2 id="advance-modal-title">{phase.label}</h2>
+                <p>{demand.bsp} · {demand.iso}</p>
+              </div>
+              <button className="advance-close" onClick={() => setAdvanceOpen(false)} aria-label="Fechar">×</button>
+            </header>
+            <div className="advance-current"><span>Avanço atual</span><strong>{demand.progress}%</strong></div>
+            <div className="advance-choices" aria-label="Escolher avanço">
+              {progressChoices.length ? progressChoices.map((value) => (
+                <button key={value} className={advanceProgress === value ? 'selected' : ''} onClick={() => setAdvanceProgress(value)}>
+                  <strong>{value}%</strong><span>Registrar avanço</span>
+                </button>
+              )) : <p className="advance-empty">A etapa já está no avanço máximo permitido. Conclua a etapa quando estiver pronta.</p>}
+            </div>
+            <p className="advance-note"><ShieldCheck size={14} /> A ação será registrada no histórico com seu usuário e horário.</p>
+            <footer>
+              <button className="soft-btn" onClick={() => setAdvanceOpen(false)}>Cancelar</button>
+              <button className="primary-ref" disabled={!progressChoices.length || advanceProgress <= demand.progress} onClick={() => { setAdvanceOpen(false); props.onProgress(advanceProgress); }}><Activity size={14} /> Salvar avanço</button>
+            </footer>
+          </div>
+        </div>
+      )}
 
       {photoModalIndex !== null && hhPhotos[photoModalIndex] && (
         <EvidencePhotoModal
