@@ -15,10 +15,10 @@ import {
   ChevronRight,
   CircleDot,
   Clock3,
-  Download,
   Eye,
   EyeOff,
   FileText,
+  FileSpreadsheet,
   Filter,
   ImagePlus,
   LayoutGrid,
@@ -2627,13 +2627,13 @@ function Portfolio(props: {
         <button className={'flag-filter late-filter ' + (props.lateOnly ? 'active danger' : '')} onClick={() => props.setLateOnly(!props.lateOnly)}><AlertTriangle size={14} /> Só atrasadas</button>
         <button className={'flag-filter priority-filter ' + (props.priorityOnly ? 'active' : '')} onClick={() => props.setPriorityOnly(!props.priorityOnly)}><CircleDot size={14} /> Prioridade</button>
         <button
-          className="soft-btn portfolio-export-button"
+          className="portfolio-export-button"
           type="button"
           onClick={() => downloadPortfolioExcel(exportRows)}
           disabled={!exportRows.length}
           title="Baixar somente os itens que correspondem aos filtros atuais"
         >
-          <Download size={14} /> Baixar Excel ({exportRows.length})
+          <FileSpreadsheet size={15} /> <span>Exportar Excel</span><b>{exportRows.length}</b>
         </button>
         {props.search && <div className="search-feedback">
           <strong>{grouped.length}</strong> BSP(s) encontrada(s) para <span>“{props.search}”</span>
