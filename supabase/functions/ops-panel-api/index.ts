@@ -1234,11 +1234,13 @@ Deno.serve(async (request: Request) => {
       quality_visual: { label: "Inspeção Visual", sector: "Qualidade" },
       scan_initial: { label: "Inspeção Dimensional", sector: "Qualidade" },
       scan_final: { label: "Inspeção Dimensional", sector: "Qualidade" },
+      "scan-final": { label: "Inspeção Dimensional", sector: "Qualidade" },
       quality_dimensional: { label: "Inspeção Dimensional", sector: "Qualidade" },
       hydro: { label: "Hydro Test", sector: "Qualidade" },
       hydro_test: { label: "Hydro Test", sector: "Qualidade" },
       painting: { label: "Pintura / Revestimento", sector: "Pintura" },
       final_inspection: { label: "Inspeção Final", sector: "Qualidade" },
+      "final-inspection": { label: "Inspeção Final", sector: "Qualidade" },
       package: { label: "Liberação / Expedição", sector: "Expedição" },
       dispatch: { label: "Liberação / Expedição", sector: "Expedição" },
       legacy_current: { label: "Etapa do Tracking", sector: "Não classificado" },
@@ -1262,6 +1264,9 @@ Deno.serve(async (request: Request) => {
       : {};
     const coreEventRows = Array.isArray(source.core_events) ? source.core_events as Record<string, unknown>[] : [];
     const legacyEventRows = Array.isArray(source.legacy_events) ? source.legacy_events as Record<string, unknown>[] : [];
+    const legacyActualStageRows = Array.isArray(source.legacy_actual_stages)
+      ? source.legacy_actual_stages as Record<string, unknown>[]
+      : [];
     const coreItems = new Map((Array.isArray(source.core_items) ? source.core_items : []).map((row) => [String((row as Record<string, unknown>).id), row as Record<string, unknown>]));
     const coreProjects = new Map((Array.isArray(source.core_projects) ? source.core_projects : []).map((row) => [String((row as Record<string, unknown>).id), row as Record<string, unknown>]));
     const legacyAdvances = new Map((Array.isArray(source.legacy_advances) ? source.legacy_advances : []).map((row) => [String((row as Record<string, unknown>).id), row as Record<string, unknown>]));
@@ -1381,6 +1386,40 @@ Deno.serve(async (request: Request) => {
         itemKey: String(isoRow?.iso_key || raw.iso_key || ""),
         weightKg: numeric(isoRow?.weight_kg),
         m2: numeric(isoRow?.m2),
+      });
+    }
+
+    // Historical Tracking rows carry the source's real stage date.  They are
+    // not panel actions, so they do not exist in panel_legacy_stage_events.
+    // Use the positive stage progress on that date as the production delta;
+    // synced_at/source_updated_at are intentionally not used as production dates.
+    for (const raw of legacyActualStageRows) {
+      const progressTo = numeric(raw.progress) ?? 0;
+      const actualDate = String(raw.actual_date || "");
+      if (!actualDate || progressTo <= 0) continue;
+      const projectNumber = String(raw.project_number || "");
+      const isoKey = String(raw.iso_key || raw.iso || raw.drawing || "");
+      addEvent({
+        raw: {
+          id: `tracking-actual:${raw.project_row_id || ""}:${isoKey}:${raw.stage_key || ""}:${actualDate}`,
+          event_type: progressTo >= 100 ? "stage.complete" : "stage.progress",
+          progress_from: 0,
+          progress_to: progressTo,
+          actor_email: "tracking",
+          actor_name: "Tracking",
+          created_at: `${actualDate}T12:00:00-03:00`,
+        },
+        source: "tracking_legacy",
+        stageKey: String(raw.stage_key || "legacy_current"),
+        projectNumber,
+        projectDisplay: String(raw.project_display || projectNumber || ""),
+        client: String(raw.client || ""),
+        vessel: String(raw.vessel || ""),
+        pm: String(raw.pm || ""),
+        iso: String(raw.iso || raw.drawing || isoKey),
+        itemKey: isoKey,
+        weightKg: numeric(raw.weight_kg),
+        m2: numeric(raw.m2),
       });
     }
 

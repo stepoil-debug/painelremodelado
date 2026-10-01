@@ -69,6 +69,25 @@ legacy_projects as (
       select 1 from legacy_project_row_ids e
       where e.project_row_id = t.project_row_id
     )
+),
+legacy_actual_stages as (
+  select s.region, s.project_row_id, s.iso_key, s.stage_key,
+         s.stage_order, s.stage_name, s.progress, s.actual_date,
+         s.actual_source, s.source_actual_column,
+         i.iso, i.drawing, i.weight_kg, i.m2, i.project_number,
+         p.project_display, p.client, p.vessel, p.pm, p.project_type
+  from public.tracking_iso_stages s
+  left join public.tracking_isos i
+    on i.region = s.region
+   and i.project_row_id = s.project_row_id
+   and i.iso_key = s.iso_key
+  left join public.tracking_projects p
+    on p.region = s.region
+   and p.project_row_id = s.project_row_id
+  where s.region = coalesce(nullif(btrim(p_region), ''), 'BR')
+    and s.actual_date >= (p_from at time zone 'America/Sao_Paulo')::date
+    and s.actual_date < (p_to at time zone 'America/Sao_Paulo')::date
+    and coalesce(s.progress, 0) > 0
 )
 select jsonb_build_object(
   'core_events', coalesce((select jsonb_agg(to_jsonb(x)) from core_events x), '[]'::jsonb),
@@ -77,7 +96,8 @@ select jsonb_build_object(
   'core_projects', coalesce((select jsonb_agg(to_jsonb(x)) from core_projects x), '[]'::jsonb),
   'legacy_advances', coalesce((select jsonb_agg(to_jsonb(x)) from legacy_advances x), '[]'::jsonb),
   'legacy_isos', coalesce((select jsonb_agg(to_jsonb(x)) from legacy_isos x), '[]'::jsonb),
-  'legacy_projects', coalesce((select jsonb_agg(to_jsonb(x)) from legacy_projects x), '[]'::jsonb)
+  'legacy_projects', coalesce((select jsonb_agg(to_jsonb(x)) from legacy_projects x), '[]'::jsonb),
+  'legacy_actual_stages', coalesce((select jsonb_agg(to_jsonb(x)) from legacy_actual_stages x), '[]'::jsonb)
 );
 $$;
 
