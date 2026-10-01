@@ -933,8 +933,6 @@ export default function App() {
         <strong>Painel Operacional — Controle de Demandas</strong>
         <nav className="header-nav">
           <button className={page === 'portfolio' ? 'active' : ''} onClick={() => { setPage('portfolio'); setSelectedId(null); }}>Carteira</button>
-          <button className={page === 'live' ? 'active' : ''} onClick={() => { setPage('live'); setSelectedId(null); }}>Produção</button>
-          <button className={page === 'blocks' ? 'active' : ''} onClick={() => { setPage('blocks'); setSelectedId(null); }}>Bloqueios</button>
           <button className={page === 'analytics' ? 'active' : ''} onClick={() => { setPage('analytics'); setSelectedId(null); }}>Dashboard</button>
           <button className={page === 'archive' ? 'active' : ''} onClick={() => { setPage('archive'); setSelectedId(null); }}>Arquivados</button>
           <button className={page === 'migration' ? 'active' : ''} onClick={() => { setPage('migration'); setSelectedId(null); }}>Cadastro</button>
