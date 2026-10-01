@@ -3021,8 +3021,7 @@ function CommentBlock({
         beginEditing(event);
       }}
     >
-      <MessageSquare size={11} />
-      <span>{comment ? 'Comentário' : 'Adicionar comentário'}</span>
+      <MessageSquare size={13} aria-hidden="true" />
     </span>
   );
 }
@@ -3060,6 +3059,7 @@ function BspTreeRow({
     <article className={'reference-row bsp-tree-row ' + (expanded ? 'expanded' : '')}>
       <button className="row-main bsp-parent-row" onClick={onToggle}>
         <div className="bsp-cell">
+          {first && <CommentBlock comment={first.bspComment} label="Comentário da BSP" onSave={(value) => onSaveComment(first.id, 'bsp', value)} />}
           <div className="bsp-orb">BSP</div>
           <div>
             <strong>{group.bsp}</strong>
@@ -3073,7 +3073,6 @@ function BspTreeRow({
         <div className="project-cell">
           <strong>{first?.project ?? 'Projeto'}</strong>
           <span>{first?.client ?? 'Cliente'}</span>
-          {first && <CommentBlock comment={first.bspComment} label="Comentário da BSP" onSave={(value) => onSaveComment(first.id, 'bsp', value)} />}
         </div>
         <div className="stage-ref">
           <strong>{stageLabel}</strong>
@@ -3112,9 +3111,9 @@ function BspTreeRow({
                 </div>
                 <button className="bsp-child-main" onClick={() => onOpen(demand.id)}>
                   <div className="bsp-child-iso">
+                    <CommentBlock comment={demand.tagComment} label="Comentário da tag" onSave={(value) => onSaveComment(demand.id, 'tag', value)} />
                     <span>ISO / SPL</span>
                     <strong>{demand.iso}</strong>
-                    <CommentBlock comment={demand.tagComment} label="Comentário da tag" onSave={(value) => onSaveComment(demand.id, 'tag', value)} />
                   </div>
                   <div className="stage-ref">
                     <strong>{demand.stage}</strong>

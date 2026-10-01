@@ -881,18 +881,24 @@ h1,h2,h3,p { margin-top: 0; }
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  max-width: 100%;
-  margin-top: 6px;
-  padding: 3px 6px;
-  border: 1px solid transparent;
-  border-radius: 999px;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  box-sizing: border-box;
+  flex: none;
+  margin-top: 0;
+  padding: 0;
+  border: 1px solid #D8E5F2;
+  border-radius: 6px;
   color: #7B8FA2;
   font: 700 7px 'IBM Plex Mono', monospace;
+  letter-spacing: normal;
+  text-transform: none;
   cursor: pointer;
   transition: color .14s ease, background .14s ease, border-color .14s ease;
   vertical-align: top;
 }
+.comment-block svg { flex: none; }
 .comment-block:hover,.comment-block:focus-visible {
   color: #1355C2;
   background: #F0F7FF;
