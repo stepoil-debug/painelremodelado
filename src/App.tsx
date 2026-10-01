@@ -3115,8 +3115,10 @@ function BspTreeRow({
                 </div>
                 <button className="bsp-child-main" onClick={() => onOpen(demand.id)}>
                   <div className="bsp-child-iso">
-                    <CommentBlock comment={demand.tagComment} label="Comentário da tag" onSave={(value) => onSaveComment(demand.id, 'tag', value)} />
-                    <span>ISO / SPL</span>
+                    <div className="bsp-child-iso-meta">
+                      <CommentBlock comment={demand.tagComment} label="Comentário da tag" onSave={(value) => onSaveComment(demand.id, 'tag', value)} />
+                      <span>ISO / SPL</span>
+                    </div>
                     <strong>{demand.iso}</strong>
                   </div>
                   <div className="stage-ref">

@@ -865,6 +865,7 @@ h1,h2,h3,p { margin-top: 0; }
   box-shadow: 0 3px 10px rgba(14,74,168,.05);
 }
 .bsp-child-iso span,.bsp-child-iso strong { display: block; }
+.bsp-child-iso-meta { display: flex; align-items: center; gap: 5px; min-height: 25px; }
 .bsp-child-iso span {
   color: #93A6B8;
   font: 700 7px 'IBM Plex Mono', monospace;
