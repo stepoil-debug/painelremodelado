@@ -882,80 +882,41 @@ h1,h2,h3,p { margin-top: 0; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 25px;
+  height: 25px;
   box-sizing: border-box;
   flex: none;
   margin-top: 0;
   padding: 0;
-  border: 1px solid #C9DDEC;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #FFFFFF 0%, #F4F8FC 100%);
-  color: #7B8FA2;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #080808;
   font: 700 7px 'IBM Plex Mono', monospace;
   letter-spacing: normal;
   text-transform: none;
   cursor: pointer;
-  box-shadow: 0 2px 5px rgba(19,85,194,.08);
-  transition: color .14s ease, background .14s ease, border-color .14s ease, box-shadow .14s ease, transform .14s ease;
+  transition: background .14s ease, transform .14s ease;
   vertical-align: top;
 }
 .comment-bubble {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  width: 17px;
-  height: 14px;
-  border-radius: 6px;
-  background: #080808;
+  display: block;
+  width: 21px;
+  height: 21px;
+  overflow: visible;
+  fill: #080808;
 }
-.comment-bubble::after {
-  content: '';
-  position: absolute;
-  right: 1px;
-  bottom: -4px;
-  width: 7px;
-  height: 7px;
-  background: #080808;
-  clip-path: polygon(0 0, 100% 0, 100% 100%);
-}
-.comment-bubble i {
-  position: relative;
-  z-index: 1;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: #FFFFFF;
-}
+.comment-bubble circle { fill: #FFFFFF; }
 .comment-block:hover,.comment-block:focus-visible {
-  color: #1355C2;
-  background: linear-gradient(180deg, #F7FBFF 0%, #EAF4FF 100%);
-  border-color: #8FC3ED;
-  box-shadow: 0 4px 10px rgba(30,134,216,.16);
+  background: rgba(30,134,216,.08);
   transform: translateY(-1px);
   outline: none;
 }
 .comment-block:active { transform: translateY(0); }
 .comment-block.has-comment {
-  color: #1355C2;
-  border-color: #A8CFEF;
-  background: linear-gradient(180deg, #F7FBFF 0%, #EAF4FF 100%);
-  box-shadow: 0 2px 7px rgba(30,134,216,.13);
+  color: #080808;
 }
-.comment-block.has-comment::before {
-  content: '';
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 4px;
-  height: 4px;
-  border: 1px solid #FFFFFF;
-  border-radius: 50%;
-  background: #1E86D8;
-}
-.comment-block.empty { color: #7890A5; }
+.comment-block.empty { color: #080808; }
 .comment-block[data-tooltip]::after {
   content: attr(data-tooltip);
   position: absolute;

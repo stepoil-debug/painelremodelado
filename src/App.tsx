@@ -3020,11 +3020,12 @@ function CommentBlock({
         beginEditing(event);
       }}
     >
-      <span className="comment-bubble" aria-hidden="true">
-        <i />
-        <i />
-        <i />
-      </span>
+      <svg className="comment-bubble" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M19 3H5a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h8l4.1 3.7c.8.7 1.9.2 1.9-.9V17h0a3 3 0 0 0 3-3V6a3 3 0 0 0-3-3Z" />
+        <circle cx="7" cy="10" r="1.35" />
+        <circle cx="12" cy="10" r="1.35" />
+        <circle cx="17" cy="10" r="1.35" />
+      </svg>
     </span>
   );
 }
