@@ -1112,6 +1112,11 @@ Deno.serve(async (request: Request) => {
   if (action === "core_notifications") {
     const requestedSector = String(body.sector || "").trim();
     const actorSector = sessionUser ? String(sessionUser.sector || "") : requestedSector;
+    const actorRegion = sessionUser ? String(sessionUser.operation_region || sessionUser.operationRegion || "BR") : "BR";
+    const { error: missingWeightSyncError } = await admin.rpc("ops_core_sync_missing_weight_alerts", {
+      p_region: actorRegion || "BR",
+    });
+    if (missingWeightSyncError) console.error("missing weight alert sync error:", missingWeightSyncError.message);
     const role = String(sessionUser?.role || "").toLowerCase();
     const canReadAnySector = trustedSystem || role === "admin" || role === "administrator" || role === "administrador";
     const requestedSectorNorm = requestedSector
