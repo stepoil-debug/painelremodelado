@@ -1903,6 +1903,8 @@ Deno.serve(async (request: Request) => {
               stage_entered_at: (override as Record<string, unknown>).stage_entered_at || metadata?.created_at || null,
               last_actor_email: (override as Record<string, unknown>).last_actor_email || metadata?.last_actor_email || null,
               last_actor_name: (override as Record<string, unknown>).last_actor_name || metadata?.last_actor_name || (override as Record<string, unknown>).last_actor || null,
+              can_undo: (override as Record<string, unknown>).can_undo === true
+                || ["stage.start", "stage.progress", "stage.complete"].includes(String((override as Record<string, unknown>).last_action || metadata?.last_action || "")),
             };
           })
         : coreStageOverrides;
