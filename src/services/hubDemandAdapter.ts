@@ -5,6 +5,7 @@ import type {
   Priority,
   SectorKey,
 } from '../types';
+import { getStage } from '../workflow';
 import type { HubDemandRow } from './opsPanelHub';
 
 type StageMap = {
@@ -80,7 +81,7 @@ function hhStageMappingIsReliable(row: HubDemandRow) {
   return false;
 }
 
-function stageMap(row: HubDemandRow): StageMap {
+function trackingStageMap(row: HubDemandRow): StageMap {
   const group = normalize(row.current_stage);
   const status = normalize(row.current_status);
   const progress = Number(row.overall_progress || 0);
@@ -148,6 +149,24 @@ function stageMap(row: HubDemandRow): StageMap {
   return { stageKey: 'unclassified', sector: 'nao_classificado', label: row.current_status || row.current_stage || 'Etapa não classificada' };
 }
 
+function stageMap(row: HubDemandRow): StageMap {
+  const panelStage = (row.panel_stage_overrides || [])
+    .filter((item) => item.stage_key && normalize(item.status) !== 'completed')
+    .sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')))
+    .map((item) => getStage(String(item.stage_key)))
+    .find(Boolean);
+
+  if (panelStage) {
+    return {
+      stageKey: panelStage.key,
+      sector: panelStage.sector,
+      label: panelStage.label,
+    };
+  }
+
+  return trackingStageMap(row);
+}
+
 function compactIso(row: HubDemandRow) {
   const value = (row.iso || row.drawing || '').trim();
   if (!value) return '—';
@@ -163,7 +182,9 @@ function dateAtEndOfDay(value?: string | null) {
 }
 
 function statusFor(row: HubDemandRow, stageKey?: string): DemandStatus {
-  const overrideStatus = normalize(row.panel_stage_overrides?.find((item) => item.stage_key === stageKey)?.status);
+  const panelOverride = row.panel_stage_overrides?.find((item) => item.stage_key === stageKey);
+  const overrideStatus = normalize(panelOverride?.status);
+  if (panelOverride && ['new', 'available', 'accepted'].includes(overrideStatus)) return 'new';
   if (overrideStatus === 'blocked') return 'blocked';
   if (overrideStatus === 'waiting') return 'waiting';
   if (overrideStatus === 'completed') return 'completed';

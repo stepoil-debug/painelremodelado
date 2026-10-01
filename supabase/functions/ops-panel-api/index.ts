@@ -1258,6 +1258,32 @@ Deno.serve(async (request: Request) => {
       });
     const liveTrackingByIdentity = new Map(trackingRows.map((row) => [rowIdentity(row), row]));
 
+    const sourceVersion = (row: Record<string, unknown>) => {
+      const value = Number(row.source_version);
+      return Number.isFinite(value) ? value : null;
+    };
+
+    const sourceTime = (row: Record<string, unknown>) => {
+      const value = Date.parse(String(row.source_updated_at || row.synced_at || ""));
+      return Number.isFinite(value) ? value : null;
+    };
+
+    // The RPC is refreshed from the latest Tracking source rows. The public
+    // tracking_isos table is a legacy mirror and can lag one or more source
+    // versions behind. Never let that mirror replace a newer RPC row.
+    const preferLiveRow = (item: Record<string, unknown>, live: Record<string, unknown>) => {
+      const itemVersion = sourceVersion(item);
+      const liveVersion = sourceVersion(live);
+      if (itemVersion !== null && liveVersion !== null && itemVersion !== liveVersion) {
+        return itemVersion > liveVersion ? item : { ...item, ...live };
+      }
+
+      const itemTime = sourceTime(item);
+      const liveTime = sourceTime(live);
+      if (itemTime !== null && liveTime !== null && itemTime >= liveTime) return item;
+      return { ...item, ...live };
+    };
+
     // The cache and the live Tracking table can use different casing or
     // punctuation in iso_key (for example BSP...ISO001SP01 vs bsp...iso001sp01).
     // Match on a canonical identity and prefer the live active Tracking row for
@@ -1266,7 +1292,7 @@ Deno.serve(async (request: Request) => {
     const currentRows = eligibleRpcRows.map((item) => {
       if (item.source_mode === "ops_core") return item;
       const live = liveTrackingByIdentity.get(rowIdentity(item));
-      return live ? { ...item, ...live } : item;
+      return live ? preferLiveRow(item, live) : item;
     });
     const representedIdentities = new Set(currentRows.map(rowIdentity));
     const trackingIsoFallbackRows = trackingRows

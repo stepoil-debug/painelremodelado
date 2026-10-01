@@ -637,10 +637,14 @@ export default function App() {
       ? (demand.stageProgress?.[stageKey] ?? (stageKey === demand.stageKey ? demand.progress : 0))
       : demand.progress;
     const progress = requestedProgress == null
-      ? Math.min(90, Math.max(25, currentProgress + 25))
-      : Math.min(99, Math.max(currentProgress, requestedProgress));
+      ? Math.min(100, Math.max(25, currentProgress + 25))
+      : Math.min(100, Math.max(currentProgress, requestedProgress));
     if (progress <= currentProgress) {
       setBanner('Escolha um avanço maior que o atual.');
+      return;
+    }
+    if (progress === 100) {
+      await completeDemand(id, stageKey);
       return;
     }
     if (demand.source === 'ops_core' || demand.source === 'hub_readonly') {
@@ -3349,7 +3353,7 @@ function DemandDetail(props: {
     || (demand.source === 'hub_readonly' && Boolean(demand.legacyProjectRowId && demand.legacyIsoKey && demand.iso));
   const canAdvance = phaseStatus === 'in_progress' || phaseStatus === 'late' || phaseProgress === 0;
   const phaseCanOperate = canOperate && !phaseCompleted;
-  const progressChoices = [25, 50, 75, 90].filter((value) => value > phaseProgress);
+  const progressChoices = [25, 50, 75, 100].filter((value) => value > phaseProgress);
   const goalfyStatus = props.goalfyShipping?.summary?.shipping_status;
   const goalfySent = goalfyStatus === 'complete' || goalfyStatus === 'partial' || goalfyStatus === 'shipping_evidence';
 
@@ -3461,7 +3465,7 @@ function DemandDetail(props: {
                 {phaseCanOperate && (
                   <div className="detail-actions">
                     {isCurrent && demand.status === 'new' && <button className="primary-ref" onClick={() => props.onAssume(phase.key)}><UserCheck size={14} /> Assumir demanda</button>}
-                    {canAdvance && <button className="primary-ref" onClick={() => { setAdvanceProgress(progressChoices[0] ?? 90); setAdvanceOpen(true); }}><Activity size={14} /> {phaseProgress === 0 ? 'Iniciar etapa' : 'Avançar etapa'}</button>}
+                    {canAdvance && <button className="primary-ref" onClick={() => { setAdvanceProgress(progressChoices[0] ?? 100); setAdvanceOpen(true); }}><Activity size={14} /> {phaseProgress === 0 ? 'Iniciar etapa' : 'Avançar etapa'}</button>}
                     {(phaseStatus === 'in_progress' || phaseStatus === 'late') && <button className="soft-btn" onClick={() => props.onWait(phase.key)}><PauseCircle size={14} /> Aguardar</button>}
                     {(phaseStatus === 'waiting' || phaseStatus === 'blocked') && <button className="soft-btn" onClick={() => props.onResume(phase.key)}><PlayCircle size={14} /> Retomar</button>}
                     {phaseStatus !== 'blocked' && <button className="danger-ref" onClick={() => props.onBlock(phase.key)}><XCircle size={14} /> Bloquear</button>}
@@ -3583,7 +3587,7 @@ function DemandDetail(props: {
             <p className="advance-note"><ShieldCheck size={14} /> A ação será registrada no histórico com seu usuário e horário.</p>
             <footer>
               <button className="soft-btn" onClick={() => setAdvanceOpen(false)}>Cancelar</button>
-              <button className="primary-ref" disabled={!progressChoices.length || advanceProgress <= phaseProgress} onClick={() => { setAdvanceOpen(false); props.onProgress(advanceProgress, phase.key); }}><Activity size={14} /> Salvar avanço</button>
+              <button className="primary-ref" disabled={!progressChoices.length || advanceProgress <= phaseProgress} onClick={() => { setAdvanceOpen(false); props.onProgress(advanceProgress, phase.key); }}><Activity size={14} /> {advanceProgress === 100 ? 'Concluir e avançar' : 'Salvar avanço'}</button>
             </footer>
           </div>
         </div>
