@@ -1251,67 +1251,25 @@ Deno.serve(async (request: Request) => {
     };
     const round = (value: number | null) => value == null ? null : Math.round(value * 100) / 100;
 
-    const [{ data: coreEvents, error: coreEventsError }, { data: legacyEvents, error: legacyEventsError }] = await Promise.all([
-      admin
-        .schema("ops_core")
-        .from("stage_events")
-        .select("id,project_id,item_id,stage_key,event_type,progress_from,progress_to,actor_email,actor_name,source_system,created_at,payload")
-        .gte("created_at", fromIso)
-        .lt("created_at", toIso)
-        .in("event_type", ["stage.start", "stage.progress", "stage.complete"])
-        .order("created_at", { ascending: true })
-        .limit(50000),
-      admin
-        .schema("ops_core")
-        .from("panel_legacy_stage_events")
-        .select("id,advance_id,region,project_row_id,project_number,iso_key,event_type,progress_from,progress_to,actor_email,actor_name,note,payload,created_at")
-        .eq("region", region)
-        .gte("created_at", fromIso)
-        .lt("created_at", toIso)
-        .in("event_type", ["stage.start", "stage.progress", "stage.complete"])
-        .order("created_at", { ascending: true })
-        .limit(50000),
-    ]);
-    if (coreEventsError) return json({ ok: false, error: coreEventsError.message }, 500);
-    if (legacyEventsError) return json({ ok: false, error: legacyEventsError.message }, 500);
-
-    const coreEventRows = Array.isArray(coreEvents) ? coreEvents as Record<string, unknown>[] : [];
-    const legacyEventRows = Array.isArray(legacyEvents) ? legacyEvents as Record<string, unknown>[] : [];
-    const coreItemIds = [...new Set(coreEventRows.map((row) => String(row.item_id || "")).filter(Boolean))];
-    const coreProjectIds = [...new Set(coreEventRows.map((row) => String(row.project_id || "")).filter(Boolean))];
-    const legacyAdvanceIds = [...new Set(legacyEventRows.map((row) => String(row.advance_id || "")).filter(Boolean))];
-    const legacyProjectRowIds = [...new Set(legacyEventRows.map((row) => String(row.project_row_id || "")).filter(Boolean))];
-
-    const [coreItemsResult, coreProjectsResult, legacyAdvancesResult, legacyIsoResult, legacyProjectsResult] = await Promise.all([
-      coreItemIds.length
-        ? admin.schema("ops_core").from("items").select("id,project_id,item_key,iso_code,spool_code,tag_number,weight_kg,painting_m2,legacy_project_row_id,legacy_iso_key").in("id", coreItemIds)
-        : Promise.resolve({ data: [], error: null }),
-      coreProjectIds.length
-        ? admin.schema("ops_core").from("projects").select("id,region,project_core,display_code,client,vessel,pm,source_mode,legacy_project_row_id").in("id", coreProjectIds)
-        : Promise.resolve({ data: [], error: null }),
-      legacyAdvanceIds.length
-        ? admin.schema("ops_core").from("panel_legacy_stage_advances").select("id,iso,stage_key,tracking_stage_key").in("id", legacyAdvanceIds)
-        : Promise.resolve({ data: [], error: null }),
-      legacyProjectRowIds.length
-        ? admin.from("tracking_isos").select("region,project_row_id,iso_key,iso,drawing,weight_kg,m2,project_number").eq("region", region).in("project_row_id", legacyProjectRowIds).limit(50000)
-        : Promise.resolve({ data: [], error: null }),
-      legacyProjectRowIds.length
-        ? admin.from("tracking_projects").select("region,project_row_id,project_number,project_display,client,vessel,pm,project_type").eq("region", region).in("project_row_id", legacyProjectRowIds).limit(5000)
-        : Promise.resolve({ data: [], error: null }),
-    ]);
-    const relatedErrors = [coreItemsResult, coreProjectsResult, legacyAdvancesResult, legacyIsoResult, legacyProjectsResult]
-      .map((result) => result.error)
-      .find(Boolean);
-    if (relatedErrors) return json({ ok: false, error: relatedErrors.message }, 500);
-
-    const coreItems = new Map((Array.isArray(coreItemsResult.data) ? coreItemsResult.data : []).map((row) => [String((row as Record<string, unknown>).id), row as Record<string, unknown>]));
-    const coreProjects = new Map((Array.isArray(coreProjectsResult.data) ? coreProjectsResult.data : []).map((row) => [String((row as Record<string, unknown>).id), row as Record<string, unknown>]));
-    const legacyAdvances = new Map((Array.isArray(legacyAdvancesResult.data) ? legacyAdvancesResult.data : []).map((row) => [String((row as Record<string, unknown>).id), row as Record<string, unknown>]));
+    const { data: monthlySource, error: monthlySourceError } = await admin.rpc("ops_core_monthly_production_source", {
+      p_region: region,
+      p_from: fromIso,
+      p_to: toIso,
+    });
+    if (monthlySourceError) return json({ ok: false, error: monthlySourceError.message }, 500);
+    const source = monthlySource && typeof monthlySource === "object"
+      ? monthlySource as Record<string, unknown>
+      : {};
+    const coreEventRows = Array.isArray(source.core_events) ? source.core_events as Record<string, unknown>[] : [];
+    const legacyEventRows = Array.isArray(source.legacy_events) ? source.legacy_events as Record<string, unknown>[] : [];
+    const coreItems = new Map((Array.isArray(source.core_items) ? source.core_items : []).map((row) => [String((row as Record<string, unknown>).id), row as Record<string, unknown>]));
+    const coreProjects = new Map((Array.isArray(source.core_projects) ? source.core_projects : []).map((row) => [String((row as Record<string, unknown>).id), row as Record<string, unknown>]));
+    const legacyAdvances = new Map((Array.isArray(source.legacy_advances) ? source.legacy_advances : []).map((row) => [String((row as Record<string, unknown>).id), row as Record<string, unknown>]));
     const legacyIsos = new Map<string, Record<string, unknown>>();
-    for (const raw of (Array.isArray(legacyIsoResult.data) ? legacyIsoResult.data : []) as Record<string, unknown>[]) {
+    for (const raw of (Array.isArray(source.legacy_isos) ? source.legacy_isos : []) as Record<string, unknown>[]) {
       legacyIsos.set(String(raw.project_row_id || "") + ":" + canonicalIso(raw.iso_key || raw.drawing || raw.iso), raw);
     }
-    const legacyProjects = new Map((Array.isArray(legacyProjectsResult.data) ? legacyProjectsResult.data : []).map((row) => [String((row as Record<string, unknown>).project_row_id), row as Record<string, unknown>]));
+    const legacyProjects = new Map((Array.isArray(source.legacy_projects) ? source.legacy_projects : []).map((row) => [String((row as Record<string, unknown>).project_row_id), row as Record<string, unknown>]));
 
     type ReportEvent = {
       id: string;
