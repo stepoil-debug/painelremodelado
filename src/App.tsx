@@ -589,9 +589,18 @@ export default function App() {
       const projectArchive = result && typeof result === 'object'
         ? (result as { project_archive?: { archived?: boolean } }).project_archive
         : undefined;
-      setBanner(projectArchive?.archived
-        ? demand.bsp + ' concluída e movida automaticamente para Arquivados.'
-        : successMessage);
+      const smartsheetSync = result && typeof result === 'object'
+        ? (result as { smartsheet_sync?: { ok?: boolean; skipped?: boolean; reason?: string } }).smartsheet_sync
+        : undefined;
+      if (smartsheetSync && smartsheetSync.ok === false) {
+        setBanner(successMessage + ' O painel foi salvo, mas o Smartsheet não foi atualizado: ' + (smartsheetSync.reason || 'verifique a integração.'));
+      } else if (smartsheetSync && smartsheetSync.skipped && smartsheetSync.reason) {
+        setBanner(successMessage + ' Smartsheet: ' + smartsheetSync.reason);
+      } else {
+        setBanner(projectArchive?.archived
+          ? demand.bsp + ' concluída e movida automaticamente para Arquivados.'
+          : successMessage);
+      }
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Não foi possível atualizar a demanda.';
@@ -636,6 +645,11 @@ export default function App() {
     const currentProgress = targetStageKey
       ? (demand.stageProgress?.[stageKey] ?? (stageKey === demand.stageKey ? demand.progress : 0))
       : demand.progress;
+    const panelProgressSteps = [25, 50, 75, 100];
+    if (requestedProgress != null && !panelProgressSteps.includes(requestedProgress)) {
+      setBanner('O avanço pelo painel deve ser 25%, 50%, 75% ou 100%.');
+      return;
+    }
     const progress = requestedProgress == null
       ? Math.min(100, Math.max(25, currentProgress + 25))
       : Math.min(100, Math.max(currentProgress, requestedProgress));
