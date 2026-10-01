@@ -1190,7 +1190,7 @@ Deno.serve(async (request: Request) => {
     const actorName = sessionUser
       ? String(sessionUser.name || sessionUser.username || sessionUser.email || actor)
       : "system-backend";
-    const { data, error } = await admin.schema("ops_core").rpc("apply_panel_legacy_stage_action", {
+    const { data, error } = await admin.rpc("ops_core_apply_panel_legacy_stage_action", {
       p_region: region,
       p_project_row_id: projectRowId,
       p_project_number: projectNumber,
@@ -1351,7 +1351,7 @@ Deno.serve(async (request: Request) => {
     const [{ data, error }, { data: executionOverlay, error: executionError }, { data: panelAdvanceOverlay, error: panelAdvanceError }, { data: activeProjectRows, error: activeProjectsError }] = await Promise.all([
       admin.rpc(rpcName, rpcArgs),
       admin.rpc("ops_panel_get_execution_overlay"),
-      admin.schema("ops_core").rpc("get_panel_legacy_stage_advances", { p_region: region }),
+      admin.rpc("ops_core_get_panel_legacy_stage_advances", { p_region: region }),
       admin
         .from("tracking_projects")
         .select("region,project_row_id,project_number,project_display,client,vessel,project_type,project_status,pm,planned_start,planned_finish,replanned_finish,fabrication_start,overall_progress,weight_kg,m2,source_version,source_updated_at,synced_at")

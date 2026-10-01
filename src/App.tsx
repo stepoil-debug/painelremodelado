@@ -3307,7 +3307,7 @@ function DemandDetail(props: {
   onResume: (stageKey?: string) => void;
   onBlock: (stageKey?: string) => void;
   onEvidence: (type: EvidenceType, file?: File) => void | Promise<void>;
-  onComplete: (stageKey?: string) => void;
+  onComplete: (stageKey?: string) => void | Promise<void>;
   hubDetail: Awaited<ReturnType<typeof loadHubProject>> | null;
   hhEvidence: HubHHEvidence | null;
   stageEvidence: HubStageEvidence | null;
@@ -3328,6 +3328,8 @@ function DemandDetail(props: {
   const [photoModalIndex, setPhotoModalIndex] = useState<number | null>(null);
   const [advanceOpen, setAdvanceOpen] = useState(false);
   const [advanceProgress, setAdvanceProgress] = useState(25);
+  const [completeConfirmOpen, setCompleteConfirmOpen] = useState(false);
+  const [completeSubmitting, setCompleteSubmitting] = useState(false);
   const startPhotoInput = useRef<HTMLInputElement>(null);
   const finishPhotoInput = useRef<HTMLInputElement>(null);
   const fallbackPhase = {
@@ -3411,6 +3413,17 @@ function DemandDetail(props: {
     if (file) void props.onEvidence(type, file);
   }
 
+  async function confirmCompletion() {
+    if (completeSubmitting) return;
+    setCompleteSubmitting(true);
+    try {
+      await props.onComplete(phase.key);
+      setCompleteConfirmOpen(false);
+    } finally {
+      setCompleteSubmitting(false);
+    }
+  }
+
   return (
     <>
       <section className="detail-top">
@@ -3485,7 +3498,7 @@ function DemandDetail(props: {
                     {phaseStatus !== 'blocked' && <button className="danger-ref" onClick={() => props.onBlock(phase.key)}><XCircle size={14} /> Bloquear</button>}
                     {isCurrent && (demand.source === 'demo' || demand.source === 'ops_core') && !hasStart && <button className="soft-btn" onClick={() => startPhotoInput.current?.click()}><ImagePlus size={14} /> Foto início</button>}
                     {isCurrent && (demand.source === 'demo' || demand.source === 'ops_core') && !hasFinish && <button className="soft-btn" onClick={() => finishPhotoInput.current?.click()}><ImagePlus size={14} /> Foto fim</button>}
-                    {(phaseStatus === 'in_progress' || phaseStatus === 'waiting' || phaseStatus === 'late' || phaseProgress > 0) && <button className="success-ref" onClick={() => props.onComplete(phase.key)}><CheckCircle2 size={14} /> Concluir etapa</button>}
+                    {(phaseStatus === 'in_progress' || phaseStatus === 'waiting' || phaseStatus === 'late' || phaseProgress > 0) && <button className="success-ref" onClick={() => setCompleteConfirmOpen(true)} disabled={completeSubmitting}><CheckCircle2 size={14} /> Concluir etapa</button>}
                     {isCurrent && (demand.source === 'demo' || demand.source === 'ops_core') && <>
                       <input ref={startPhotoInput} className="hidden-file-input" type="file" accept="image/*" onChange={(event) => selectEvidence('start', event.currentTarget)} />
                       <input ref={finishPhotoInput} className="hidden-file-input" type="file" accept="image/*" onChange={(event) => selectEvidence('finish', event.currentTarget)} />
@@ -3602,6 +3615,41 @@ function DemandDetail(props: {
             <footer>
               <button className="soft-btn" onClick={() => setAdvanceOpen(false)}>Cancelar</button>
               <button className="primary-ref" disabled={!progressChoices.length || advanceProgress <= phaseProgress} onClick={() => { setAdvanceOpen(false); props.onProgress(advanceProgress, phase.key); }}><Activity size={14} /> {advanceProgress === 100 ? 'Concluir e avançar' : 'Salvar avanço'}</button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {completeConfirmOpen && (
+        <div
+          className="advance-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="complete-modal-title"
+          onMouseDown={(event) => { if (!completeSubmitting && event.currentTarget === event.target) setCompleteConfirmOpen(false); }}
+        >
+          <div className="advance-dialog complete-confirm-dialog">
+            <header>
+              <div>
+                <span className="section-mono">Confirmar conclusão</span>
+                <h2 id="complete-modal-title">Concluir somente esta etapa?</h2>
+                <p>{demand.bsp} · {demand.iso}</p>
+              </div>
+              <button className="advance-close" onClick={() => setCompleteConfirmOpen(false)} disabled={completeSubmitting} aria-label="Fechar">×</button>
+            </header>
+            <div className="complete-confirm-warning">
+              <CheckCircle2 size={18} />
+              <div>
+                <strong>{phase.label}</strong>
+                <span>Será marcada como concluída em 100%. As próximas etapas não serão alteradas.</span>
+              </div>
+            </div>
+            <p className="advance-note"><ShieldCheck size={14} /> Esta ação será registrada no histórico com seu usuário e horário.</p>
+            <footer>
+              <button className="soft-btn" onClick={() => setCompleteConfirmOpen(false)} disabled={completeSubmitting}>Cancelar</button>
+              <button className="primary-ref" onClick={() => void confirmCompletion()} disabled={completeSubmitting}>
+                <CheckCircle2 size={14} /> {completeSubmitting ? 'Concluindo...' : 'Sim, concluir etapa'}
+              </button>
             </footer>
           </div>
         </div>
