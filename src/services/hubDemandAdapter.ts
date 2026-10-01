@@ -1,5 +1,6 @@
 import type {
   Demand,
+  DemandEvent,
   DemandStatus,
   OperationalState,
   Priority,
@@ -302,6 +303,32 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
     const vessel = row.vessel ? ' · ' + row.vessel : '';
     const sourceStatus = [row.current_stage, row.current_status].filter(Boolean).join(' / ');
     const bsp = projectKeyFromRow(row);
+    const panelHistory: DemandEvent[] = (row.panel_stage_history || [])
+      .filter((event) => event.created_at)
+      .map((event, index) => {
+        const eventStage = getStage(String(event.stage_key || ''));
+        const eventType = normalize(event.event_type);
+        const type: DemandEvent['type'] = eventType.includes('complete')
+          ? 'completed'
+          : eventType.includes('block')
+            ? 'blocked'
+            : eventType.includes('wait')
+              ? 'waiting'
+              : eventType.includes('resume')
+                ? 'resumed'
+                : 'progress';
+        const progressTo = numericOrNull(event.progress_to);
+        const progressLabel = progressTo == null ? '' : ' · avanço ' + progressTo + '%';
+        return {
+          id: String(event.id || 'panel-history-' + row.iso_key + '-' + index),
+          type,
+          title: 'Apontamento pelo painel · ' + (eventStage?.label || event.stage_key || 'Etapa'),
+          description: (event.note || eventType || 'Etapa atualizada') + progressLabel,
+          at: String(event.created_at),
+          actor: [event.actor_name, event.actor_email].filter(Boolean).join(' · ') || 'Usuário do painel',
+          sector: eventStage?.sector || mapped.sector,
+        };
+      });
 
     return {
       id: 'hub-' + String(row.region || 'BR') + '-' + String(row.iso_key || bsp),
@@ -383,7 +410,7 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
           ? 'OPS CORE · STEP'
           : (row.archived ? 'Tracking histórico · ' + (row.archive_source || 'OLD') : 'Tracking · Smartsheet'),
         sector: mapped.sector,
-      }, ...(currentStageMovement?.lastMovedAt ? [{
+      }, ...panelHistory, ...(panelHistory.length === 0 && currentStageMovement?.lastMovedAt ? [{
         id: 'panel-movement-' + row.region + '-' + row.iso_key + '-' + mapped.stageKey,
         type: 'progress' as const,
         title: 'Último apontamento pelo painel',

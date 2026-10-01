@@ -1524,7 +1524,7 @@ Deno.serve(async (request: Request) => {
       ? { p_region: region, p_search: search, p_limit: limit }
       : { p_region: region, p_limit: limit };
 
-    const [{ data, error }, { data: executionOverlay, error: executionError }, { data: panelAdvanceOverlay, error: panelAdvanceError }, { data: legacyPanelStageRows, error: legacyPanelStageError }, { data: activeProjectRows, error: activeProjectsError }] = await Promise.all([
+    const [{ data, error }, { data: executionOverlay, error: executionError }, { data: panelAdvanceOverlay, error: panelAdvanceError }, { data: legacyPanelStageRows, error: legacyPanelStageError }, { data: legacyPanelStageEventRows, error: legacyPanelStageEventsError }, { data: activeProjectRows, error: activeProjectsError }] = await Promise.all([
       admin.rpc(rpcName, rpcArgs),
       admin.rpc("ops_panel_get_execution_overlay"),
       admin.rpc("ops_core_get_panel_legacy_stage_advances", { p_region: region }),
@@ -1533,6 +1533,13 @@ Deno.serve(async (request: Request) => {
         .from("panel_legacy_stage_advances")
         .select("region,project_row_id,project_number,iso_key,stage_key,created_at,updated_at,last_actor_email,last_actor_name,last_action")
         .eq("region", region)
+        .limit(50000),
+      admin
+        .schema("ops_core")
+        .from("panel_legacy_stage_events")
+        .select("id,region,project_row_id,project_number,iso_key,event_type,progress_from,progress_to,actor_email,actor_name,note,payload,created_at")
+        .eq("region", region)
+        .order("created_at", { ascending: true })
         .limit(50000),
       admin
         .from("tracking_projects")
@@ -1545,6 +1552,7 @@ Deno.serve(async (request: Request) => {
     if (executionError) console.error("execution overlay error:", executionError.message);
     if (panelAdvanceError) console.error("panel advance overlay error:", panelAdvanceError.message);
     if (legacyPanelStageError) console.error("legacy panel stage metadata error:", legacyPanelStageError.message);
+    if (legacyPanelStageEventsError) console.error("legacy panel stage history error:", legacyPanelStageEventsError.message);
     if (activeProjectsError) return json({ ok: false, error: activeProjectsError.message }, 500);
 
     const activeProjects = Array.isArray(activeProjectRows) ? activeProjectRows as Record<string, unknown>[] : [];
@@ -1605,17 +1613,31 @@ Deno.serve(async (request: Request) => {
       ? await admin
         .schema("ops_core")
         .from("stage_events")
-        .select("item_id,stage_key,event_type,progress_to,created_at,source_system,actor_email,actor_name")
+        .select("id,item_id,stage_key,event_type,progress_from,progress_to,created_at,source_system,actor_email,actor_name,payload")
         .in("item_id", coreItemIds)
         .order("created_at", { ascending: false })
         .limit(20000)
       : { data: [], error: null };
     if (coreStageEventsError) return json({ ok: false, error: coreStageEventsError.message }, 500);
     const coreStageOverridesByItem = new Map<string, Record<string, unknown>[]>();
+    const coreStageHistoryByItem = new Map<string, Record<string, unknown>[]>();
     for (const event of (Array.isArray(coreStageEventRows) ? coreStageEventRows : []) as Record<string, unknown>[]) {
       const itemId = String(event.item_id || "");
       const stageKey = String(event.stage_key || "");
       if (!itemId || !stageKey || event.source_system !== "ops_core") continue;
+      const history = coreStageHistoryByItem.get(itemId) || [];
+      history.push({
+        id: event.id || null,
+        stage_key: stageKey,
+        event_type: event.event_type || null,
+        progress_from: event.progress_from ?? null,
+        progress_to: event.progress_to ?? null,
+        actor_email: event.actor_email || null,
+        actor_name: event.actor_name || event.actor_email || null,
+        note: (event.payload as Record<string, unknown> | null)?.note || null,
+        created_at: event.created_at || null,
+      });
+      coreStageHistoryByItem.set(itemId, history);
       const current = coreStageOverridesByItem.get(itemId) || [];
       const existing = current.find((item) => String(item.stage_key) === stageKey);
       if (!existing) {
@@ -1829,6 +1851,26 @@ Deno.serve(async (request: Request) => {
       if (!projectRowId || !isoNorm || !stageKey) continue;
       legacyPanelStageMetadata.set("row:" + projectRowId + ":" + isoNorm + ":" + stageKey, item);
     }
+    const legacyPanelStageHistory = new Map<string, Record<string, unknown>[]>();
+    for (const raw of (Array.isArray(legacyPanelStageEventRows) ? legacyPanelStageEventRows : []) as Record<string, unknown>[]) {
+      const projectRowId = String(raw.project_row_id || "");
+      const isoNorm = canonicalIso(raw.iso_key || raw.iso);
+      if (!projectRowId || !isoNorm) continue;
+      const payload = raw.payload && typeof raw.payload === "object" ? raw.payload as Record<string, unknown> : {};
+      const history = legacyPanelStageHistory.get("row:" + projectRowId + ":" + isoNorm) || [];
+      history.push({
+        id: raw.id || null,
+        stage_key: payload.stage_key || null,
+        event_type: raw.event_type || null,
+        progress_from: raw.progress_from ?? null,
+        progress_to: raw.progress_to ?? null,
+        actor_email: raw.actor_email || null,
+        actor_name: raw.actor_name || raw.actor_email || null,
+        note: raw.note || null,
+        created_at: raw.created_at || null,
+      });
+      legacyPanelStageHistory.set("row:" + projectRowId + ":" + isoNorm, history);
+    }
     const panelAdvanceMap = new Map<string, Record<string, unknown>>();
     for (const item of panelAdvanceRows) {
       const row = item as Record<string, unknown>;
@@ -1864,12 +1906,16 @@ Deno.serve(async (request: Request) => {
             };
           })
         : coreStageOverrides;
+      const stageHistory = panelAdvance
+        ? legacyPanelStageHistory.get("row:" + projectRowId + ":" + isoNorm) || []
+        : coreStageHistoryByItem.get(String(item.core_item_id || "")) || [];
       const withPanelAdvance = stageOverrides.length
         ? {
             ...item,
             panel_stage_overrides: stageOverrides,
+            panel_stage_history: stageHistory,
           }
-        : item;
+        : stageHistory.length ? { ...item, panel_stage_history: stageHistory } : item;
 
       if (!execution) return withPanelAdvance;
 

@@ -460,6 +460,17 @@ export interface HubDemandRow {
     last_actor_email?: string | null;
     can_undo?: boolean | null;
   }> | null;
+  panel_stage_history?: Array<{
+    id?: string | null;
+    stage_key?: string | null;
+    event_type?: string | null;
+    progress_from?: number | null;
+    progress_to?: number | null;
+    actor_name?: string | null;
+    actor_email?: string | null;
+    note?: string | null;
+    created_at?: string | null;
+  }> | null;
 }
 
 export async function loadHubDemands(region = 'BR', limit = 2000, search = ''): Promise<HubDemandRow[]> {
