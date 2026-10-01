@@ -714,7 +714,7 @@ export default function App() {
           isoKey: scope === 'tag' ? (demand.legacyIsoKey || demand.iso) : null,
           comment,
         });
-        await refreshHub(false, search, true);
+        void refreshHub(false, search, true);
         setBanner(scope === 'bsp' ? 'Comentário da BSP salvo.' : 'Comentário da tag salvo.');
         return true;
       } catch (error) {
