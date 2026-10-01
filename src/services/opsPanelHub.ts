@@ -471,6 +471,10 @@ export interface HubDemandRow {
     note?: string | null;
     created_at?: string | null;
   }> | null;
+  bsp_comment?: string | null;
+  tag_comment?: string | null;
+  bsp_comment_updated_at?: string | null;
+  tag_comment_updated_at?: string | null;
 }
 
 export async function loadHubDemands(region = 'BR', limit = 2000, search = ''): Promise<HubDemandRow[]> {
@@ -481,6 +485,22 @@ export async function loadHubDemands(region = 'BR', limit = 2000, search = ''): 
     search,
   });
   return Array.isArray(response.data) ? response.data : [];
+}
+
+export async function saveDemandComment(input: {
+  region?: string;
+  projectNumber: string;
+  isoKey?: string | null;
+  comment: string;
+}) {
+  const response = await requestHub<{ ok: true; data: Record<string, unknown> }>({
+    action: 'comment_save',
+    region: input.region || 'BR',
+    projectNumber: input.projectNumber,
+    isoKey: input.isoKey || null,
+    comment: input.comment,
+  });
+  return response.data;
 }
 
 export interface HubMonthlyProductionEvent {

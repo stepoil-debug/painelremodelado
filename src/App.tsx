@@ -24,6 +24,7 @@ import {
   List,
   LockKeyhole,
   LogOut,
+  MessageSquare,
   PauseCircle,
   PlayCircle,
   RefreshCcw,
@@ -57,6 +58,7 @@ import {
   markCoreNotificationRead,
   mutateCoreDemand,
   mutateLegacyDemand,
+  saveDemandComment,
   uploadStageEvidence,
   triggerHubSync,
   triggerGoalfySync,
@@ -699,6 +701,40 @@ export default function App() {
     setBanner('Avanço atualizado para ' + progress + '%.');
   }
 
+  async function saveComment(id: string, scope: 'bsp' | 'tag', value: string): Promise<boolean> {
+    const demand = demands.find((item) => item.id === id);
+    if (!demand) return false;
+    const comment = value.trim();
+
+    if (hubConfigured && demand.source !== 'demo') {
+      try {
+        await saveDemandComment({
+          region: demand.sourceRegion,
+          projectNumber: demand.bsp,
+          isoKey: scope === 'tag' ? (demand.legacyIsoKey || demand.iso) : null,
+          comment,
+        });
+        await refreshHub(false, search, true);
+        setBanner(scope === 'bsp' ? 'Comentário da BSP salvo.' : 'Comentário da tag salvo.');
+        return true;
+      } catch (error) {
+        setBanner(error instanceof Error ? error.message : 'Não foi possível salvar o comentário.');
+        return false;
+      }
+    }
+
+    setState((current) => ({
+      ...current,
+      demands: current.demands.map((item) => {
+        if (scope === 'bsp' && item.bsp === demand.bsp) return { ...item, bspComment: comment || null };
+        if (scope === 'tag' && item.id === demand.id) return { ...item, tagComment: comment || null };
+        return item;
+      }),
+    }));
+    setBanner(scope === 'bsp' ? 'Comentário da BSP salvo.' : 'Comentário da tag salvo.');
+    return true;
+  }
+
   async function undoDemand(id: string, targetStageKey?: string) {
     const demand = demands.find((d) => d.id === id);
     if (!demand) return false;
@@ -1065,6 +1101,7 @@ export default function App() {
             expandedId={expandedId}
             setExpandedId={setExpandedId}
             onOpen={setSelectedId}
+            onSaveComment={saveComment}
             onReset={resetDemo}
             liveData={hubConfigured}
             loading={loadingHub}
@@ -2564,6 +2601,7 @@ function Portfolio(props: {
   expandedId: string | null;
   setExpandedId: (value: string | null) => void;
   onOpen: (id: string) => void;
+  onSaveComment: (id: string, scope: 'bsp' | 'tag', comment: string) => Promise<boolean>;
   onReset: () => void;
   liveData: boolean;
   loading: boolean;
@@ -2884,6 +2922,7 @@ function Portfolio(props: {
               expanded={props.expandedId === group.key}
               onToggle={() => props.setExpandedId(props.expandedId === group.key ? null : group.key)}
               onOpen={props.onOpen}
+              onSaveComment={props.onSaveComment}
             />
           ))}
           {!grouped.length && <div className="empty-reference">{props.loading ? <RefreshCcw size={28} /> : <CheckCircle2 size={28} />}<strong>{props.loading ? 'Sincronizando dados reais...' : 'Nenhuma demanda nesta visão.'}</strong><span>{props.loading ? 'Consultando o hub operacional.' : 'Altere os filtros ou selecione outro setor.'}</span></div>}
@@ -2899,18 +2938,109 @@ function Metric({ value, label, danger, warning }: { value: string | number; lab
   return <div className="overview-metric"><strong className={danger ? 'danger' : warning ? 'warning' : ''}>{value}</strong><span>{label}</span></div>;
 }
 
+function CommentBlock({
+  comment,
+  label,
+  onSave,
+}: {
+  comment?: string | null;
+  label: string;
+  onSave: (value: string) => Promise<boolean>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(comment || '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!editing) setDraft(comment || '');
+  }, [comment, editing]);
+
+  const beginEditing = (event: { stopPropagation: () => void }) => {
+    event.stopPropagation();
+    setDraft(comment || '');
+    setEditing(true);
+  };
+
+  if (editing) {
+    return (
+      <div className="comment-block-edit" onClick={(event) => event.stopPropagation()}>
+        <textarea
+          autoFocus
+          rows={3}
+          maxLength={2000}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Escreva um comentário..."
+          aria-label={label}
+        />
+        <div className="comment-block-edit-actions">
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(event) => { event.stopPropagation(); setEditing(false); }}
+            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); setEditing(false); } }}
+          >Cancelar</span>
+          <span
+            role="button"
+            tabIndex={0}
+            className="primary"
+            onClick={async (event) => {
+              event.stopPropagation();
+              setSaving(true);
+              const saved = await onSave(draft.trim());
+              setSaving(false);
+              if (saved) setEditing(false);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+              event.preventDefault();
+              event.stopPropagation();
+              setSaving(true);
+              void onSave(draft.trim()).then((saved) => {
+                setSaving(false);
+                if (saved) setEditing(false);
+              });
+            }}
+          >{saving ? 'Salvando...' : 'Salvar'}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <span
+      className={'comment-block ' + (comment ? 'has-comment' : 'empty')}
+      role="button"
+      tabIndex={0}
+      data-tooltip={comment || 'Adicionar comentário'}
+      aria-label={comment ? label + ': ' + comment : 'Adicionar ' + label}
+      onClick={beginEditing}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        beginEditing(event);
+      }}
+    >
+      <MessageSquare size={11} />
+      <span>{comment ? 'Comentário' : 'Adicionar comentário'}</span>
+    </span>
+  );
+}
+
 function BspTreeRow({
   group,
   totalCount,
   expanded,
   onToggle,
   onOpen,
+  onSaveComment,
 }: {
   group: BspGroup;
   totalCount: number;
   expanded: boolean;
   onToggle: () => void;
   onOpen: (id: string) => void;
+  onSaveComment: (id: string, scope: 'bsp' | 'tag', comment: string) => Promise<boolean>;
 }) {
   const first = group.demands[0];
   const status = groupStatus(group.demands);
@@ -2943,6 +3073,7 @@ function BspTreeRow({
         <div className="project-cell">
           <strong>{first?.project ?? 'Projeto'}</strong>
           <span>{first?.client ?? 'Cliente'}</span>
+          {first && <CommentBlock comment={first.bspComment} label="Comentário da BSP" onSave={(value) => onSaveComment(first.id, 'bsp', value)} />}
         </div>
         <div className="stage-ref">
           <strong>{stageLabel}</strong>
@@ -2983,6 +3114,7 @@ function BspTreeRow({
                   <div className="bsp-child-iso">
                     <span>ISO / SPL</span>
                     <strong>{demand.iso}</strong>
+                    <CommentBlock comment={demand.tagComment} label="Comentário da tag" onSave={(value) => onSaveComment(demand.id, 'tag', value)} />
                   </div>
                   <div className="stage-ref">
                     <strong>{demand.stage}</strong>

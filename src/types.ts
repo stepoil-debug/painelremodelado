@@ -109,6 +109,9 @@ export interface Demand {
   legacyIsoKey?: string;
   coreProjectId?: string;
   coreItemId?: string;
+  bspComment?: string | null;
+  tagComment?: string | null;
+  commentUpdatedAt?: string | null;
   archived?: boolean;
   archiveSource?: string;
   onHold?: boolean;

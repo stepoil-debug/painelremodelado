@@ -1508,6 +1508,25 @@ Deno.serve(async (request: Request) => {
     });
   }
 
+  if (action === "comment_save") {
+    const projectNumber = String(body.projectNumber || "").trim();
+    const isoKey = body.isoKey == null ? null : String(body.isoKey || "").trim() || null;
+    const comment = String(body.comment || "").trim().slice(0, 2000);
+    const region = String(body.region || "BR").trim() || "BR";
+    if (!projectNumber) return json({ ok: false, error: "BSP é obrigatória para salvar o comentário." }, 400);
+
+    const { data, error } = await admin.rpc("ops_panel_save_comment", {
+      p_region: region,
+      p_project_number: projectNumber,
+      p_iso_key: isoKey,
+      p_comment: comment,
+      p_actor_email: sessionUser?.email || actor,
+      p_actor_name: sessionUser?.name || sessionUser?.username || actor,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data: data || {}, generatedAt: new Date().toISOString() });
+  }
+
   if (action === "demands") {
     const region = String(body.region || "BR").trim() || "BR";
     const search = String(body.search || "").trim();
@@ -1521,7 +1540,7 @@ Deno.serve(async (request: Request) => {
       ? { p_region: region, p_search: search, p_limit: limit }
       : { p_region: region, p_limit: limit };
 
-    const [{ data, error }, { data: executionOverlay, error: executionError }, { data: panelAdvanceOverlay, error: panelAdvanceError }, { data: legacyPanelStageRows, error: legacyPanelStageError }, { data: legacyPanelStageEventRows, error: legacyPanelStageEventsError }, { data: activeProjectRows, error: activeProjectsError }] = await Promise.all([
+    const [{ data, error }, { data: executionOverlay, error: executionError }, { data: panelAdvanceOverlay, error: panelAdvanceError }, { data: legacyPanelStageRows, error: legacyPanelStageError }, { data: legacyPanelStageEventRows, error: legacyPanelStageEventsError }, { data: activeProjectRows, error: activeProjectsError }, { data: commentRows, error: commentsError }] = await Promise.all([
       admin.rpc(rpcName, rpcArgs),
       admin.rpc("ops_panel_get_execution_overlay"),
       admin.rpc("ops_core_get_panel_legacy_stage_advances", { p_region: region }),
@@ -1543,6 +1562,11 @@ Deno.serve(async (request: Request) => {
         .select("region,project_row_id,project_number,project_display,client,vessel,project_type,project_status,pm,planned_start,planned_finish,replanned_finish,fabrication_start,overall_progress,weight_kg,m2,source_version,source_updated_at,synced_at")
         .eq("region", region)
         .eq("active", true),
+      admin
+        .from("ops_panel_comments")
+        .select("region,project_key,project_number,target_type,target_key,comment,updated_at,updated_by_email,updated_by_name")
+        .eq("region", region)
+        .limit(50000),
     ]);
 
     if (error) return json({ ok: false, error: error.message }, 500);
@@ -1551,6 +1575,7 @@ Deno.serve(async (request: Request) => {
     if (legacyPanelStageError) console.error("legacy panel stage metadata error:", legacyPanelStageError.message);
     if (legacyPanelStageEventsError) console.error("legacy panel stage history error:", legacyPanelStageEventsError.message);
     if (activeProjectsError) return json({ ok: false, error: activeProjectsError.message }, 500);
+    if (commentsError) return json({ ok: false, error: commentsError.message }, 500);
 
     const activeProjects = Array.isArray(activeProjectRows) ? activeProjectRows as Record<string, unknown>[] : [];
     const activeProjectIds = new Set(activeProjects.map((project) => String(project.project_row_id || "")).filter(Boolean));
@@ -1568,6 +1593,29 @@ Deno.serve(async (request: Request) => {
 
     const compact = (value: unknown) =>
       String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+    const commentProjectKey = (value: unknown) =>
+      compact(value).replace(/^(BSP|BEP|BPP|B3D)/, "");
+    const commentMap = new Map<string, Record<string, unknown>>();
+    for (const raw of (Array.isArray(commentRows) ? commentRows : []) as Record<string, unknown>[]) {
+      const projectKey = commentProjectKey(raw.project_key || raw.project_number);
+      const targetType = String(raw.target_type || "");
+      const targetKey = String(raw.target_key || "");
+      if (!projectKey || !targetType || !targetKey) continue;
+      commentMap.set(projectKey + ":" + targetType + ":" + targetKey, raw);
+    }
+    const commentsForRow = (item: Record<string, unknown>) => {
+      const projectKey = commentProjectKey(item.project_number);
+      const tagKey = compact(item.iso_key || item.drawing || item.iso);
+      const bspComment = commentMap.get(projectKey + ":bsp:__BSP__");
+      const tagComment = tagKey ? commentMap.get(projectKey + ":tag:" + tagKey) : undefined;
+      return {
+        bsp_comment: bspComment?.comment || null,
+        tag_comment: tagComment?.comment || null,
+        bsp_comment_updated_at: bspComment?.updated_at || null,
+        tag_comment_updated_at: tagComment?.updated_at || null,
+      };
+    };
 
     // Tracking contains legacy aliases for some tags.  In particular, PS-011
     // and PS-11 refer to the same logical tag even though their raw keys differ.
@@ -1824,7 +1872,8 @@ Deno.serve(async (request: Request) => {
         core_project_id: null,
         core_item_id: null,
       }));
-    const baseRows = dedupeLogicalRows([...currentRows, ...trackingIsoFallbackRows, ...missingProjectRows]);
+    const baseRows = dedupeLogicalRows([...currentRows, ...trackingIsoFallbackRows, ...missingProjectRows])
+      .map((item) => ({ ...item, ...commentsForRow(item) }));
 
     const overlayRows = Array.isArray(executionOverlay) ? executionOverlay : [];
     const overlayMap = new Map<string, Record<string, unknown>>();
