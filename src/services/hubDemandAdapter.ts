@@ -14,6 +14,25 @@ type StageMap = {
   label: string;
 };
 
+type PanelStageOverride = NonNullable<HubDemandRow['panel_stage_overrides']>[number];
+
+function latestPanelOverrides(row: HubDemandRow) {
+  return (row.panel_stage_overrides || [])
+    .filter((item): item is PanelStageOverride => Boolean(item.stage_key))
+    .reduce<Record<string, PanelStageOverride>>((acc, item) => {
+      const key = String(item.stage_key);
+      const previous = acc[key];
+      if (!previous || String(item.updated_at || '').localeCompare(String(previous.updated_at || '')) >= 0) {
+        acc[key] = item;
+      }
+      return acc;
+    }, {});
+}
+
+function latestPanelOverride(row: HubDemandRow, stageKey?: string) {
+  return stageKey ? latestPanelOverrides(row)[stageKey] : undefined;
+}
+
 const originBySector: Partial<Record<SectorKey, SectorKey>> = {
   suprimentos: 'engenharia',
   caldeiraria: 'suprimentos',
@@ -150,8 +169,8 @@ function trackingStageMap(row: HubDemandRow): StageMap {
 }
 
 function stageMap(row: HubDemandRow): StageMap {
-  const panelStage = (row.panel_stage_overrides || [])
-    .filter((item) => item.stage_key && normalize(item.status) !== 'completed')
+  const panelStage = Object.values(latestPanelOverrides(row))
+    .filter((item) => normalize(item.status) !== 'completed')
     .sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')))
     .map((item) => getStage(String(item.stage_key)))
     .find(Boolean);
@@ -182,7 +201,7 @@ function dateAtEndOfDay(value?: string | null) {
 }
 
 function statusFor(row: HubDemandRow, stageKey?: string): DemandStatus {
-  const panelOverride = row.panel_stage_overrides?.find((item) => item.stage_key === stageKey);
+  const panelOverride = latestPanelOverride(row, stageKey);
   const overrideStatus = normalize(panelOverride?.status);
   if (panelOverride && ['new', 'available', 'accepted'].includes(overrideStatus)) return 'new';
   if (overrideStatus === 'blocked') return 'blocked';
@@ -234,7 +253,7 @@ function priorityFor(row: HubDemandRow, status: DemandStatus): Priority {
 }
 
 function progressFor(row: HubDemandRow, stageKey?: string) {
-  const overrideProgress = row.panel_stage_overrides?.find((item) => item.stage_key === stageKey)?.progress;
+  const overrideProgress = latestPanelOverride(row, stageKey)?.progress;
   if (overrideProgress != null && Number.isFinite(Number(overrideProgress))) {
     return Math.max(0, Math.min(100, Math.round(Number(overrideProgress) * 10) / 10));
   }
@@ -259,12 +278,17 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       ? (row.hh_start_at || row.hh_execution_updated_at || row.source_updated_at || row.synced_at || new Date().toISOString())
       : (row.source_updated_at || row.synced_at || new Date().toISOString());
     const progress = progressFor(row, mapped.stageKey);
-    const stageProgress = Object.fromEntries((row.panel_stage_overrides || [])
-      .filter((item) => item.stage_key)
-      .map((item) => [String(item.stage_key), Math.max(0, Math.min(100, Number(item.progress || 0)))]));
-    const stageStatuses = Object.fromEntries((row.panel_stage_overrides || [])
-      .filter((item) => item.stage_key && item.status)
-      .map((item) => [String(item.stage_key), String(item.status)]));
+    const overridesByStage = latestPanelOverrides(row);
+    const stageProgress = Object.fromEntries(Object.entries(overridesByStage)
+      .map(([stageKey, item]) => [stageKey, Math.max(0, Math.min(100, Number(item.progress || 0)))]));
+    const stageStatuses = Object.fromEntries(Object.entries(overridesByStage)
+      .filter(([, item]) => item.status)
+      .map(([stageKey, item]) => [stageKey, String(item.status)]));
+    // Keep the source progress attached to the mapped stage as well. This
+    // makes the phase strip and the ISO/SPL row use the same percentage when
+    // there is no panel override for that stage yet.
+    if (stageProgress[mapped.stageKey] == null) stageProgress[mapped.stageKey] = progress;
+    if (stageStatuses[mapped.stageKey] == null) stageStatuses[mapped.stageKey] = status;
     const vessel = row.vessel ? ' · ' + row.vessel : '';
     const sourceStatus = [row.current_stage, row.current_status].filter(Boolean).join(' / ');
     const bsp = projectKeyFromRow(row);
