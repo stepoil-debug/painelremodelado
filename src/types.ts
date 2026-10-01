@@ -61,6 +61,13 @@ export interface DemandBlocker {
   createdAt: string;
 }
 
+export interface StageMovementMeta {
+  enteredAt?: string | null;
+  lastMovedAt?: string | null;
+  actorName?: string | null;
+  actorEmail?: string | null;
+}
+
 export interface Demand {
   id: string;
   bsp: string;
@@ -87,6 +94,11 @@ export interface Demand {
   stageProgress?: Record<string, number>;
   stageStatuses?: Record<string, DemandStatus | string>;
   undoableStages?: Record<string, boolean>;
+  stageMovement?: Record<string, StageMovementMeta>;
+  stageEnteredAt?: string | null;
+  stageLastMovedAt?: string | null;
+  stageMovedByName?: string | null;
+  stageMovedByEmail?: string | null;
   weightKg?: number | null;
   m2?: number | null;
   hhMinutes?: number;

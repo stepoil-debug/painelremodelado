@@ -1524,10 +1524,16 @@ Deno.serve(async (request: Request) => {
       ? { p_region: region, p_search: search, p_limit: limit }
       : { p_region: region, p_limit: limit };
 
-    const [{ data, error }, { data: executionOverlay, error: executionError }, { data: panelAdvanceOverlay, error: panelAdvanceError }, { data: activeProjectRows, error: activeProjectsError }] = await Promise.all([
+    const [{ data, error }, { data: executionOverlay, error: executionError }, { data: panelAdvanceOverlay, error: panelAdvanceError }, { data: legacyPanelStageRows, error: legacyPanelStageError }, { data: activeProjectRows, error: activeProjectsError }] = await Promise.all([
       admin.rpc(rpcName, rpcArgs),
       admin.rpc("ops_panel_get_execution_overlay"),
       admin.rpc("ops_core_get_panel_legacy_stage_advances", { p_region: region }),
+      admin
+        .schema("ops_core")
+        .from("panel_legacy_stage_advances")
+        .select("region,project_row_id,project_number,iso_key,stage_key,created_at,updated_at,last_actor_email,last_actor_name,last_action")
+        .eq("region", region)
+        .limit(50000),
       admin
         .from("tracking_projects")
         .select("region,project_row_id,project_number,project_display,client,vessel,project_type,project_status,pm,planned_start,planned_finish,replanned_finish,fabrication_start,overall_progress,weight_kg,m2,source_version,source_updated_at,synced_at")
@@ -1538,6 +1544,7 @@ Deno.serve(async (request: Request) => {
     if (error) return json({ ok: false, error: error.message }, 500);
     if (executionError) console.error("execution overlay error:", executionError.message);
     if (panelAdvanceError) console.error("panel advance overlay error:", panelAdvanceError.message);
+    if (legacyPanelStageError) console.error("legacy panel stage metadata error:", legacyPanelStageError.message);
     if (activeProjectsError) return json({ ok: false, error: activeProjectsError.message }, 500);
 
     const activeProjects = Array.isArray(activeProjectRows) ? activeProjectRows as Record<string, unknown>[] : [];
@@ -1598,7 +1605,7 @@ Deno.serve(async (request: Request) => {
       ? await admin
         .schema("ops_core")
         .from("stage_events")
-        .select("item_id,stage_key,event_type,progress_to,created_at,source_system")
+        .select("item_id,stage_key,event_type,progress_to,created_at,source_system,actor_email,actor_name")
         .in("item_id", coreItemIds)
         .order("created_at", { ascending: false })
         .limit(20000)
@@ -1610,15 +1617,25 @@ Deno.serve(async (request: Request) => {
       const stageKey = String(event.stage_key || "");
       if (!itemId || !stageKey || event.source_system !== "ops_core") continue;
       const current = coreStageOverridesByItem.get(itemId) || [];
-      if (current.some((item) => String(item.stage_key) === stageKey)) continue;
-      current.push({
-        stage_key: stageKey,
-        progress: event.progress_to ?? 0,
-        status: event.event_type === "stage.complete" ? "completed" : "in_progress",
-        updated_at: event.created_at || null,
-        last_action: event.event_type,
-        can_undo: ["stage.start", "stage.progress", "stage.complete"].includes(String(event.event_type || "")),
-      });
+      const existing = current.find((item) => String(item.stage_key) === stageKey);
+      if (!existing) {
+        current.push({
+          stage_key: stageKey,
+          progress: event.progress_to ?? 0,
+          status: event.event_type === "stage.complete" ? "completed" : "in_progress",
+          updated_at: event.created_at || null,
+          stage_entered_at: event.created_at || null,
+          last_action: event.event_type,
+          last_actor_email: event.actor_email || null,
+          last_actor_name: event.actor_name || event.actor_email || null,
+          last_actor: event.actor_name || event.actor_email || null,
+          can_undo: ["stage.start", "stage.progress", "stage.complete"].includes(String(event.event_type || "")),
+        });
+      } else {
+        const previousEnteredAt = String(existing.stage_entered_at || "");
+        const eventAt = String(event.created_at || "");
+        if (eventAt && (!previousEnteredAt || eventAt < previousEnteredAt)) existing.stage_entered_at = eventAt;
+      }
       coreStageOverridesByItem.set(itemId, current);
     }
     const normalizedSearch = search.toLowerCase();
@@ -1804,6 +1821,14 @@ Deno.serve(async (request: Request) => {
     }
 
     const panelAdvanceRows = Array.isArray(panelAdvanceOverlay) ? panelAdvanceOverlay : [];
+    const legacyPanelStageMetadata = new Map<string, Record<string, unknown>>();
+    for (const item of (Array.isArray(legacyPanelStageRows) ? legacyPanelStageRows : []) as Record<string, unknown>[]) {
+      const projectRowId = String(item.project_row_id || "");
+      const isoNorm = canonicalIso(item.iso_key || item.iso);
+      const stageKey = String(item.stage_key || "");
+      if (!projectRowId || !isoNorm || !stageKey) continue;
+      legacyPanelStageMetadata.set("row:" + projectRowId + ":" + isoNorm + ":" + stageKey, item);
+    }
     const panelAdvanceMap = new Map<string, Record<string, unknown>>();
     for (const item of panelAdvanceRows) {
       const row = item as Record<string, unknown>;
@@ -1827,7 +1852,17 @@ Deno.serve(async (request: Request) => {
 
       const coreStageOverrides = coreStageOverridesByItem.get(String(item.core_item_id || "")) || [];
       const stageOverrides = panelAdvance
-        ? (Array.isArray(panelAdvance.stage_overrides) ? panelAdvance.stage_overrides : [])
+        ? (Array.isArray(panelAdvance.stage_overrides) ? panelAdvance.stage_overrides : []).map((override) => {
+            const stageKey = String((override as Record<string, unknown>).stage_key || "");
+            const metadata = legacyPanelStageMetadata.get("row:" + projectRowId + ":" + isoNorm + ":" + stageKey);
+            return {
+              ...(override as Record<string, unknown>),
+              created_at: (override as Record<string, unknown>).created_at || metadata?.created_at || null,
+              stage_entered_at: (override as Record<string, unknown>).stage_entered_at || metadata?.created_at || null,
+              last_actor_email: (override as Record<string, unknown>).last_actor_email || metadata?.last_actor_email || null,
+              last_actor_name: (override as Record<string, unknown>).last_actor_name || metadata?.last_actor_name || (override as Record<string, unknown>).last_actor || null,
+            };
+          })
         : coreStageOverrides;
       const withPanelAdvance = stageOverrides.length
         ? {

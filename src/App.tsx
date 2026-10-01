@@ -147,6 +147,23 @@ function fmtDate(date?: string) {
   }).format(new Date(date));
 }
 
+function elapsedSince(date?: string | null) {
+  if (!date) return '—';
+  const timestamp = new Date(date).getTime();
+  if (!Number.isFinite(timestamp)) return '—';
+  const totalMinutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
+  if (totalMinutes < 60) return totalMinutes + ' min';
+  const totalHours = Math.floor(totalMinutes / 60);
+  if (totalHours < 24) return totalHours + 'h ' + (totalMinutes % 60) + 'min';
+  const days = Math.floor(totalHours / 24);
+  return days + 'd ' + (totalHours % 24) + 'h';
+}
+
+function movementActor(demand?: Pick<Demand, 'stageMovedByName' | 'stageMovedByEmail'> | null) {
+  if (!demand) return '—';
+  return demand.stageMovedByName || demand.stageMovedByEmail || 'Usuário não identificado';
+}
+
 function fmtNumber(value: number | string | null | undefined, digits = 2) {
   if (value == null || value === '') return '—';
   const number = Number(value);
@@ -168,12 +185,17 @@ function downloadPortfolioExcel(demands: Demand[]) {
     Prioridade: priorityLabel[demand.priority],
     'Peso (kg)': demand.weightKg ?? null,
     'Área (m²)': demand.m2 ?? null,
+    'Última movimentação': demand.stageLastMovedAt ? fmtDate(demand.stageLastMovedAt) : null,
+    'Apontado por': demand.stageMovedByName || null,
+    'Login do apontador': demand.stageMovedByEmail || null,
+    'Tempo na etapa': demand.stageEnteredAt ? elapsedSince(demand.stageEnteredAt) : null,
   }));
 
   const worksheet = XLSX.utils.json_to_sheet(rows);
   worksheet['!cols'] = [
     { wch: 18 }, { wch: 30 }, { wch: 22 }, { wch: 20 }, { wch: 28 },
     { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 14 },
+    { wch: 22 }, { wch: 24 }, { wch: 30 }, { wch: 18 },
   ];
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Carteira');
@@ -2821,6 +2843,7 @@ function Portfolio(props: {
             <span>Projeto / Cliente</span>
             <span>Etapa atual</span>
             <span>Peso / m²</span>
+            <span>Última movimentação</span>
             <button
               type="button"
               className={'table-sort-button ' + (progressSort !== 'none' ? 'active' : '')}
@@ -2899,6 +2922,9 @@ function BspTreeRow({
   const groupWeightKg = sumDemandMeasure(group.demands, 'weightKg');
   const groupM2 = sumDemandMeasure(group.demands, 'm2');
   const differentStages = new Set(group.demands.map((d) => d.stage)).size > 1;
+  const lastMovement = [...group.demands]
+    .filter((demand) => demand.stageLastMovedAt)
+    .sort((a, b) => String(b.stageLastMovedAt).localeCompare(String(a.stageLastMovedAt)))[0];
 
   return (
     <article className={'reference-row bsp-tree-row ' + (expanded ? 'expanded' : '')}>
@@ -2925,6 +2951,11 @@ function BspTreeRow({
         <div className="measure-ref">
           <strong>{formatMeasure(groupWeightKg, 'kg')}</strong>
           <span>{formatMeasure(groupM2, 'm²')}</span>
+        </div>
+        <div className="movement-ref">
+          <strong>{lastMovement ? fmtDate(lastMovement.stageLastMovedAt || undefined) : '—'}</strong>
+          <span>{lastMovement ? movementActor(lastMovement) : 'Sem apontamento no painel'}</span>
+          <small>{lastMovement ? 'Na etapa há ' + elapsedSince(lastMovement.stageEnteredAt || lastMovement.stageLastMovedAt) : 'Aguardando apontamento'}</small>
         </div>
         <div className="progress-ref">
           <strong>{progress}%</strong>
@@ -2960,6 +2991,11 @@ function BspTreeRow({
                   <div className="measure-ref">
                     <strong>{formatMeasure(demand.weightKg, 'kg')}</strong>
                     <span>{formatMeasure(demand.m2, 'm²')}</span>
+                  </div>
+                  <div className="movement-ref">
+                    <strong>{demand.stageLastMovedAt ? fmtDate(demand.stageLastMovedAt) : '—'}</strong>
+                    <span>{demand.stageLastMovedAt ? movementActor(demand) : 'Sem apontamento no painel'}</span>
+                    <small>{demand.stageLastMovedAt ? 'Na etapa há ' + elapsedSince(demand.stageEnteredAt || demand.stageLastMovedAt) : 'Aguardando apontamento'}</small>
                   </div>
                   <div className="progress-ref">
                     <strong>{demand.progress}%</strong>
@@ -3493,6 +3529,9 @@ function DemandDetail(props: {
           <SummaryField label="Etapa atual" value={demand.stage} />
           <SummaryField label="Responsável" value={pmOwnerLabel(demand)} />
           <SummaryField label="Entrada no setor" value={fmtDate(demand.enteredAt)} />
+          <SummaryField label="Última movimentação" value={demand.stageLastMovedAt ? fmtDate(demand.stageLastMovedAt) : 'Sem apontamento'} />
+          <SummaryField label="Apontado por" value={demand.stageLastMovedAt ? movementActor(demand) : '—'} />
+          <SummaryField label="Tempo na etapa" value={demand.stageEnteredAt ? elapsedSince(demand.stageEnteredAt) : 'Sem data de apontamento'} />
           <SummaryField label="SLA da etapa" value={fmtDate(demand.slaDueAt)} />
           <SummaryField label="Evidências" value={props.evidenceLoading ? '...' : String(totalEvidence)} />
           <SummaryField label="Fotos da etapa" value={props.evidenceLoading ? '...' : String(totalEvidence)} />

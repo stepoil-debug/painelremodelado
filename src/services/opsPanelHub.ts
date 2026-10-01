@@ -452,8 +452,12 @@ export interface HubDemandRow {
     progress?: number | null;
     status?: string | null;
     updated_at?: string | null;
+    created_at?: string | null;
+    stage_entered_at?: string | null;
     last_action?: string | null;
     last_actor?: string | null;
+    last_actor_name?: string | null;
+    last_actor_email?: string | null;
     can_undo?: boolean | null;
   }> | null;
 }

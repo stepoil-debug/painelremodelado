@@ -4,6 +4,7 @@ import type {
   OperationalState,
   Priority,
   SectorKey,
+  StageMovementMeta,
 } from '../types';
 import { getStage } from '../workflow';
 import type { HubDemandRow } from './opsPanelHub';
@@ -279,6 +280,13 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       : (row.source_updated_at || row.synced_at || new Date().toISOString());
     const progress = progressFor(row, mapped.stageKey);
     const overridesByStage = latestPanelOverrides(row);
+    const stageMovement = Object.fromEntries(Object.entries(overridesByStage).map(([stageKey, item]) => [stageKey, {
+      enteredAt: item.stage_entered_at || item.created_at || null,
+      lastMovedAt: item.updated_at || null,
+      actorName: item.last_actor_name || item.last_actor || null,
+      actorEmail: item.last_actor_email || null,
+    }])) as Record<string, StageMovementMeta>;
+    const currentStageMovement = stageMovement[mapped.stageKey];
     const stageProgress = Object.fromEntries(Object.entries(overridesByStage)
       .map(([stageKey, item]) => [stageKey, Math.max(0, Math.min(100, Number(item.progress || 0)))]));
     const stageStatuses = Object.fromEntries(Object.entries(overridesByStage)
@@ -324,6 +332,11 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       stageProgress,
       stageStatuses,
       undoableStages,
+      stageMovement,
+      stageEnteredAt: currentStageMovement?.enteredAt || null,
+      stageLastMovedAt: currentStageMovement?.lastMovedAt || null,
+      stageMovedByName: currentStageMovement?.actorName || null,
+      stageMovedByEmail: currentStageMovement?.actorEmail || null,
       weightKg: numericOrNull(row.weight_kg),
       m2: numericOrNull(row.m2),
       hhMinutes: row.hh_total_hh != null ? Math.round(Number(row.hh_total_hh) * 60) : undefined,
@@ -370,7 +383,15 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
           ? 'OPS CORE · STEP'
           : (row.archived ? 'Tracking histórico · ' + (row.archive_source || 'OLD') : 'Tracking · Smartsheet'),
         sector: mapped.sector,
-      }],
+      }, ...(currentStageMovement?.lastMovedAt ? [{
+        id: 'panel-movement-' + row.region + '-' + row.iso_key + '-' + mapped.stageKey,
+        type: 'progress' as const,
+        title: 'Último apontamento pelo painel',
+        description: mapped.label + ' · avanço ' + progress + '%.',
+        at: currentStageMovement.lastMovedAt,
+        actor: [currentStageMovement.actorName, currentStageMovement.actorEmail].filter(Boolean).join(' · ') || 'Usuário do painel',
+        sector: mapped.sector,
+      }] : [])],
     };
   });
 
