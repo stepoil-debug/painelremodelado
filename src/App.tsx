@@ -563,7 +563,7 @@ export default function App() {
 
   async function runCoreAction(
     demand: Demand,
-    operation: 'accept' | 'start' | 'progress' | 'wait' | 'resume' | 'block' | 'complete',
+    operation: 'accept' | 'start' | 'progress' | 'wait' | 'resume' | 'block' | 'complete' | 'undo',
     options: { progress?: number | null; note?: string; stageKey?: string; trackingStageKey?: string } = {},
     successMessage = 'Demanda atualizada.',
   ) {
@@ -639,6 +639,35 @@ export default function App() {
       history: appendHistory(d, 'progress', 'Avanço registrado', 'Progresso atualizado para ' + progress + '%.'),
     }));
     setBanner('Avanço atualizado para ' + progress + '%.');
+  }
+
+  async function undoDemand(id: string, targetStageKey?: string) {
+    const demand = demands.find((d) => d.id === id);
+    if (!demand) return false;
+
+    if (demand.source === 'ops_core' || demand.source === 'hub_readonly') {
+      return runCoreAction(
+        demand,
+        'undo',
+        { stageKey: targetStageKey || demand.stageKey, trackingStageKey: demand.stageKey },
+        demand.bsp + ' · último avanço desfeito.',
+      );
+    }
+    if (demand.source !== 'demo') return false;
+
+    const stageKey = targetStageKey || demand.stageKey;
+    const currentProgress = demand.stageProgress?.[stageKey] ?? demand.progress;
+    const previousProgress = [75, 50, 25, 0].find((value) => value < currentProgress) ?? 0;
+    updateDemand(id, (d) => ({
+      ...d,
+      progress: stageKey === d.stageKey ? previousProgress : d.progress,
+      stageProgress: { ...(d.stageProgress || {}), [stageKey]: previousProgress },
+      stageStatuses: { ...(d.stageStatuses || {}), [stageKey]: previousProgress > 0 ? 'in_progress' : 'new' },
+      undoableStages: { ...(d.undoableStages || {}), [stageKey]: false },
+      history: appendHistory(d, 'progress', 'Avanço desfeito', 'O último avanço da etapa foi revertido para ' + previousProgress + '%.'),
+    }));
+    setBanner('Último avanço desfeito.');
+    return true;
   }
 
   async function waitDemand(id: string, targetStageKey?: string) {
@@ -941,6 +970,7 @@ export default function App() {
             demand={selected}
             onBack={() => setSelectedId(null)}
             onProgress={(progress, stageKey) => progressDemand(selected.id, progress, stageKey)}
+            onUndo={(stageKey) => undoDemand(selected.id, stageKey)}
             onWait={(stageKey) => waitDemand(selected.id, stageKey)}
             onResume={(stageKey) => resumeDemand(selected.id, stageKey)}
             onBlock={(stageKey) => blockDemand(selected.id, stageKey)}
@@ -3270,6 +3300,7 @@ function DemandDetail(props: {
   demand: Demand;
   onBack: () => void;
   onProgress: (progress: number, stageKey?: string) => void;
+  onUndo: (stageKey?: string) => void | Promise<boolean>;
   onWait: (stageKey?: string) => void;
   onResume: (stageKey?: string) => void;
   onBlock: (stageKey?: string) => void;
@@ -3297,6 +3328,8 @@ function DemandDetail(props: {
   const [advanceProgress, setAdvanceProgress] = useState(25);
   const [completeConfirmOpen, setCompleteConfirmOpen] = useState(false);
   const [completeSubmitting, setCompleteSubmitting] = useState(false);
+  const [undoConfirmOpen, setUndoConfirmOpen] = useState(false);
+  const [undoSubmitting, setUndoSubmitting] = useState(false);
   const startPhotoInput = useRef<HTMLInputElement>(null);
   const finishPhotoInput = useRef<HTMLInputElement>(null);
   const fallbackPhase = {
@@ -3336,6 +3369,7 @@ function DemandDetail(props: {
     || (demand.source === 'hub_readonly' && Boolean(demand.legacyProjectRowId && demand.legacyIsoKey && demand.iso));
   const canAdvance = phaseStatus === 'in_progress' || phaseStatus === 'late' || phaseProgress === 0;
   const phaseCanOperate = canOperate && !phaseCompleted;
+  const phaseCanUndo = canOperate && demand.undoableStages?.[phase.key] === true;
   const progressChoices = [25, 50, 75, 100].filter((value) => value > phaseProgress);
   const goalfyStatus = props.goalfyShipping?.summary?.shipping_status;
   const goalfySent = goalfyStatus === 'complete' || goalfyStatus === 'partial' || goalfyStatus === 'shipping_evidence';
@@ -3388,6 +3422,17 @@ function DemandDetail(props: {
       setCompleteConfirmOpen(false);
     } finally {
       setCompleteSubmitting(false);
+    }
+  }
+
+  async function confirmUndo() {
+    if (undoSubmitting) return;
+    setUndoSubmitting(true);
+    try {
+      const result = await props.onUndo(phase.key);
+      if (result !== false) setUndoConfirmOpen(false);
+    } finally {
+      setUndoSubmitting(false);
     }
   }
 
@@ -3474,6 +3519,13 @@ function DemandDetail(props: {
                   </div>
                 )}
               </>
+            )}
+            {phaseCanUndo && (
+              <div className="detail-actions">
+                <button className="soft-btn" onClick={() => setUndoConfirmOpen(true)} disabled={undoSubmitting}>
+                  <RefreshCcw size={14} /> Desfazer último avanço
+                </button>
+              </div>
             )}
           </div>
 
@@ -3617,6 +3669,41 @@ function DemandDetail(props: {
               <button className="soft-btn" onClick={() => setCompleteConfirmOpen(false)} disabled={completeSubmitting}>Cancelar</button>
               <button className="primary-ref" onClick={() => void confirmCompletion()} disabled={completeSubmitting}>
                 <CheckCircle2 size={14} /> {completeSubmitting ? 'Concluindo...' : 'Sim, concluir etapa'}
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {undoConfirmOpen && (
+        <div
+          className="advance-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="undo-modal-title"
+          onMouseDown={(event) => { if (!undoSubmitting && event.currentTarget === event.target) setUndoConfirmOpen(false); }}
+        >
+          <div className="advance-dialog complete-confirm-dialog">
+            <header>
+              <div>
+                <span className="section-mono">Corrigir avanço</span>
+                <h2 id="undo-modal-title">Desfazer o último avanço?</h2>
+                <p>{demand.bsp} · {demand.iso}</p>
+              </div>
+              <button className="advance-close" onClick={() => setUndoConfirmOpen(false)} disabled={undoSubmitting} aria-label="Fechar">×</button>
+            </header>
+            <div className="complete-confirm-warning">
+              <RefreshCcw size={18} />
+              <div>
+                <strong>{phase.label}</strong>
+                <span>O percentual anterior será restaurado. Se esta etapa tiver liberado a próxima, ela também retornará ao estado inicial.</span>
+              </div>
+            </div>
+            <p className="advance-note"><ShieldCheck size={14} /> A correção ficará registrada no histórico com seu usuário e horário.</p>
+            <footer>
+              <button className="soft-btn" onClick={() => setUndoConfirmOpen(false)} disabled={undoSubmitting}>Cancelar</button>
+              <button className="primary-ref" onClick={() => void confirmUndo()} disabled={undoSubmitting}>
+                <RefreshCcw size={14} /> {undoSubmitting ? 'Desfazendo...' : 'Sim, desfazer avanço'}
               </button>
             </footer>
           </div>

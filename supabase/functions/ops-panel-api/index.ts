@@ -1011,11 +1011,16 @@ Deno.serve(async (request: Request) => {
         : String(sessionUser.sector || ""))
       : String(body.actorSector || "");
 
-    const rpcName = stageKey ? "ops_core_stage_action_for_stage" : "ops_core_stage_action";
+    if (operation === "undo" && !stageKey) {
+      return json({ ok: false, error: "stageKey é obrigatório para desfazer um avanço." }, 400);
+    }
+    const rpcName = operation === "undo"
+      ? "ops_core_undo_stage_action_for_stage"
+      : (stageKey ? "ops_core_stage_action_for_stage" : "ops_core_stage_action");
     const { data, error } = await admin.rpc(rpcName, {
       p_item_id: itemId,
-      ...(stageKey ? { p_stage_key: stageKey } : {}),
-      p_action: operation,
+      p_stage_key: stageKey || null,
+      ...(operation !== "undo" ? { p_action: operation } : {}),
       p_actor_email: actor,
       p_actor_name: actorName,
       p_actor_sector: actorSector,
@@ -1061,14 +1066,17 @@ Deno.serve(async (request: Request) => {
     const actorName = sessionUser
       ? String(sessionUser.name || sessionUser.username || sessionUser.email || actor)
       : "system-backend";
-    const { data, error } = await admin.rpc("ops_core_apply_panel_legacy_stage_action", {
+    const rpcName = operation === "undo"
+      ? "ops_core_undo_panel_legacy_stage_action"
+      : "ops_core_apply_panel_legacy_stage_action";
+    const { data, error } = await admin.rpc(rpcName, {
       p_region: region,
       p_project_row_id: projectRowId,
       p_project_number: projectNumber,
       p_iso: iso,
       p_stage_key: stageKey,
       p_tracking_stage_key: trackingStageKey,
-      p_action: operation,
+      ...(operation !== "undo" ? { p_action: operation } : {}),
       p_actor_email: actor,
       p_actor_name: actorName,
       p_progress: progress,
@@ -1267,6 +1275,39 @@ Deno.serve(async (request: Request) => {
       // records must still belong to an active Tracking project in the main view.
       return item.source_mode === "ops_core" || activeProjectIds.has(String(item.project_row_id || ""));
     });
+    const coreItemIds = Array.from(new Set(
+      eligibleRpcRows
+        .filter((item) => item.source_mode === "ops_core")
+        .map((item) => String(item.core_item_id || ""))
+        .filter(Boolean),
+    ));
+    const { data: coreStageEventRows, error: coreStageEventsError } = coreItemIds.length
+      ? await admin
+        .schema("ops_core")
+        .from("stage_events")
+        .select("item_id,stage_key,event_type,progress_to,created_at,source_system")
+        .in("item_id", coreItemIds)
+        .order("created_at", { ascending: false })
+        .limit(20000)
+      : { data: [], error: null };
+    if (coreStageEventsError) return json({ ok: false, error: coreStageEventsError.message }, 500);
+    const coreStageOverridesByItem = new Map<string, Record<string, unknown>[]>();
+    for (const event of (Array.isArray(coreStageEventRows) ? coreStageEventRows : []) as Record<string, unknown>[]) {
+      const itemId = String(event.item_id || "");
+      const stageKey = String(event.stage_key || "");
+      if (!itemId || !stageKey || event.source_system !== "ops_core") continue;
+      const current = coreStageOverridesByItem.get(itemId) || [];
+      if (current.some((item) => String(item.stage_key) === stageKey)) continue;
+      current.push({
+        stage_key: stageKey,
+        progress: event.progress_to ?? 0,
+        status: event.event_type === "stage.complete" ? "completed" : "in_progress",
+        updated_at: event.created_at || null,
+        last_action: event.event_type,
+        can_undo: ["stage.start", "stage.progress", "stage.complete"].includes(String(event.event_type || "")),
+      });
+      coreStageOverridesByItem.set(itemId, current);
+    }
     const normalizedSearch = search.toLowerCase();
     const trackingRows = (Array.isArray(activeTrackingIsoRows) ? activeTrackingIsoRows as Record<string, unknown>[] : [])
       .map((iso) => {
@@ -1471,10 +1512,14 @@ Deno.serve(async (request: Request) => {
         panelAdvanceMap.get("row:" + projectRowId + ":" + isoNorm)
         || panelAdvanceMap.get("project:" + projectKey + ":" + isoNorm);
 
-      const withPanelAdvance = panelAdvance
+      const coreStageOverrides = coreStageOverridesByItem.get(String(item.core_item_id || "")) || [];
+      const stageOverrides = panelAdvance
+        ? (Array.isArray(panelAdvance.stage_overrides) ? panelAdvance.stage_overrides : [])
+        : coreStageOverrides;
+      const withPanelAdvance = stageOverrides.length
         ? {
             ...item,
-            panel_stage_overrides: Array.isArray(panelAdvance.stage_overrides) ? panelAdvance.stage_overrides : [],
+            panel_stage_overrides: stageOverrides,
           }
         : item;
 

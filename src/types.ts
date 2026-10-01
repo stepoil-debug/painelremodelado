@@ -86,6 +86,7 @@ export interface Demand {
   overallProgress?: number | null;
   stageProgress?: Record<string, number>;
   stageStatuses?: Record<string, DemandStatus | string>;
+  undoableStages?: Record<string, boolean>;
   weightKg?: number | null;
   m2?: number | null;
   hhMinutes?: number;

@@ -454,6 +454,7 @@ export interface HubDemandRow {
     updated_at?: string | null;
     last_action?: string | null;
     last_actor?: string | null;
+    can_undo?: boolean | null;
   }> | null;
 }
 
@@ -806,7 +807,7 @@ export async function loadHistoryHealth(): Promise<HubHistoryHealth> {
   return response.data;
 }
 
-export type CoreDemandAction = 'accept' | 'start' | 'progress' | 'wait' | 'resume' | 'block' | 'complete';
+export type CoreDemandAction = 'accept' | 'start' | 'progress' | 'wait' | 'resume' | 'block' | 'complete' | 'undo';
 
 export async function mutateCoreDemand(
   itemId: string,

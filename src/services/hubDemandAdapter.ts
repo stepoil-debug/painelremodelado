@@ -284,6 +284,8 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
     const stageStatuses = Object.fromEntries(Object.entries(overridesByStage)
       .filter(([, item]) => item.status)
       .map(([stageKey, item]) => [stageKey, String(item.status)]));
+    const undoableStages = Object.fromEntries(Object.entries(overridesByStage)
+      .map(([stageKey, item]) => [stageKey, item.can_undo === true]));
     // Keep the source progress attached to the mapped stage as well. This
     // makes the phase strip and the ISO/SPL row use the same percentage when
     // there is no panel override for that stage yet.
@@ -321,6 +323,7 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       overallProgress: numericOrNull(row.overall_progress),
       stageProgress,
       stageStatuses,
+      undoableStages,
       weightKg: numericOrNull(row.weight_kg),
       m2: numericOrNull(row.m2),
       hhMinutes: row.hh_total_hh != null ? Math.round(Number(row.hh_total_hh) * 60) : undefined,
