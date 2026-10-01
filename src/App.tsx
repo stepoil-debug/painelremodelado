@@ -2304,6 +2304,12 @@ function groupPriority(demands: Demand[]): Priority {
 
 function groupProgress(demands: Demand[]) {
   if (!demands.length) return 0;
+  const overallProgress = demands
+    .map((demand) => demand.overallProgress)
+    .filter((value): value is number => value != null && Number.isFinite(value));
+  if (overallProgress.length) {
+    return Math.round(overallProgress.reduce((sum, value) => sum + value, 0) / overallProgress.length);
+  }
   return Math.round(demands.reduce((sum, demand) => sum + demand.progress, 0) / demands.length);
 }
 

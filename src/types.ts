@@ -82,6 +82,8 @@ export interface Demand {
   completedAt?: string;
   slaDueAt?: string;
   progress: number;
+  /** Project/BSP overall progress from the source feed. Child rows keep `progress`. */
+  overallProgress?: number | null;
   stageProgress?: Record<string, number>;
   stageStatuses?: Record<string, DemandStatus | string>;
   weightKg?: number | null;

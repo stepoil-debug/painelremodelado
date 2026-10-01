@@ -318,6 +318,7 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       completedAt: status === 'completed' ? enteredAt : undefined,
       slaDueAt: dateAtEndOfDay(row.replanned_finish || row.planned_finish),
       progress,
+      overallProgress: numericOrNull(row.overall_progress),
       stageProgress,
       stageStatuses,
       weightKg: numericOrNull(row.weight_kg),
