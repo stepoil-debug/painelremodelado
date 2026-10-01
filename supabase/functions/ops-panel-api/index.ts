@@ -61,136 +61,7 @@ function canManageCore(user: Record<string, unknown> | null) {
   );
 }
 
-const TRACKING_SHEET_ID = 3612820139992964;
 const PANEL_PROGRESS_STEPS = new Set([25, 50, 75, 100]);
-
-const trackingColumnCandidates: Record<string, string[]> = {
-  engineering_release: ["Drawing Execution Advance%"],
-  stock_check: ["Procuremnt Status %"],
-  material_separation: ["Material Separation"],
-  cutting: ["Cutting and Cleaning", "Cutting / Cleaning"],
-  fitup: ["Spool Assemble and tack weld"],
-  welding: ["Full welding execution"],
-  quality_visual: ["Non Destructive Examination (QC)"],
-  quality_dimensional: [
-    "Final Dimensional Inpection/3D (QC)",
-    "Initial Dimensional Inspection/3D",
-  ],
-  hydro_test: ["Hydro Test Pressure (QC)"],
-  painting: ["Surface preparation and/or coating"],
-  final_inspection: ["Final Inspection"],
-  dispatch: ["Package and Delivered"],
-};
-
-function normalizeSheetTitle(value: unknown) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/gi, "")
-    .toLowerCase();
-}
-
-function percentFromSheetCell(cell: Record<string, unknown> | undefined) {
-  if (!cell) return null;
-  const raw = cell.value ?? cell.displayValue;
-  if (raw === null || raw === undefined || raw === "") return null;
-  const text = String(raw).replace("%", "").replace(",", ".").trim();
-  const number = Number(text);
-  if (!Number.isFinite(number)) return null;
-  return number >= 0 && number <= 1.0001 && !String(raw).includes("%")
-    ? number * 100
-    : number;
-}
-
-async function updateTrackingProgressInSmartsheet(input: {
-  projectRowId: string;
-  stageKey: string;
-  progress: number;
-}) {
-  const token = Deno.env.get("SMARTSHEET_ACCESS_TOKEN");
-  if (!token) {
-    return { ok: false, skipped: true, reason: "SMARTSHEET_ACCESS_TOKEN não configurado." };
-  }
-
-  const candidates = trackingColumnCandidates[input.stageKey] || ["% Individual Progress"];
-  const headers = {
-    Authorization: "Bearer " + token,
-    "Content-Type": "application/json",
-    "smartsheet-integration-source": "APPLICATION,STEP Oil & Gas,Painel Operacional Remodelado",
-  };
-
-  const sheetResponse = await fetch(
-    "https://api.smartsheet.com/2.0/sheets/" + TRACKING_SHEET_ID + "?pageSize=1&include=objectValue",
-    { headers },
-  );
-  const sheetText = await sheetResponse.text();
-  if (!sheetResponse.ok) {
-    return { ok: false, status: sheetResponse.status, reason: "Não foi possível ler as colunas do Tracking." };
-  }
-  const sheet = JSON.parse(sheetText) as { columns?: Array<Record<string, unknown>> };
-  const columns = Array.isArray(sheet.columns) ? sheet.columns : [];
-  const candidateKeys = candidates.map(normalizeSheetTitle);
-  const column = columns.find((item) => candidateKeys.includes(normalizeSheetTitle(item.title)));
-
-  if (!column?.id) {
-    return {
-      ok: false,
-      reason: "Nenhuma coluna de avanço compatível foi encontrada para a etapa " + input.stageKey + ".",
-    };
-  }
-
-  const rowResponse = await fetch(
-    "https://api.smartsheet.com/2.0/sheets/" + TRACKING_SHEET_ID + "/rows/" + encodeURIComponent(input.projectRowId) + "?include=objectValue",
-    { headers },
-  );
-  const rowText = await rowResponse.text();
-  if (!rowResponse.ok) {
-    return { ok: false, status: rowResponse.status, reason: "Não foi possível ler a linha do Tracking." };
-  }
-  const row = JSON.parse(rowText) as { cells?: Array<Record<string, unknown>> };
-  const currentCell = (Array.isArray(row.cells) ? row.cells : [])
-    .find((item) => String(item.columnId) === String(column.id));
-  const currentProgress = percentFromSheetCell(currentCell);
-  if (currentProgress !== null && currentProgress >= input.progress) {
-    return {
-      ok: true,
-      skipped: true,
-      column: String(column.title),
-      previous_progress: currentProgress,
-      progress: currentProgress,
-      reason: "O Smartsheet já possui um avanço igual ou maior; nenhuma regressão foi feita.",
-    };
-  }
-
-  const columnType = String(column.type || "").toUpperCase();
-  const value = columnType === "PERCENT" || String(column.title || "").includes("%")
-    ? input.progress / 100
-    : input.progress;
-  const updateResponse = await fetch(
-    "https://api.smartsheet.com/2.0/sheets/" + TRACKING_SHEET_ID + "/rows",
-    {
-      method: "PUT",
-      headers,
-      body: JSON.stringify([{
-        id: Number(input.projectRowId),
-        cells: [{ columnId: Number(column.id), value }],
-      }]),
-    },
-  );
-  const updateText = await updateResponse.text();
-  if (!updateResponse.ok) {
-    return { ok: false, status: updateResponse.status, reason: "O Smartsheet recusou a atualização do avanço." };
-  }
-
-  return {
-    ok: true,
-    column: String(column.title),
-    previous_progress: currentProgress,
-    progress: input.progress,
-    smartsheet_row_id: input.projectRowId,
-    response_received: Boolean(updateText),
-  };
-}
 
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -1205,27 +1076,11 @@ Deno.serve(async (request: Request) => {
     });
     if (error) return json({ ok: false, error: error.message }, 409);
 
-    let smartsheetSync: Record<string, unknown> = { ok: true, skipped: true, reason: "Ação sem atualização percentual." };
-    if ((operation === "start" || operation === "progress" || operation === "complete") &&
-      (operation === "complete" || progress !== null)) {
-      try {
-        smartsheetSync = await updateTrackingProgressInSmartsheet({
-          projectRowId,
-          stageKey,
-          progress: operation === "complete" ? 100 : Number(progress),
-        });
-      } catch (smartsheetError) {
-        console.error("Smartsheet panel progress sync error:", smartsheetError);
-        smartsheetSync = { ok: false, reason: "Falha inesperada ao atualizar o Smartsheet." };
-      }
-    }
-
     await refreshDemandCache();
     return json({
       ok: true,
       data: {
         ...(data && typeof data === "object" ? data : { result: data }),
-        smartsheet_sync: smartsheetSync,
       },
       generatedAt: new Date().toISOString(),
     });
