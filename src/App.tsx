@@ -24,7 +24,6 @@ import {
   List,
   LockKeyhole,
   LogOut,
-  MessageSquare,
   PauseCircle,
   PlayCircle,
   RefreshCcw,
@@ -3021,7 +3020,11 @@ function CommentBlock({
         beginEditing(event);
       }}
     >
-      <MessageSquare size={13} aria-hidden="true" />
+      <span className="comment-bubble" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
     </span>
   );
 }

@@ -900,7 +900,35 @@ h1,h2,h3,p { margin-top: 0; }
   transition: color .14s ease, background .14s ease, border-color .14s ease, box-shadow .14s ease, transform .14s ease;
   vertical-align: top;
 }
-.comment-block svg { flex: none; }
+.comment-bubble {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 17px;
+  height: 14px;
+  border-radius: 6px;
+  background: #080808;
+}
+.comment-bubble::after {
+  content: '';
+  position: absolute;
+  right: 1px;
+  bottom: -4px;
+  width: 7px;
+  height: 7px;
+  background: #080808;
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
+.comment-bubble i {
+  position: relative;
+  z-index: 1;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #FFFFFF;
+}
 .comment-block:hover,.comment-block:focus-visible {
   color: #1355C2;
   background: linear-gradient(180deg, #F7FBFF 0%, #EAF4FF 100%);
