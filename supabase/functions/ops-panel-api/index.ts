@@ -1198,6 +1198,319 @@ Deno.serve(async (request: Request) => {
     return json({ ok: true, data: data || {}, generatedAt: new Date().toISOString() });
   }
 
+  if (action === "monthly_production") {
+    const now = new Date();
+    const requestedYear = Number(body.year || now.getUTCFullYear());
+    const requestedMonth = Number(body.month || now.getUTCMonth() + 1);
+    const region = String(body.region || "BR").trim() || "BR";
+
+    if (!Number.isInteger(requestedYear) || requestedYear < 2000 || requestedYear > 2100) {
+      return json({ ok: false, error: "Ano inválido para o relatório mensal." }, 400);
+    }
+    if (!Number.isInteger(requestedMonth) || requestedMonth < 1 || requestedMonth > 12) {
+      return json({ ok: false, error: "Mês inválido para o relatório mensal." }, 400);
+    }
+
+    const pad = (value: number) => String(value).padStart(2, "0");
+    const firstDay = `${requestedYear}-${pad(requestedMonth)}-01`;
+    const nextYear = requestedMonth === 12 ? requestedYear + 1 : requestedYear;
+    const nextMonth = requestedMonth === 12 ? 1 : requestedMonth + 1;
+    const nextDay = `${nextYear}-${pad(nextMonth)}-01`;
+    const fromIso = `${firstDay}T00:00:00-03:00`;
+    const toIso = `${nextDay}T00:00:00-03:00`;
+
+    const stageCatalog: Record<string, { label: string; sector: string }> = {
+      drawing: { label: "Liberação de Engenharia", sector: "Engenharia" },
+      engineering_release: { label: "Liberação de Engenharia", sector: "Engenharia" },
+      stock: { label: "Verificação de Estoque", sector: "Suprimentos" },
+      stock_check: { label: "Verificação de Estoque", sector: "Suprimentos" },
+      material: { label: "Separação de Material", sector: "Suprimentos" },
+      material_separation: { label: "Separação de Material", sector: "Suprimentos" },
+      cutting: { label: "Corte e Preparação", sector: "Caldeiraria" },
+      preassembly: { label: "Caldeiraria / Fit-up", sector: "Caldeiraria" },
+      fitup: { label: "Caldeiraria / Fit-up", sector: "Caldeiraria" },
+      welding: { label: "Soldagem", sector: "Solda" },
+      nde: { label: "END / NDE", sector: "Qualidade" },
+      quality_visual: { label: "Inspeção Visual", sector: "Qualidade" },
+      scan_initial: { label: "Inspeção Dimensional", sector: "Qualidade" },
+      scan_final: { label: "Inspeção Dimensional", sector: "Qualidade" },
+      quality_dimensional: { label: "Inspeção Dimensional", sector: "Qualidade" },
+      hydro: { label: "Hydro Test", sector: "Qualidade" },
+      hydro_test: { label: "Hydro Test", sector: "Qualidade" },
+      painting: { label: "Pintura / Revestimento", sector: "Pintura" },
+      final_inspection: { label: "Inspeção Final", sector: "Qualidade" },
+      package: { label: "Liberação / Expedição", sector: "Expedição" },
+      dispatch: { label: "Liberação / Expedição", sector: "Expedição" },
+      legacy_current: { label: "Etapa do Tracking", sector: "Não classificado" },
+    };
+    const compact = (value: unknown) => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const canonicalIso = (value: unknown) => compact(value).replace(/PS0+([0-9]+)/g, "PS$1");
+    const numeric = (value: unknown) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const round = (value: number | null) => value == null ? null : Math.round(value * 100) / 100;
+
+    const [{ data: coreEvents, error: coreEventsError }, { data: legacyEvents, error: legacyEventsError }] = await Promise.all([
+      admin
+        .schema("ops_core")
+        .from("stage_events")
+        .select("id,project_id,item_id,stage_key,event_type,progress_from,progress_to,actor_email,actor_name,source_system,created_at,payload")
+        .gte("created_at", fromIso)
+        .lt("created_at", toIso)
+        .in("event_type", ["stage.start", "stage.progress", "stage.complete"])
+        .order("created_at", { ascending: true })
+        .limit(50000),
+      admin
+        .schema("ops_core")
+        .from("panel_legacy_stage_events")
+        .select("id,advance_id,region,project_row_id,project_number,iso_key,event_type,progress_from,progress_to,actor_email,actor_name,note,payload,created_at")
+        .eq("region", region)
+        .gte("created_at", fromIso)
+        .lt("created_at", toIso)
+        .in("event_type", ["stage.start", "stage.progress", "stage.complete"])
+        .order("created_at", { ascending: true })
+        .limit(50000),
+    ]);
+    if (coreEventsError) return json({ ok: false, error: coreEventsError.message }, 500);
+    if (legacyEventsError) return json({ ok: false, error: legacyEventsError.message }, 500);
+
+    const coreEventRows = Array.isArray(coreEvents) ? coreEvents as Record<string, unknown>[] : [];
+    const legacyEventRows = Array.isArray(legacyEvents) ? legacyEvents as Record<string, unknown>[] : [];
+    const coreItemIds = [...new Set(coreEventRows.map((row) => String(row.item_id || "")).filter(Boolean))];
+    const coreProjectIds = [...new Set(coreEventRows.map((row) => String(row.project_id || "")).filter(Boolean))];
+    const legacyAdvanceIds = [...new Set(legacyEventRows.map((row) => String(row.advance_id || "")).filter(Boolean))];
+    const legacyProjectRowIds = [...new Set(legacyEventRows.map((row) => String(row.project_row_id || "")).filter(Boolean))];
+
+    const [coreItemsResult, coreProjectsResult, legacyAdvancesResult, legacyIsoResult, legacyProjectsResult] = await Promise.all([
+      coreItemIds.length
+        ? admin.schema("ops_core").from("items").select("id,project_id,item_key,iso_code,spool_code,tag_number,weight_kg,painting_m2,legacy_project_row_id,legacy_iso_key").in("id", coreItemIds)
+        : Promise.resolve({ data: [], error: null }),
+      coreProjectIds.length
+        ? admin.schema("ops_core").from("projects").select("id,region,project_core,display_code,client,vessel,pm,source_mode,legacy_project_row_id").in("id", coreProjectIds)
+        : Promise.resolve({ data: [], error: null }),
+      legacyAdvanceIds.length
+        ? admin.schema("ops_core").from("panel_legacy_stage_advances").select("id,iso,stage_key,tracking_stage_key").in("id", legacyAdvanceIds)
+        : Promise.resolve({ data: [], error: null }),
+      legacyProjectRowIds.length
+        ? admin.from("tracking_isos").select("region,project_row_id,iso_key,iso,drawing,weight_kg,m2,project_number").eq("region", region).in("project_row_id", legacyProjectRowIds).limit(50000)
+        : Promise.resolve({ data: [], error: null }),
+      legacyProjectRowIds.length
+        ? admin.from("tracking_projects").select("region,project_row_id,project_number,project_display,client,vessel,pm,project_type").eq("region", region).in("project_row_id", legacyProjectRowIds).limit(5000)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    const relatedErrors = [coreItemsResult, coreProjectsResult, legacyAdvancesResult, legacyIsoResult, legacyProjectsResult]
+      .map((result) => result.error)
+      .find(Boolean);
+    if (relatedErrors) return json({ ok: false, error: relatedErrors.message }, 500);
+
+    const coreItems = new Map((Array.isArray(coreItemsResult.data) ? coreItemsResult.data : []).map((row) => [String((row as Record<string, unknown>).id), row as Record<string, unknown>]));
+    const coreProjects = new Map((Array.isArray(coreProjectsResult.data) ? coreProjectsResult.data : []).map((row) => [String((row as Record<string, unknown>).id), row as Record<string, unknown>]));
+    const legacyAdvances = new Map((Array.isArray(legacyAdvancesResult.data) ? legacyAdvancesResult.data : []).map((row) => [String((row as Record<string, unknown>).id), row as Record<string, unknown>]));
+    const legacyIsos = new Map<string, Record<string, unknown>>();
+    for (const raw of (Array.isArray(legacyIsoResult.data) ? legacyIsoResult.data : []) as Record<string, unknown>[]) {
+      legacyIsos.set(String(raw.project_row_id || "") + ":" + canonicalIso(raw.iso_key || raw.drawing || raw.iso), raw);
+    }
+    const legacyProjects = new Map((Array.isArray(legacyProjectsResult.data) ? legacyProjectsResult.data : []).map((row) => [String((row as Record<string, unknown>).project_row_id), row as Record<string, unknown>]));
+
+    type ReportEvent = {
+      id: string;
+      source: "ops_core" | "tracking_legacy";
+      event_type: string;
+      stage_key: string;
+      stage_label: string;
+      sector: string;
+      project_number: string;
+      project_display: string;
+      client: string;
+      vessel: string;
+      pm: string;
+      iso: string;
+      item_key: string;
+      weight_kg: number | null;
+      m2: number | null;
+      progress_from: number;
+      progress_to: number;
+      progress_delta: number;
+      produced_weight_kg: number | null;
+      produced_m2: number | null;
+      actor_email: string;
+      actor_name: string;
+      created_at: string;
+    };
+    const reportEvents: ReportEvent[] = [];
+    const addEvent = (input: {
+      raw: Record<string, unknown>;
+      source: "ops_core" | "tracking_legacy";
+      stageKey: string;
+      projectNumber: string;
+      projectDisplay: string;
+      client: string;
+      vessel: string;
+      pm: string;
+      iso: string;
+      itemKey: string;
+      weightKg: number | null;
+      m2: number | null;
+    }) => {
+      const progressFrom = numeric(input.raw.progress_from) ?? 0;
+      const progressTo = numeric(input.raw.progress_to) ?? (String(input.raw.event_type || "").endsWith("complete") ? 100 : progressFrom);
+      const progressDelta = Math.max(0, Math.min(100, progressTo - progressFrom));
+      if (progressDelta <= 0) return;
+      const stage = stageCatalog[input.stageKey] || { label: input.stageKey || "Etapa não classificada", sector: "Não classificado" };
+      reportEvents.push({
+        id: input.source + ":" + String(input.raw.id || crypto.randomUUID()),
+        source: input.source,
+        event_type: String(input.raw.event_type || "stage.progress"),
+        stage_key: input.stageKey || "unclassified",
+        stage_label: stage.label,
+        sector: stage.sector,
+        project_number: input.projectNumber || "—",
+        project_display: input.projectDisplay || input.projectNumber || "Projeto não informado",
+        client: input.client || "—",
+        vessel: input.vessel || "—",
+        pm: input.pm || "—",
+        iso: input.iso || "—",
+        item_key: input.itemKey || input.iso || "—",
+        weight_kg: input.weightKg,
+        m2: input.m2,
+        progress_from: Math.round(progressFrom * 10) / 10,
+        progress_to: Math.round(progressTo * 10) / 10,
+        progress_delta: Math.round(progressDelta * 10) / 10,
+        produced_weight_kg: input.weightKg == null ? null : round(input.weightKg * progressDelta / 100),
+        produced_m2: input.m2 == null ? null : round(input.m2 * progressDelta / 100),
+        actor_email: String(input.raw.actor_email || "—"),
+        actor_name: String(input.raw.actor_name || input.raw.actor_email || "Sistema"),
+        created_at: String(input.raw.created_at || ""),
+      });
+    };
+
+    for (const raw of coreEventRows) {
+      const item = coreItems.get(String(raw.item_id || "")) || {};
+      const project = coreProjects.get(String(raw.project_id || item.project_id || "")) || {};
+      addEvent({
+        raw,
+        source: "ops_core",
+        stageKey: String(raw.stage_key || "unclassified"),
+        projectNumber: String(project.display_code || project.project_core || ""),
+        projectDisplay: String(project.display_code || project.project_core || ""),
+        client: String(project.client || ""),
+        vessel: String(project.vessel || ""),
+        pm: String(project.pm || ""),
+        iso: String(item.iso_code || item.spool_code || item.tag_number || item.item_key || ""),
+        itemKey: String(item.item_key || item.iso_code || ""),
+        weightKg: numeric(item.weight_kg),
+        m2: numeric(item.painting_m2),
+      });
+    }
+
+    for (const raw of legacyEventRows) {
+      const advance = legacyAdvances.get(String(raw.advance_id || "")) || {};
+      const payload = raw.payload && typeof raw.payload === "object" ? raw.payload as Record<string, unknown> : {};
+      const projectRowId = String(raw.project_row_id || "");
+      const isoRow = legacyIsos.get(projectRowId + ":" + canonicalIso(raw.iso_key || advance.iso));
+      const project = legacyProjects.get(projectRowId) || {};
+      addEvent({
+        raw,
+        source: "tracking_legacy",
+        stageKey: String(advance.stage_key || payload.stage_key || "legacy_current"),
+        projectNumber: String(raw.project_number || project.project_number || ""),
+        projectDisplay: String(project.project_display || raw.project_number || ""),
+        client: String(project.client || ""),
+        vessel: String(project.vessel || ""),
+        pm: String(project.pm || ""),
+        iso: String(isoRow?.iso || isoRow?.drawing || raw.iso_key || advance.iso || ""),
+        itemKey: String(isoRow?.iso_key || raw.iso_key || ""),
+        weightKg: numeric(isoRow?.weight_kg),
+        m2: numeric(isoRow?.m2),
+      });
+    }
+
+    const stageMap = new Map<string, {
+      stage_key: string;
+      stage_label: string;
+      sector: string;
+      event_count: number;
+      item_count: number;
+      total_progress_points: number;
+      produced_weight_kg: number;
+      produced_m2: number;
+      missing_weight_count: number;
+      missing_m2_count: number;
+      first_event_at: string | null;
+      last_event_at: string | null;
+      items: Set<string>;
+    }>();
+    for (const event of reportEvents) {
+      const current = stageMap.get(event.stage_key) || {
+        stage_key: event.stage_key,
+        stage_label: event.stage_label,
+        sector: event.sector,
+        event_count: 0,
+        item_count: 0,
+        total_progress_points: 0,
+        produced_weight_kg: 0,
+        produced_m2: 0,
+        missing_weight_count: 0,
+        missing_m2_count: 0,
+        first_event_at: null,
+        last_event_at: null,
+        items: new Set<string>(),
+      };
+      const itemIdentity = event.source + ":" + event.project_number + ":" + event.item_key + ":" + event.stage_key;
+      current.items.add(itemIdentity);
+      current.event_count += 1;
+      current.total_progress_points += event.progress_delta;
+      current.produced_weight_kg += event.produced_weight_kg || 0;
+      current.produced_m2 += event.produced_m2 || 0;
+      if (event.weight_kg == null) current.missing_weight_count += 1;
+      if (event.m2 == null) current.missing_m2_count += 1;
+      current.first_event_at = !current.first_event_at || event.created_at < current.first_event_at ? event.created_at : current.first_event_at;
+      current.last_event_at = !current.last_event_at || event.created_at > current.last_event_at ? event.created_at : current.last_event_at;
+      stageMap.set(event.stage_key, current);
+    }
+
+    const stages = [...stageMap.values()]
+      .map((stage) => ({
+        stage_key: stage.stage_key,
+        stage_label: stage.stage_label,
+        sector: stage.sector,
+        event_count: stage.event_count,
+        item_count: stage.items.size,
+        total_progress_points: Math.round(stage.total_progress_points * 10) / 10,
+        produced_weight_kg: round(stage.produced_weight_kg) || 0,
+        produced_m2: round(stage.produced_m2) || 0,
+        missing_weight_count: stage.missing_weight_count,
+        missing_m2_count: stage.missing_m2_count,
+        first_event_at: stage.first_event_at,
+        last_event_at: stage.last_event_at,
+      }))
+      .sort((a, b) => b.produced_weight_kg - a.produced_weight_kg || b.event_count - a.event_count);
+    const totalWeight = reportEvents.reduce((sum, event) => sum + (event.produced_weight_kg || 0), 0);
+    const totalM2 = reportEvents.reduce((sum, event) => sum + (event.produced_m2 || 0), 0);
+    const distinctItems = new Set(reportEvents.map((event) => event.source + ":" + event.project_number + ":" + event.item_key));
+
+    return json({
+      ok: true,
+      data: {
+        period: { year: requestedYear, month: requestedMonth, from: fromIso, to: toIso },
+        summary: {
+          event_count: reportEvents.length,
+          item_count: distinctItems.size,
+          stage_count: stages.length,
+          total_progress_points: Math.round(reportEvents.reduce((sum, event) => sum + event.progress_delta, 0) * 10) / 10,
+          total_weight_kg: round(totalWeight) || 0,
+          total_m2: round(totalM2) || 0,
+          missing_weight_count: reportEvents.filter((event) => event.weight_kg == null).length,
+          missing_m2_count: reportEvents.filter((event) => event.m2 == null).length,
+        },
+        stages,
+        events: reportEvents.sort((a, b) => b.created_at.localeCompare(a.created_at)),
+      },
+      generatedAt: new Date().toISOString(),
+    });
+  }
+
   if (action === "demands") {
     const region = String(body.region || "BR").trim() || "BR";
     const search = String(body.search || "").trim();

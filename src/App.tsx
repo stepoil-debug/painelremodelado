@@ -33,12 +33,15 @@ import {
   XCircle,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import './monthly-production.css';
 import ArchivePage from './ArchivePage';
 import CoreMigrationPage from './CoreMigrationPage';
+import MonthlyProductionReport from './MonthlyProductionReport';
 import { liveHHReadOnlyEnabled, loadHHSessionsReadOnly } from './services/hhReadOnly';
 import {
   hubConfigured,
   loadHubDemands,
+  loadMonthlyProductionReport,
   loadHubDrawingAttachments,
   loadHubDrawingAttachmentPdf,
   applyHubDrawingRevision,
@@ -67,6 +70,7 @@ import {
   type HubNewBspAlert,
   type HubHHEvidencePhoto,
   type HubHHSession,
+  type HubMonthlyProductionReport,
 } from './services/opsPanelHub';
 import { hubRowsToOperationalState } from './services/hubDemandAdapter';
 import {
@@ -246,6 +250,13 @@ export default function App() {
   const [banner, setBanner] = useState<string | null>(null);
   const [newBspPopup, setNewBspPopup] = useState<HubNewBspAlert | null>(null);
   const [clock, setClock] = useState(new Date());
+  const [productionMonth, setProductionMonth] = useState(() => {
+    const current = new Date();
+    return `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [monthlyProduction, setMonthlyProduction] = useState<HubMonthlyProductionReport | null>(null);
+  const [monthlyProductionLoading, setMonthlyProductionLoading] = useState(false);
+  const [monthlyProductionError, setMonthlyProductionError] = useState<string | null>(null);
 
   const demands = state.demands;
   const selected = selectedId ? demands.find((d) => d.id === selectedId) ?? null : null;
@@ -364,6 +375,31 @@ export default function App() {
       .then((status) => setLastSyncAt(status.last_synced_at || null))
       .catch(() => undefined);
   }, [panelUser]);
+
+  useEffect(() => {
+    if (!hubConfigured || !panelUser || page !== 'analytics') return;
+    const [year, month] = productionMonth.split('-').map(Number);
+    if (!year || !month) return;
+    let active = true;
+    setMonthlyProductionLoading(true);
+    setMonthlyProductionError(null);
+    loadMonthlyProductionReport(panelUser.operationRegion || 'BR', year, month)
+      .then((report) => {
+        if (active) setMonthlyProduction(report);
+      })
+      .catch((error) => {
+        if (active) {
+          setMonthlyProduction(null);
+          setMonthlyProductionError(error instanceof Error ? error.message : 'Falha ao carregar a produção mensal.');
+        }
+      })
+      .finally(() => {
+        if (active) setMonthlyProductionLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [page, panelUser, productionMonth]);
 
   useEffect(() => {
     if (!hubConfigured || !panelUser) return;
@@ -1025,7 +1061,15 @@ export default function App() {
         ) : page === 'archive' ? (
           <ArchivePage />
         ) : (
-          <AnalyticsPage demands={demands} onOpen={setSelectedId} />
+          <AnalyticsPage
+            demands={demands}
+            onOpen={setSelectedId}
+            monthlyProduction={monthlyProduction}
+            productionMonth={productionMonth}
+            monthlyProductionLoading={monthlyProductionLoading}
+            monthlyProductionError={monthlyProductionError}
+            onProductionMonthChange={setProductionMonth}
+          />
         )}
       </main>
 
@@ -3761,7 +3805,23 @@ function NotificationsPage({ state, setState, onOpen }: { state: OperationalStat
   return <GenericPage title="Notificações" subtitle="Handoffs, alertas de execução e eventos relevantes do fluxo operacional."><div className="section-card notification-reference-list">{items.map((n) => <button key={n.id} className={!n.read ? 'unread' : ''} onClick={() => { void read(n.id); if (n.demandId) onOpen(n.demandId); }}><div className={'notification-icon-ref ' + n.severity}><Bell size={15} /></div><div><strong>{n.title}</strong><p>{n.message}</p><span>{fmtDate(n.createdAt)} · {sectorName(n.sector)}</span></div>{!n.read && <i />}</button>)}</div></GenericPage>;
 }
 
-function AnalyticsPage({ demands, onOpen }: { demands: Demand[]; onOpen: (id: string) => void }) {
+function AnalyticsPage({
+  demands,
+  onOpen,
+  monthlyProduction,
+  productionMonth,
+  monthlyProductionLoading,
+  monthlyProductionError,
+  onProductionMonthChange,
+}: {
+  demands: Demand[];
+  onOpen: (id: string) => void;
+  monthlyProduction: HubMonthlyProductionReport | null;
+  productionMonth: string;
+  monthlyProductionLoading: boolean;
+  monthlyProductionError: string | null;
+  onProductionMonthChange: (value: string) => void;
+}) {
   const [selectedStageKey, setSelectedStageKey] = useState<string | null>(null);
   const [expandedStageBspKey, setExpandedStageBspKey] = useState<string | null>(null);
   const active = useMemo(() => demands.filter((d) => d.status !== 'completed'), [demands]);
@@ -3823,6 +3883,14 @@ function AnalyticsPage({ demands, onOpen }: { demands: Demand[]; onOpen: (id: st
       <div><span className="eyebrow">Painel de execução</span><strong>Acompanhamento em tempo real da carteira</strong><small>Os números seguem as linhas de projeto ativas do Tracking; os detalhes preservam cada ISO ou demanda.</small></div>
       <div className="dashboard-banner-progress"><span>Avanço médio ativo</span><strong>{averageProgress}%</strong><i><em style={{ width: averageProgress + '%' }} /></i></div>
     </section>
+
+    {hubConfigured && <MonthlyProductionReport
+      report={monthlyProduction}
+      month={productionMonth}
+      loading={monthlyProductionLoading}
+      error={monthlyProductionError}
+      onMonthChange={onProductionMonthChange}
+    />}
 
     <section className="dashboard-kpi-grid">
       <div className="dashboard-kpi primary"><span>1. Total de projetos</span><strong>{totalProjects}</strong><small>{activeProjects} ativos na carteira</small></div>

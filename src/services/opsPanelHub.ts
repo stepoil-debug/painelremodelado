@@ -468,6 +468,77 @@ export async function loadHubDemands(region = 'BR', limit = 2000, search = ''): 
   return Array.isArray(response.data) ? response.data : [];
 }
 
+export interface HubMonthlyProductionEvent {
+  id: string;
+  source: 'ops_core' | 'tracking_legacy';
+  event_type: string;
+  stage_key: string;
+  stage_label: string;
+  sector: string;
+  project_number: string;
+  project_display: string;
+  client: string;
+  vessel: string;
+  pm: string;
+  iso: string;
+  item_key: string;
+  weight_kg: number | null;
+  m2: number | null;
+  progress_from: number;
+  progress_to: number;
+  progress_delta: number;
+  produced_weight_kg: number | null;
+  produced_m2: number | null;
+  actor_email: string;
+  actor_name: string;
+  created_at: string;
+}
+
+export interface HubMonthlyProductionStage {
+  stage_key: string;
+  stage_label: string;
+  sector: string;
+  event_count: number;
+  item_count: number;
+  total_progress_points: number;
+  produced_weight_kg: number;
+  produced_m2: number;
+  missing_weight_count: number;
+  missing_m2_count: number;
+  first_event_at: string | null;
+  last_event_at: string | null;
+}
+
+export interface HubMonthlyProductionReport {
+  period: { year: number; month: number; from: string; to: string };
+  summary: {
+    event_count: number;
+    item_count: number;
+    stage_count: number;
+    total_progress_points: number;
+    total_weight_kg: number;
+    total_m2: number;
+    missing_weight_count: number;
+    missing_m2_count: number;
+  };
+  stages: HubMonthlyProductionStage[];
+  events: HubMonthlyProductionEvent[];
+}
+
+export async function loadMonthlyProductionReport(
+  region = 'BR',
+  year = new Date().getFullYear(),
+  month = new Date().getMonth() + 1,
+): Promise<HubMonthlyProductionReport> {
+  const response = await requestHub<{ ok: true; data: HubMonthlyProductionReport }>({
+    action: 'monthly_production',
+    region,
+    year,
+    month,
+  });
+  return response.data;
+}
+
 
 export interface HubCoreMigrationStatus {
   projects: {
