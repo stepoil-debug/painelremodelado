@@ -29,7 +29,6 @@ import {
   RefreshCcw,
   Search,
   ShieldCheck,
-  UserCheck,
   Users,
   XCircle,
 } from 'lucide-react';
@@ -610,33 +609,6 @@ export default function App() {
     }
   }
 
-  async function assumeDemand(id: string, targetStageKey?: string) {
-    const demand = demands.find((d) => d.id === id);
-    if (!demand) return;
-
-    if (demand.source === 'ops_core' || demand.source === 'hub_readonly') {
-      await runCoreAction(
-        demand,
-        'accept',
-        { stageKey: targetStageKey || demand.stageKey, trackingStageKey: demand.stageKey },
-        demand.bsp + ' assumida pelo setor ' + sectorName(demand.sector) + '.',
-      );
-      return;
-    }
-    if (demand.source !== 'demo') return;
-
-    const now = new Date().toISOString();
-    updateDemand(id, (d) => ({
-      ...d,
-      status: 'in_progress',
-      assignedTo: 'Usuário Demo',
-      acceptedAt: now,
-      startedAt: d.startedAt ?? now,
-      history: appendHistory(d, 'accepted', 'Demanda assumida', 'Responsabilidade assumida pelo setor.'),
-    }));
-    setBanner(demand.bsp + ' assumida pelo setor ' + sectorName(demand.sector) + '.');
-  }
-
   async function progressDemand(id: string, requestedProgress?: number, targetStageKey?: string) {
     const demand = demands.find((d) => d.id === id);
     if (!demand) return;
@@ -975,7 +947,6 @@ export default function App() {
           <DemandDetail
             demand={selected}
             onBack={() => setSelectedId(null)}
-            onAssume={() => assumeDemand(selected.id)}
             onProgress={(progress, stageKey) => progressDemand(selected.id, progress, stageKey)}
             onWait={(stageKey) => waitDemand(selected.id, stageKey)}
             onResume={(stageKey) => resumeDemand(selected.id, stageKey)}
@@ -1015,7 +986,6 @@ export default function App() {
             expandedId={expandedId}
             setExpandedId={setExpandedId}
             onOpen={setSelectedId}
-            onAssume={assumeDemand}
             onReset={resetDemo}
             liveData={hubConfigured}
             loading={loadingHub}
@@ -2501,7 +2471,6 @@ function Portfolio(props: {
   expandedId: string | null;
   setExpandedId: (value: string | null) => void;
   onOpen: (id: string) => void;
-  onAssume: (id: string) => void;
   onReset: () => void;
   liveData: boolean;
   loading: boolean;
@@ -3301,7 +3270,6 @@ function GoalfyShippingSide({ shipping, loading }: { shipping: HubGoalfyShipping
 function DemandDetail(props: {
   demand: Demand;
   onBack: () => void;
-  onAssume: (stageKey?: string) => void;
   onProgress: (progress: number, stageKey?: string) => void;
   onWait: (stageKey?: string) => void;
   onResume: (stageKey?: string) => void;
@@ -3493,7 +3461,6 @@ function DemandDetail(props: {
 
                 {phaseCanOperate && (
                   <div className="detail-actions">
-                    {isCurrent && demand.status === 'new' && <button className="primary-ref" onClick={() => props.onAssume(phase.key)}><UserCheck size={14} /> Assumir demanda</button>}
                     {canAdvance && <button className="primary-ref" onClick={() => { setAdvanceProgress(progressChoices[0] ?? 100); setAdvanceOpen(true); }}><Activity size={14} /> {phaseProgress === 0 ? 'Iniciar etapa' : 'Avançar etapa'}</button>}
                     {(phaseStatus === 'in_progress' || phaseStatus === 'late') && <button className="soft-btn" onClick={() => props.onWait(phase.key)}><PauseCircle size={14} /> Aguardar</button>}
                     {(phaseStatus === 'waiting' || phaseStatus === 'blocked') && <button className="soft-btn" onClick={() => props.onResume(phase.key)}><PlayCircle size={14} /> Retomar</button>}
