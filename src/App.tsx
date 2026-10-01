@@ -3450,13 +3450,15 @@ function DemandDetail(props: {
         <span className="eyebrow">Fases do processo</span>
         <div className="phase-strip">
           {workflowStages.map((stage, index) => {
-            const finished = status === 'completed';
             const stageOverrideProgress = demand.stageProgress?.[stage.key];
             const stageOverrideStatus = demand.stageStatuses?.[stage.key];
-            const done = finished || stageOverrideStatus === 'completed' || (stageOverrideProgress != null && stageOverrideProgress >= 100) || (stageOverrideProgress == null && index < currentIndex);
-            const current = !finished && index === currentIndex;
+            const done = stageOverrideStatus === 'completed'
+              || (stageOverrideProgress != null && stageOverrideProgress >= 100)
+              || (stageOverrideProgress == null && index < currentIndex)
+              || (index === currentIndex && status === 'completed');
+            const current = index === currentIndex && !done;
             const future = index > currentIndex;
-            const pct = finished ? 100 : stageOverrideProgress != null ? stageOverrideProgress : done ? 100 : current ? demand.progress : 0;
+            const pct = stageOverrideProgress != null ? stageOverrideProgress : done ? 100 : current ? demand.progress : 0;
             return (
               <button key={stage.key} className={'phase-card ' + (phaseKey === stage.key ? 'selected ' : '') + (done ? 'done' : current ? 'current' : future ? 'future' : '')} onClick={() => setPhaseKey(stage.key)}>
                 <div><small>{String(index + 1).padStart(2, '0')}</small><strong>{stage.label}</strong><b>{pct}%</b></div>
