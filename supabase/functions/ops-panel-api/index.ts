@@ -1236,10 +1236,26 @@ Deno.serve(async (request: Request) => {
     const compact = (value: unknown) =>
       String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 
+    // Tracking contains legacy aliases for some tags.  In particular, PS-011
+    // and PS-11 refer to the same logical tag even though their raw keys differ.
+    // Keep the displayed value from the preferred row, but use this canonical
+    // form only for identity/deduplication.
+    const canonicalIso = (value: unknown) =>
+      compact(value).replace(/PS0+([0-9]+)/g, "PS$1");
+
     const rowIdentity = (item: Record<string, unknown>) => {
       const projectRowId = String(item.project_row_id || "");
       const projectKey = compact(item.project_number);
       const isoNorm = compact(item.iso_key || item.drawing || item.iso);
+      return projectRowId && isoNorm
+        ? "row:" + projectRowId + ":" + isoNorm
+        : "project:" + projectKey + ":" + isoNorm;
+    };
+
+    const logicalRowIdentity = (item: Record<string, unknown>) => {
+      const projectRowId = String(item.project_row_id || "");
+      const projectKey = compact(item.project_number);
+      const isoNorm = canonicalIso(item.iso_key || item.drawing || item.iso);
       return projectRowId && isoNorm
         ? "row:" + projectRowId + ":" + isoNorm
         : "project:" + projectKey + ":" + isoNorm;
@@ -1299,21 +1315,55 @@ Deno.serve(async (request: Request) => {
       return { ...item, ...live };
     };
 
+    const progressValue = (row: Record<string, unknown>) => {
+      const value = Number(row.overall_progress ?? row.progress ?? 0);
+      return Number.isFinite(value) ? value : 0;
+    };
+
+    const preferLogicalRow = (current: Record<string, unknown>, candidate: Record<string, unknown>) => {
+      if (current.source_mode !== candidate.source_mode) {
+        if (candidate.source_mode === "ops_core") return candidate;
+        if (current.source_mode === "ops_core") return current;
+      }
+      const currentProgress = progressValue(current);
+      const candidateProgress = progressValue(candidate);
+      if (candidateProgress !== currentProgress) return candidateProgress > currentProgress ? candidate : current;
+
+      const currentVersion = sourceVersion(current) ?? -1;
+      const candidateVersion = sourceVersion(candidate) ?? -1;
+      if (candidateVersion !== currentVersion) return candidateVersion > currentVersion ? candidate : current;
+
+      const currentTime = sourceTime(current) ?? -1;
+      const candidateTime = sourceTime(candidate) ?? -1;
+      if (candidateTime !== currentTime) return candidateTime > currentTime ? candidate : current;
+      return current;
+    };
+
+    const dedupeLogicalRows = (rows: Record<string, unknown>[]) => {
+      const byIdentity = new Map<string, Record<string, unknown>>();
+      for (const row of rows) {
+        const identity = logicalRowIdentity(row);
+        const existing = byIdentity.get(identity);
+        byIdentity.set(identity, existing ? preferLogicalRow(existing, row) : row);
+      }
+      return Array.from(byIdentity.values());
+    };
+
     // The cache and the live Tracking table can use different casing or
     // punctuation in iso_key (for example BSP...ISO001SP01 vs bsp...iso001sp01).
     // Match on a canonical identity and prefer the live active Tracking row for
     // legacy items, otherwise the same ISO is returned twice with two statuses
     // and two progress values.
-    const currentRows = eligibleRpcRows.map((item) => {
+    const currentRows = dedupeLogicalRows(eligibleRpcRows.map((item) => {
       if (item.source_mode === "ops_core") return item;
       const live = liveTrackingByIdentity.get(rowIdentity(item));
       return live ? preferLiveRow(item, live) : item;
-    });
-    const representedIdentities = new Set(currentRows.map(rowIdentity));
+    }));
+    const representedIdentities = new Set(currentRows.map(logicalRowIdentity));
     const trackingIsoFallbackRows = trackingRows
       .filter((iso) => {
         const project = projectByRowId.get(String(iso.project_row_id || ""));
-        if (!project || representedIdentities.has(rowIdentity(iso))) return false;
+        if (!project || representedIdentities.has(logicalRowIdentity(iso))) return false;
         if (!normalizedSearch) return true;
         return [
           project.project_number,
@@ -1384,7 +1434,7 @@ Deno.serve(async (request: Request) => {
         core_project_id: null,
         core_item_id: null,
       }));
-    const baseRows = [...currentRows, ...trackingIsoFallbackRows, ...missingProjectRows];
+    const baseRows = dedupeLogicalRows([...currentRows, ...trackingIsoFallbackRows, ...missingProjectRows]);
 
     const overlayRows = Array.isArray(executionOverlay) ? executionOverlay : [];
     const overlayMap = new Map<string, Record<string, unknown>>();
@@ -1393,7 +1443,7 @@ Deno.serve(async (request: Request) => {
       const row = item as Record<string, unknown>;
       const projectRowId = String(row.project_row_id || "");
       const projectKey = compact(row.project_key || row.bsp_number);
-      const isoNorm = compact(row.iso_norm || row.iso);
+      const isoNorm = canonicalIso(row.iso_norm || row.iso);
 
       if (projectRowId && isoNorm) overlayMap.set("row:" + projectRowId + ":" + isoNorm, row);
       if (projectKey && isoNorm) overlayMap.set("project:" + projectKey + ":" + isoNorm, row);
@@ -1405,7 +1455,7 @@ Deno.serve(async (request: Request) => {
       const row = item as Record<string, unknown>;
       const projectRowId = String(row.project_row_id || "");
       const projectKey = compact(row.project_number);
-      const isoNorm = compact(row.iso_key || row.drawing || row.iso);
+      const isoNorm = canonicalIso(row.iso_key || row.drawing || row.iso);
       if (projectRowId && isoNorm) panelAdvanceMap.set("row:" + projectRowId + ":" + isoNorm, row);
       if (projectKey && isoNorm) panelAdvanceMap.set("project:" + projectKey + ":" + isoNorm, row);
     }
@@ -1413,7 +1463,7 @@ Deno.serve(async (request: Request) => {
     const merged = baseRows.map((item: Record<string, unknown>) => {
       const projectRowId = String(item.project_row_id || "");
       const projectKey = compact(item.project_number);
-      const isoNorm = compact(item.drawing || item.iso);
+      const isoNorm = canonicalIso(item.iso_key || item.drawing || item.iso);
       const execution =
         overlayMap.get("row:" + projectRowId + ":" + isoNorm)
         || overlayMap.get("project:" + projectKey + ":" + isoNorm);
