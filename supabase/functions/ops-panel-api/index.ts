@@ -1252,6 +1252,11 @@ Deno.serve(async (request: Request) => {
     };
     const compact = (value: unknown) => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
     const canonicalIso = (value: unknown) => compact(value).replace(/PS0+([0-9]+)/g, "PS$1");
+    const materialIdentity = (event: Pick<ReportEvent, "project_number" | "project_display" | "item_key" | "iso">) => {
+      const project = compact(event.project_number) || compact(event.project_display);
+      const item = canonicalIso(event.item_key || event.iso);
+      return `${project || "PROJECT"}:${item || "ITEM"}`;
+    };
     const numeric = (value: unknown) => {
       const parsed = Number(value);
       return Number.isFinite(parsed) ? parsed : null;
@@ -1321,6 +1326,8 @@ Deno.serve(async (request: Request) => {
       weightKg: number | null;
       m2: number | null;
     }) => {
+      const weightKg = input.weightKg != null && input.weightKg > 0 ? input.weightKg : null;
+      const m2 = input.m2 != null && input.m2 > 0 ? input.m2 : null;
       const progressFrom = numeric(input.raw.progress_from) ?? 0;
       const progressTo = numeric(input.raw.progress_to) ?? (String(input.raw.event_type || "").endsWith("complete") ? 100 : progressFrom);
       const progressDelta = Math.max(0, Math.min(100, progressTo - progressFrom));
@@ -1340,13 +1347,13 @@ Deno.serve(async (request: Request) => {
         pm: input.pm || "—",
         iso: input.iso || "—",
         item_key: input.itemKey || input.iso || "—",
-        weight_kg: input.weightKg,
-        m2: input.m2,
+        weight_kg: weightKg,
+        m2,
         progress_from: Math.round(progressFrom * 10) / 10,
         progress_to: Math.round(progressTo * 10) / 10,
         progress_delta: Math.round(progressDelta * 10) / 10,
-        produced_weight_kg: input.weightKg == null ? null : round(input.weightKg * progressDelta / 100),
-        produced_m2: input.m2 == null ? null : round(input.m2 * progressDelta / 100),
+        produced_weight_kg: weightKg == null ? null : round(weightKg * progressDelta / 100),
+        produced_m2: m2 == null ? null : round(m2 * progressDelta / 100),
         actor_email: String(input.raw.actor_email || "—"),
         actor_name: String(input.raw.actor_name || input.raw.actor_email || "Sistema"),
         created_at: String(input.raw.created_at || ""),
@@ -1428,6 +1435,58 @@ Deno.serve(async (request: Request) => {
       });
     }
 
+    // A material can appear more than once in the source (same tag in more than
+    // one snapshot/source). Consolidate by material + stage before calculating
+    // production so duplicate demands do not inflate the report.
+    const consolidatedEvents = new Map<string, ReportEvent>();
+    for (const event of reportEvents) {
+      const key = event.stage_key + ":" + materialIdentity(event);
+      const current = consolidatedEvents.get(key);
+      if (!current) {
+        consolidatedEvents.set(key, { ...event, id: "consolidated:" + key });
+        continue;
+      }
+
+      const progressDelta = Math.min(100, current.progress_delta + event.progress_delta);
+      const progressTo = Math.min(100, Math.max(current.progress_to, event.progress_to, progressDelta));
+      const latest = current.created_at >= event.created_at ? current : event;
+      consolidatedEvents.set(key, {
+        ...latest,
+        id: "consolidated:" + key,
+        progress_from: Math.max(0, progressTo - progressDelta),
+        progress_to: progressTo,
+        progress_delta: Math.round(progressDelta * 10) / 10,
+        weight_kg: current.weight_kg ?? event.weight_kg,
+        m2: current.m2 ?? event.m2,
+        produced_weight_kg: (current.weight_kg ?? event.weight_kg) == null
+          ? null
+          : round((current.weight_kg ?? event.weight_kg)! * progressDelta / 100),
+        produced_m2: (current.m2 ?? event.m2) == null
+          ? null
+          : round((current.m2 ?? event.m2)! * progressDelta / 100),
+      });
+    }
+    const productionEvents = [...consolidatedEvents.values()];
+
+    const uniqueMaterials = new Map<string, { weight_kg: number | null; m2: number | null; progress_to: number }>();
+    for (const event of productionEvents) {
+      const key = materialIdentity(event);
+      const current = uniqueMaterials.get(key);
+      if (!current) {
+        uniqueMaterials.set(key, {
+          weight_kg: event.weight_kg,
+          m2: event.m2,
+          progress_to: event.progress_to,
+        });
+        continue;
+      }
+      uniqueMaterials.set(key, {
+        weight_kg: current.weight_kg ?? event.weight_kg,
+        m2: current.m2 ?? event.m2,
+        progress_to: Math.max(current.progress_to, event.progress_to),
+      });
+    }
+
     const stageMap = new Map<string, {
       stage_key: string;
       stage_label: string;
@@ -1443,7 +1502,7 @@ Deno.serve(async (request: Request) => {
       last_event_at: string | null;
       items: Set<string>;
     }>();
-    for (const event of reportEvents) {
+    for (const event of productionEvents) {
       const current = stageMap.get(event.stage_key) || {
         stage_key: event.stage_key,
         stage_label: event.stage_label,
@@ -1459,8 +1518,7 @@ Deno.serve(async (request: Request) => {
         last_event_at: null,
         items: new Set<string>(),
       };
-      const itemIdentity = event.source + ":" + event.project_number + ":" + event.item_key + ":" + event.stage_key;
-      current.items.add(itemIdentity);
+      current.items.add(materialIdentity(event));
       current.event_count += 1;
       current.total_progress_points += event.progress_delta;
       current.produced_weight_kg += event.produced_weight_kg || 0;
@@ -1488,26 +1546,26 @@ Deno.serve(async (request: Request) => {
         last_event_at: stage.last_event_at,
       }))
       .sort((a, b) => b.produced_weight_kg - a.produced_weight_kg || b.event_count - a.event_count);
-    const totalWeight = reportEvents.reduce((sum, event) => sum + (event.produced_weight_kg || 0), 0);
-    const totalM2 = reportEvents.reduce((sum, event) => sum + (event.produced_m2 || 0), 0);
-    const distinctItems = new Set(reportEvents.map((event) => event.source + ":" + event.project_number + ":" + event.item_key));
+    const totalWeight = [...uniqueMaterials.values()].reduce((sum, material) => sum + (material.weight_kg || 0), 0);
+    const totalM2 = [...uniqueMaterials.values()].reduce((sum, material) => sum + (material.m2 || 0), 0);
+    const totalProgressPoints = [...uniqueMaterials.values()].reduce((sum, material) => sum + material.progress_to, 0);
 
     return json({
       ok: true,
       data: {
         period: { year: requestedYear, month: requestedMonth, from: fromIso, to: toIso },
         summary: {
-          event_count: reportEvents.length,
-          item_count: distinctItems.size,
+          event_count: productionEvents.length,
+          item_count: uniqueMaterials.size,
           stage_count: stages.length,
-          total_progress_points: Math.round(reportEvents.reduce((sum, event) => sum + event.progress_delta, 0) * 10) / 10,
+          total_progress_points: Math.round(totalProgressPoints * 10) / 10,
           total_weight_kg: round(totalWeight) || 0,
           total_m2: round(totalM2) || 0,
-          missing_weight_count: reportEvents.filter((event) => event.weight_kg == null).length,
-          missing_m2_count: reportEvents.filter((event) => event.m2 == null).length,
+          missing_weight_count: [...uniqueMaterials.values()].filter((material) => material.weight_kg == null).length,
+          missing_m2_count: [...uniqueMaterials.values()].filter((material) => material.m2 == null).length,
         },
         stages,
-        events: reportEvents.sort((a, b) => b.created_at.localeCompare(a.created_at)),
+        events: productionEvents.sort((a, b) => b.created_at.localeCompare(a.created_at)),
       },
       generatedAt: new Date().toISOString(),
     });

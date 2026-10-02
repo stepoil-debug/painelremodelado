@@ -99,7 +99,7 @@ export default function MonthlyProductionReport({
         <div>
           <span className="section-mono">Produção realizada</span>
           <h2>Relatório mensal por etapa</h2>
-          <p>Produção calculada pela diferença de avanço registrada no período, com peso e m² rateados de forma proporcional.</p>
+          <p>Resumo geral consolidado por tag única. Os cartões abaixo mostram o peso produzido em cada etapa e podem repetir uma mesma tag entre etapas.</p>
         </div>
         <div className="monthly-production-actions">
           <label className="monthly-production-month">
@@ -121,8 +121,8 @@ export default function MonthlyProductionReport({
       {!loading && !error && hasReport && (
         <>
           <div className="monthly-production-summary">
-            <div><PackageCheck size={17} /><span>Itens movimentados</span><strong>{number(report!.summary.item_count, 0)}</strong><small>{number(report!.summary.event_count, 0)} registros no mês</small></div>
-            <div><Weight size={17} /><span>Peso produzido</span><strong>{number(report!.summary.total_weight_kg)} kg</strong><small>{number(report!.summary.total_progress_points)} pontos de avanço</small></div>
+            <div><PackageCheck size={17} /><span>Tags únicas produzidas</span><strong>{number(report!.summary.item_count, 0)}</strong><small>{number(report!.summary.event_count, 0)} registros de etapa consolidados</small></div>
+            <div><Weight size={17} /><span>Peso produzido único</span><strong>{number(report!.summary.total_weight_kg)} kg</strong><small>cada tag contabilizada uma vez</small></div>
             <div><Ruler size={17} /><span>Área produzida</span><strong>{number(report!.summary.total_m2)} m²</strong><small>Rateada por avanço de cada item</small></div>
             <div><Users size={17} /><span>Etapas trabalhadas</span><strong>{number(report!.summary.stage_count, 0)}</strong><small>{report!.summary.missing_weight_count ? `${report!.summary.missing_weight_count} registro(s) sem peso` : 'Peso preenchido nos registros'}</small></div>
           </div>
