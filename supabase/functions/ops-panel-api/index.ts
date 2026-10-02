@@ -1026,16 +1026,17 @@ Deno.serve(async (request: Request) => {
     const rpcName = operation === "undo"
       ? "ops_core_undo_stage_action_for_stage"
       : (stageKey ? "ops_core_stage_action_for_stage" : "ops_core_stage_action");
-    const { data, error } = await admin.rpc(rpcName, {
+    const rpcArgs = {
       p_item_id: itemId,
       p_stage_key: stageKey || null,
       ...(operation !== "undo" ? { p_action: operation } : {}),
       p_actor_email: actor,
       p_actor_name: actorName,
       p_actor_sector: actorSector,
-      p_progress: progress,
+      ...(operation !== "undo" ? { p_progress: progress } : {}),
       p_note: note || null,
-    });
+    };
+    const { data, error } = await admin.rpc(rpcName, rpcArgs);
     if (error) return json({ ok: false, error: error.message }, 409);
     await refreshDemandCache();
 
@@ -1107,7 +1108,7 @@ Deno.serve(async (request: Request) => {
     const rpcName = operation === "undo"
       ? "ops_core_undo_panel_legacy_stage_action"
       : "ops_core_apply_panel_legacy_stage_action";
-    const { data, error } = await admin.rpc(rpcName, {
+    const rpcArgs = {
       p_region: region,
       p_project_row_id: projectRowId,
       p_project_number: projectNumber,
@@ -1117,9 +1118,10 @@ Deno.serve(async (request: Request) => {
       ...(operation !== "undo" ? { p_action: operation } : {}),
       p_actor_email: actor,
       p_actor_name: actorName,
-      p_progress: progress,
+      ...(operation !== "undo" ? { p_progress: progress } : {}),
       p_note: note || null,
-    });
+    };
+    const { data, error } = await admin.rpc(rpcName, rpcArgs);
     if (error) return json({ ok: false, error: error.message }, 409);
 
     await refreshDemandCache();
