@@ -624,6 +624,7 @@ export interface HubRegistrationCandidate {
   vessel?: string | null;
   pm?: string | null;
   project_status?: string | null;
+  manual_registration?: boolean;
   item_count?: number | null;
   document_count?: number | null;
   fcb_status?: 'awaiting_fcb' | 'detected' | string | null;
@@ -708,6 +709,16 @@ export interface HubCoreRegistrationDetail {
   items: Array<Record<string, unknown>>;
 }
 
+export interface HubManualProjectInput {
+  projectCore: string;
+  displayCode?: string;
+  client?: string;
+  vessel?: string;
+  pm?: string;
+  projectType?: string;
+  priority?: string;
+}
+
 export async function loadCoreRegistrationDetail(projectKey: string): Promise<HubCoreRegistrationDetail> {
   const response = await requestHub<{ ok: true; data: HubCoreRegistrationDetail }>({
     action: 'core_registration_detail',
@@ -783,9 +794,20 @@ export async function autoRegisterCoreCandidate(projectKey: string): Promise<Hub
   return response.data;
 }
 
+export async function createManualCoreProject(input: HubManualProjectInput) {
+  const response = await requestHub<{ ok: true; data: Record<string, unknown> }>({
+    action: 'core_create_manual_project',
+    ...input,
+  });
+  return response.data;
+}
+
 export interface HubCoreItemInput {
   id?: string | null;
   item_key?: string | null;
+  parent_item_id?: string | null;
+  parent_item_key?: string | null;
+  tag_number?: string | null;
   iso_code?: string | null;
   spool_code?: string | null;
   drawing_code?: string | null;

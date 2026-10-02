@@ -21,6 +21,7 @@ import {
   loadHubSyncStatus,
   loadRegistrationCandidates,
   autoRegisterCoreCandidate,
+  createManualCoreProject,
   refreshCoreRegistration,
   triggerDrawingSync,
   removeCoreItem,
@@ -28,6 +29,7 @@ import {
   type HubCoreItemInput,
   type HubCoreMigrationStatus,
   type HubCoreValidationReport,
+  type HubManualProjectInput,
   type HubRegistrationCandidate,
 } from './services/opsPanelHub';
 import './core-migration.css';
@@ -111,6 +113,7 @@ export default function CoreMigrationPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [editing, setEditing] = useState<HubCoreItemInput | null>(null);
+  const [manualProjectOpen, setManualProjectOpen] = useState(false);
 
   async function loadAll() {
     if (!hubConfigured) return;
@@ -208,6 +211,22 @@ export default function CoreMigrationPage() {
       await loadAll();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o item.');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function saveManualProject(input: HubManualProjectInput) {
+    setBusy('manual-project');
+    setError('');
+    try {
+      const result = await createManualCoreProject(input);
+      setManualProjectOpen(false);
+      setSearch(input.projectCore);
+      setNotice((result.display_code as string || input.projectCore) + ' cadastrada manualmente. Agora inclua as tags e, quando necessário, as subtags filhas.');
+      await loadAll();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível cadastrar a BSP manualmente.');
     } finally {
       setBusy('');
     }
@@ -316,6 +335,11 @@ export default function CoreMigrationPage() {
   }, [candidates, search]);
 
   const core = detail as any;
+  const isManualRegistration = Boolean(
+    selected?.manual_registration
+    || selected?.source_systems?.includes('manual')
+    || core?.project?.source_metadata?.manual_registration,
+  );
   const nonBlockingWarnings = report?.non_blocking_warnings || [];
   const items = (Array.isArray(core?.items) ? core.items : [])
     .filter((item: CoreItem) => !item.removed_from_scope) as CoreItem[];
@@ -333,6 +357,9 @@ export default function CoreMigrationPage() {
           <p>FCB é a autoridade técnica; WIP/Job Order complementam o cadastro e o Tracking é usado somente para validação nesta fase. O modo observação preserva os painéis operacionais.</p>
         </div>
         <div className="core-page-head-actions">
+          <button className="core-button secondary" onClick={() => setManualProjectOpen(true)} disabled={Boolean(busy)}>
+            <Plus size={16} /> Cadastrar BSP manual
+          </button>
           <button className="core-button primary" onClick={() => void refreshDrawing()} disabled={Boolean(busy)}>
             <RefreshCw size={16} className={busy === 'drawing' ? 'spin' : ''} /> Atualizar Drawing
           </button>
@@ -373,7 +400,7 @@ export default function CoreMigrationPage() {
                 <div>
                   <strong>{item.display_code || item.project_core}</strong>
                   <span>{item.client || 'Cliente a confirmar'} · {item.vessel || 'Vessel a confirmar'}</span>
-                  <small>{(item.source_systems || []).join(' + ') || 'fonte pendente'} · FCB {candidateFcbStatus(item) === 'detected' ? 'detectado' : 'aguardando'}</small>
+                  <small>{item.manual_registration ? 'Cadastro manual' : (item.source_systems || []).join(' + ') || 'fonte pendente'} · FCB {candidateFcbStatus(item) === 'detected' ? 'detectado' : 'aguardando'}</small>
                 </div>
                 <div className="core-candidate-meta">
                   {isNewRegistrationCandidate(item) && <em className="mode drawing-new">NOVA DO DRAWING</em>}
@@ -418,8 +445,8 @@ export default function CoreMigrationPage() {
                   <h2>{selected.display_code}</h2>
                   <p>{selected.client || core?.project?.client || 'Cliente a confirmar'} · {selected.vessel || core?.project?.vessel || 'Vessel a confirmar'} · Autoridade: FCB</p>
                 </div>
-                {report?.fcb?.status !== 'awaiting_fcb' && (
-                  <button className="core-button secondary" onClick={() => setEditing({ ...emptyItem })}><Plus size={16} />Adicionar item</button>
+                {(report?.fcb?.status !== 'awaiting_fcb' || isManualRegistration) && (
+                  <button className="core-button secondary" onClick={() => setEditing({ ...emptyItem })}><Plus size={16} />Adicionar tag</button>
                 )}
               </div>
 
@@ -462,9 +489,11 @@ export default function CoreMigrationPage() {
 
               <div className="core-items-title">
                 <div>
-                  <strong>{report?.fcb?.status === 'awaiting_fcb' ? 'Pré-cadastro do Drawing' : 'Itens operacionais'}</strong>
+                  <strong>{isManualRegistration ? 'Tags cadastradas manualmente' : report?.fcb?.status === 'awaiting_fcb' ? 'Pré-cadastro do Drawing' : 'Itens operacionais'}</strong>
                   <small>
-                    {report?.fcb?.status === 'awaiting_fcb'
+                    {isManualRegistration
+                      ? items.length + ' tag(ns) ativas · inclua subtags quando a estrutura tiver desdobramento'
+                      : report?.fcb?.status === 'awaiting_fcb'
                       ? items.length + ' registro(s) provisório(s) - não são dados técnicos finais'
                       : items.length + ' item(ns) ativos'}
                   </small>
@@ -472,11 +501,12 @@ export default function CoreMigrationPage() {
               </div>
               <div className="core-table-wrap">
                 <table className="core-table">
-                  <thead><tr><th>Item</th><th>Tipo</th><th>Material</th><th>Dimensão</th><th>Peso</th><th>Qtd.</th><th>3D</th><th>Simulação</th><th /></tr></thead>
+                  <thead><tr><th>Tag / subtag</th><th>Tag pai</th><th>Tipo</th><th>Material</th><th>Dimensão</th><th>Peso</th><th>Qtd.</th><th>3D</th><th>Simulação</th><th /></tr></thead>
                   <tbody>
                     {items.map((item) => (
-                      <tr key={item.id}>
-                        <td><strong>{item.spool_code || item.iso_code || item.drawing_code || item.item_key}</strong><small>{item.drawing_code || ''}</small></td>
+                      <tr key={item.id} className={item.parent_item_id ? 'core-child-row' : ''}>
+                        <td><strong>{item.tag_number || item.spool_code || item.iso_code || item.drawing_code || item.item_key}</strong><small>{item.drawing_code || item.item_key || ''}</small></td>
+                        <td>{item.parent_item_id ? (() => { const parent = items.find((candidate) => candidate.id === item.parent_item_id); return parent?.tag_number || parent?.spool_code || parent?.iso_code || parent?.item_key || '—'; })() : <span className="core-parent-label">Principal</span>}</td>
                         <td>{item.item_type || 'OTHER'}</td>
                         <td>{item.material || '—'}</td>
                         <td>{[item.size, item.schedule].filter(Boolean).join(' · ') || '—'}</td>
@@ -485,16 +515,13 @@ export default function CoreMigrationPage() {
                         <td>{boolLabel(item.requires_3d)}</td>
                         <td>{boolLabel(item.requires_assembly_simulation)}</td>
                         <td className="core-row-actions">
-                          {report?.fcb?.status !== 'awaiting_fcb' && (
-                            <>
-                              <button title="Editar" onClick={() => setEditing({ ...item })}><Save size={15} /></button>
-                              <button title="Retirar do escopo" onClick={() => void removeItem(item)}><Trash2 size={15} /></button>
-                            </>
-                          )}
+                          <button title="Editar tag" onClick={() => setEditing({ ...item })}><Save size={15} /></button>
+                          <button title="Adicionar subtag filha" onClick={() => setEditing({ ...emptyItem, item_type: 'STRUCTURE', parent_item_id: item.id, parent_item_key: item.item_key || item.iso_code || item.spool_code || '', tag_number: '' })}><Plus size={15} /></button>
+                          <button title="Retirar do escopo" onClick={() => void removeItem(item)}><Trash2 size={15} /></button>
                         </td>
                       </tr>
                     ))}
-                    {!items.length && <tr><td colSpan={9} className="core-no-items">Nenhum item cadastrado. Adicione os itens antes de validar.</td></tr>}
+                    {!items.length && <tr><td colSpan={10} className="core-no-items">Nenhuma tag cadastrada. Adicione a tag principal e depois as subtags filhas, quando existirem.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -520,9 +547,17 @@ export default function CoreMigrationPage() {
       {editing && selected && (
         <ItemEditor
           item={editing}
+          parentOptions={items.filter((item) => item.id !== editing.id)}
           saving={busy === 'item'}
           onClose={() => setEditing(null)}
           onSave={(item) => void saveItem(item)}
+        />
+      )}
+      {manualProjectOpen && (
+        <ManualProjectEditor
+          saving={busy === 'manual-project'}
+          onClose={() => setManualProjectOpen(false)}
+          onSave={(input) => void saveManualProject(input)}
         />
       )}
     </section>
@@ -531,6 +566,7 @@ export default function CoreMigrationPage() {
 
 function ItemEditor(props: {
   item: HubCoreItemInput;
+  parentOptions: CoreItem[];
   saving: boolean;
   onClose: () => void;
   onSave: (item: HubCoreItemInput) => void;
@@ -547,9 +583,11 @@ function ItemEditor(props: {
   return (
     <div className="core-modal-backdrop">
       <form className="core-modal" onSubmit={(event) => { event.preventDefault(); props.onSave(form); }}>
-        <div className="core-modal-head"><div><span className="core-eyebrow">ITEM OPERACIONAL</span><h3>{form.id ? 'Editar item' : 'Adicionar item'}</h3></div><button type="button" onClick={props.onClose}><X /></button></div>
+        <div className="core-modal-head"><div><span className="core-eyebrow">TAG / SUBTAG</span><h3>{form.id ? 'Editar tag' : form.parent_item_id ? 'Adicionar subtag filha' : 'Adicionar tag principal'}</h3></div><button type="button" onClick={props.onClose}><X /></button></div>
         <div className="core-form-grid">
           <label>Tipo<select value={form.item_type || 'SPOOL'} onChange={(e) => set('item_type', e.target.value)}><option>SPOOL</option><option>SUPPORT</option><option>STRUCTURE</option><option>FRAME</option><option>OTHER</option></select></label>
+          <label>Tag / subtag<input value={form.tag_number || ''} onChange={(e) => set('tag_number', e.target.value)} placeholder="STR-01A" /></label>
+          <label>Tag pai<select value={form.parent_item_id || ''} onChange={(e) => set('parent_item_id', e.target.value || null)}><option value="">Nenhuma · tag principal</option>{props.parentOptions.map((parent) => <option key={parent.id} value={parent.id}>{parent.tag_number || parent.spool_code || parent.iso_code || parent.item_key}</option>)}</select></label>
           <label>ISO<input value={form.iso_code || ''} onChange={(e) => set('iso_code', e.target.value)} placeholder="ISO-001" /></label>
           <label>Spool / item<input value={form.spool_code || ''} onChange={(e) => set('spool_code', e.target.value)} placeholder="SPL-01" /></label>
           <label>Drawing<input value={form.drawing_code || ''} onChange={(e) => set('drawing_code', e.target.value)} placeholder="BSP-26-000-ISO-001" /></label>
@@ -566,6 +604,45 @@ function ItemEditor(props: {
           <label className="wide">Descrição<textarea value={form.description || ''} onChange={(e) => set('description', e.target.value)} rows={3} /></label>
         </div>
         <div className="core-modal-actions"><button type="button" className="core-button secondary" onClick={props.onClose}>Cancelar</button><button type="submit" className="core-button primary" disabled={props.saving}><Save size={16} />Salvar item</button></div>
+      </form>
+    </div>
+  );
+}
+
+function ManualProjectEditor(props: {
+  saving: boolean;
+  onClose: () => void;
+  onSave: (input: HubManualProjectInput) => void;
+}) {
+  const [form, setForm] = useState<HubManualProjectInput>({
+    projectCore: '',
+    displayCode: '',
+    client: '',
+    vessel: '',
+    pm: '',
+    projectType: '',
+    priority: 'Normal',
+  });
+  const set = (key: keyof HubManualProjectInput, value: string) => setForm((current) => ({ ...current, [key]: value }));
+
+  return (
+    <div className="core-modal-backdrop">
+      <form className="core-modal manual-project-modal" onSubmit={(event) => { event.preventDefault(); props.onSave(form); }}>
+        <div className="core-modal-head">
+          <div><span className="core-eyebrow">CADASTRO MANUAL</span><h3>Nova BSP</h3><p>Cadastre a BSP mesmo quando o FCB/PDF do cliente não seguir o padrão.</p></div>
+          <button type="button" onClick={props.onClose} disabled={props.saving}><X /></button>
+        </div>
+        <div className="core-form-grid">
+          <label>BSP / projeto *<input required value={form.projectCore} onChange={(e) => set('projectCore', e.target.value)} placeholder="25-708 ou BSP-25-708" /></label>
+          <label>Código exibido<input value={form.displayCode || ''} onChange={(e) => set('displayCode', e.target.value)} placeholder="BSP-25-708" /></label>
+          <label>Cliente<input value={form.client || ''} onChange={(e) => set('client', e.target.value)} /></label>
+          <label>Vessel / projeto<input value={form.vessel || ''} onChange={(e) => set('vessel', e.target.value)} /></label>
+          <label>PM responsável<input value={form.pm || ''} onChange={(e) => set('pm', e.target.value)} /></label>
+          <label>Tipo de projeto<input value={form.projectType || ''} onChange={(e) => set('projectType', e.target.value)} placeholder="Estrutura, tubulação..." /></label>
+          <label>Prioridade<select value={form.priority || 'Normal'} onChange={(e) => set('priority', e.target.value)}><option>Normal</option><option>Alta</option><option>Crítica</option><option>Baixa</option></select></label>
+          <div className="manual-project-help"><strong>Próximo passo</strong><span>Depois de salvar a BSP, inclua as tags principais. Em cada tag você poderá adicionar uma subtag/estrutura filha, como STR-01A.</span></div>
+        </div>
+        <div className="core-modal-actions"><button type="button" className="core-button secondary" onClick={props.onClose} disabled={props.saving}>Cancelar</button><button type="submit" className="core-button primary" disabled={props.saving}><Database size={16} />{props.saving ? 'Cadastrando...' : 'Cadastrar BSP'}</button></div>
       </form>
     </div>
   );

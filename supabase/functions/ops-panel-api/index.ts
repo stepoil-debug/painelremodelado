@@ -744,6 +744,25 @@ Deno.serve(async (request: Request) => {
     });
   }
 
+  if (action === "core_create_manual_project") {
+    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode cadastrar uma BSP manualmente." }, 403);
+    const projectCore = String(body.projectCore || "").trim();
+    if (!projectCore) return json({ ok: false, error: "Informe o código da BSP." }, 400);
+
+    const { data, error } = await admin.rpc("ops_core_create_manual_project", {
+      p_project_core: projectCore,
+      p_display_code: String(body.displayCode || "").trim() || null,
+      p_client: String(body.client || "").trim() || null,
+      p_vessel: String(body.vessel || "").trim() || null,
+      p_pm: String(body.pm || "").trim() || null,
+      p_project_type: String(body.projectType || "").trim() || null,
+      p_priority: String(body.priority || "Normal").trim() || "Normal",
+      p_actor: actor,
+    });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
   if (action === "core_materialize_candidate") {
     if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode criar uma BSP a partir da fila de validação." }, 403);
     const projectKey = String(body.projectKey || "").trim();
@@ -766,33 +785,9 @@ Deno.serve(async (request: Request) => {
     const item = body.item && typeof body.item === "object"
       ? body.item as Record<string, unknown>
       : {};
-    const numberOrNull = (value: unknown) => {
-      if (value === null || value === undefined || value === "") return null;
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : null;
-    };
-    const boolOrNull = (value: unknown) =>
-      value === true ? true : value === false ? false : null;
-
-    const { data, error } = await admin.rpc("ops_core_upsert_item", {
+    const { data, error } = await admin.rpc("ops_core_upsert_manual_item", {
       p_project_key: projectKey,
-      p_item_id: item.id || null,
-      p_item_key: item.item_key || null,
-      p_iso_code: item.iso_code || null,
-      p_spool_code: item.spool_code || null,
-      p_drawing_code: item.drawing_code || null,
-      p_item_type: item.item_type || "SPOOL",
-      p_description: item.description || null,
-      p_line_number: item.line_number || null,
-      p_material: item.material || null,
-      p_size: item.size || null,
-      p_schedule: item.schedule || null,
-      p_weight_kg: numberOrNull(item.weight_kg),
-      p_painting_m2: numberOrNull(item.painting_m2),
-      p_quantity: numberOrNull(item.quantity),
-      p_joints: numberOrNull(item.joints),
-      p_requires_3d: boolOrNull(item.requires_3d),
-      p_requires_assembly_simulation: boolOrNull(item.requires_assembly_simulation),
+      p_item: item,
       p_actor: actor,
     });
     if (error) return json({ ok: false, error: error.message }, 500);
