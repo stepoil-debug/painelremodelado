@@ -1849,16 +1849,26 @@ Deno.serve(async (request: Request) => {
     // tracking_isos table is a legacy mirror and can lag one or more source
     // versions behind. Never let that mirror replace a newer RPC row.
     const preferLiveRow = (item: Record<string, unknown>, live: Record<string, unknown>) => {
+      // Panel actions are the operational authority for the project status.
+      // The live legacy Tracking mirror can still report the previous status
+      // for the same project and must not undo an On Hold/Ongoing action made
+      // in this panel.
+      const operationalProjectStatus = item.project_status;
+      const mergeLiveRow = () => ({
+        ...item,
+        ...live,
+        ...(operationalProjectStatus ? { project_status: operationalProjectStatus } : {}),
+      });
       const itemVersion = sourceVersion(item);
       const liveVersion = sourceVersion(live);
       if (itemVersion !== null && liveVersion !== null && itemVersion !== liveVersion) {
-        return itemVersion > liveVersion ? item : { ...item, ...live };
+        return itemVersion > liveVersion ? item : mergeLiveRow();
       }
 
       const itemTime = sourceTime(item);
       const liveTime = sourceTime(live);
       if (itemTime !== null && liveTime !== null && itemTime >= liveTime) return item;
-      return { ...item, ...live };
+      return mergeLiveRow();
     };
 
     const progressValue = (row: Record<string, unknown>) => {
