@@ -431,8 +431,6 @@ h1,h2,h3,p { margin-top: 0; }
 .phase-card > div { display: flex; align-items: center; gap: 7px; }
 .phase-card small { font: 9px 'IBM Plex Mono', monospace; color: #93A6B8; }
 .phase-card strong { flex: 1; min-width: 0; font-size: 10px; color: #2C3E50; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.phase-photo-action { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; padding: 0; border: 1px solid #D8E7F5; border-radius: 7px; background: #F7FBFF; color: #2788C8; cursor: pointer; }
-.phase-photo-action:hover { border-color: #8EC8ED; background: #EAF6FE; color: #1355C2; }
 .phase-card b { padding: 2px 6px; border-radius: 999px; background: #F1F4F8; color: #55677A; font: 600 9px 'IBM Plex Mono', monospace; }
 .phase-card.done b { background: #E9F7F1; color: #0F8A6A; }
 .phase-card.current b { background: #EAF4FE; color: #1487C1; }

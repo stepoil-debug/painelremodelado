@@ -3753,7 +3753,7 @@ function DemandDetail(props: {
             const pct = stageOverrideProgress != null ? stageOverrideProgress : done ? 100 : current ? demand.progress : 0;
             return (
               <div key={stage.key} className={'phase-card ' + (phaseKey === stage.key ? 'selected ' : '') + (done ? 'done' : current ? 'current' : future ? 'future' : '')} role="button" tabIndex={0} onClick={() => setPhaseKey(stage.key)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setPhaseKey(stage.key); } }}>
-                <div><small>{String(index + 1).padStart(2, '0')}</small><strong>{stage.label}</strong>{demand.source === 'ops_core' && <button type="button" className="phase-photo-action" title={'Adicionar foto em ' + stage.label} aria-label={'Adicionar foto em ' + stage.label} onClick={(event) => { event.stopPropagation(); selectStagePhoto(stage.key); }}><ImagePlus size={12} /></button>}<b>{pct}%</b></div>
+                <div><small>{String(index + 1).padStart(2, '0')}</small><strong>{stage.label}</strong><b>{pct}%</b></div>
                 <span>{sectorName(stage.sector)} · SLA {Math.round(stage.slaMinutes / 60 * 10) / 10}h</span>
                 <i><em style={{ width: pct + '%' }} /></i>
               </div>
@@ -3800,6 +3800,14 @@ function DemandDetail(props: {
                   </div>
                 )}
               </>
+            )}
+            {demand.source === 'ops_core' && (
+              <div className="detail-actions">
+                <button className="soft-btn" type="button" onClick={() => selectStagePhoto(phase.key)}>
+                  <ImagePlus size={14} /> Adicionar foto
+                </button>
+                <span className="action-note"><ImagePlus size={13} /> Foto vinculada a esta etapa</span>
+              </div>
             )}
             {phaseCanUndo && (
               <div className="detail-actions">
