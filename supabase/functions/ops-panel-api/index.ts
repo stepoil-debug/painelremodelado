@@ -1762,18 +1762,60 @@ Deno.serve(async (request: Request) => {
         .map((item) => String(item.core_item_id || ""))
         .filter(Boolean),
     ));
-    const { data: coreStageEventRows, error: coreStageEventsError } = coreItemIds.length
+    const coreProjectNumberCandidates = Array.from(new Set(
+      eligibleRpcRows
+        .map((item) => String(item.project_number || "").trim())
+        .filter(Boolean)
+        .flatMap((value) => [
+          value,
+          value.replace(/^(BSP|BEP|BPP|B3D)[-_\s]*/i, ""),
+        ]),
+    ));
+    const { data: coreProjectRows, error: coreProjectsError } = coreProjectNumberCandidates.length
       ? await admin
         .schema("ops_core")
-        .from("stage_events")
-        .select("id,item_id,stage_key,event_type,progress_from,progress_to,created_at,source_system,actor_email,actor_name,payload")
-        .in("item_id", coreItemIds)
-        .order("created_at", { ascending: false })
-        .limit(20000)
+        .from("projects")
+        .select("id,project_core")
+        .eq("region", region)
+        .in("project_core", coreProjectNumberCandidates)
+        .limit(10000)
       : { data: [], error: null };
+    if (coreProjectsError) return json({ ok: false, error: coreProjectsError.message }, 500);
+    const coreProjectIdByKey = new Map(
+      (Array.isArray(coreProjectRows) ? coreProjectRows : [])
+        .map((project) => [compact(project.project_core), String(project.id)] as const)
+        .filter(([key, id]) => Boolean(key && id)),
+    );
+    const coreProjectIds = Array.from(new Set(
+      eligibleRpcRows
+        .map((item) => String(item.core_project_id || "") || coreProjectIdByKey.get(compact(item.project_number)) || "")
+        .filter(Boolean),
+    ));
+    const [{ data: coreStageEventRows, error: coreStageEventsError }, { data: coreProjectEventRows, error: coreProjectEventsError }] = await Promise.all([
+      coreItemIds.length
+        ? admin
+          .schema("ops_core")
+          .from("stage_events")
+          .select("id,project_id,item_id,stage_key,event_type,progress_from,progress_to,created_at,source_system,actor_email,actor_name,payload")
+          .in("item_id", coreItemIds)
+          .order("created_at", { ascending: false })
+          .limit(20000)
+        : Promise.resolve({ data: [], error: null }),
+      coreProjectIds.length
+        ? admin
+          .schema("ops_core")
+          .from("stage_events")
+          .select("id,project_id,item_id,stage_key,event_type,progress_from,progress_to,created_at,source_system,actor_email,actor_name,payload")
+          .in("project_id", coreProjectIds)
+          .order("created_at", { ascending: false })
+          .limit(20000)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
     if (coreStageEventsError) return json({ ok: false, error: coreStageEventsError.message }, 500);
+    if (coreProjectEventsError) return json({ ok: false, error: coreProjectEventsError.message }, 500);
     const coreStageOverridesByItem = new Map<string, Record<string, unknown>[]>();
     const coreStageHistoryByItem = new Map<string, Record<string, unknown>[]>();
+    const coreStageHistoryByProject = new Map<string, Record<string, unknown>[]>();
     for (const event of (Array.isArray(coreStageEventRows) ? coreStageEventRows : []) as Record<string, unknown>[]) {
       const itemId = String(event.item_id || "");
       const stageKey = String(event.stage_key || "");
@@ -1812,6 +1854,26 @@ Deno.serve(async (request: Request) => {
         if (eventAt && (!previousEnteredAt || eventAt < previousEnteredAt)) existing.stage_entered_at = eventAt;
       }
       coreStageOverridesByItem.set(itemId, current);
+    }
+    for (const event of (Array.isArray(coreProjectEventRows) ? coreProjectEventRows : []) as Record<string, unknown>[]) {
+      const projectId = String(event.project_id || "");
+      const stageKey = String(event.stage_key || "");
+      if (!projectId || !stageKey || event.source_system !== "ops_core") continue;
+      const history = coreStageHistoryByProject.get(projectId) || [];
+      if (!history.some((entry) => String(entry.id || "") === String(event.id || ""))) {
+        history.push({
+          id: event.id || null,
+          stage_key: stageKey,
+          event_type: event.event_type || null,
+          progress_from: event.progress_from ?? null,
+          progress_to: event.progress_to ?? null,
+          actor_email: event.actor_email || null,
+          actor_name: event.actor_name || event.actor_email || null,
+          note: (event.payload as Record<string, unknown> | null)?.note || null,
+          created_at: event.created_at || null,
+        });
+      }
+      coreStageHistoryByProject.set(projectId, history);
     }
     const normalizedSearch = search.toLowerCase();
     const trackingRows = (Array.isArray(activeTrackingIsoRows) ? activeTrackingIsoRows as Record<string, unknown>[] : [])
@@ -2057,6 +2119,7 @@ Deno.serve(async (request: Request) => {
         || panelAdvanceMap.get("project:" + projectKey + ":" + isoNorm);
 
       const coreStageOverrides = coreStageOverridesByItem.get(String(item.core_item_id || "")) || [];
+      const coreProjectId = String(item.core_project_id || "") || coreProjectIdByKey.get(compact(item.project_number)) || "";
       const stageOverrides = panelAdvance
         ? (Array.isArray(panelAdvance.stage_overrides) ? panelAdvance.stage_overrides : []).map((override) => {
             const stageKey = String((override as Record<string, unknown>).stage_key || "");
@@ -2074,7 +2137,8 @@ Deno.serve(async (request: Request) => {
         : coreStageOverrides;
       const stageHistory = panelAdvance
         ? legacyPanelStageHistory.get("row:" + projectRowId + ":" + isoNorm) || []
-        : coreStageHistoryByItem.get(String(item.core_item_id || "")) || [];
+        : coreStageHistoryByItem.get(String(item.core_item_id || ""))
+          || (coreStageHistoryByProject.get(coreProjectId) || []).filter((event) => String(event.event_type || "").startsWith("project."));
       const withPanelAdvance = stageOverrides.length
         ? {
             ...item,
