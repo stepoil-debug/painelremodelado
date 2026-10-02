@@ -986,7 +986,20 @@ Deno.serve(async (request: Request) => {
 
   if (action === "core_stage_action") {
     const itemId = String(body.itemId || "").trim();
-    const stageKey = String(body.stageKey || "").trim();
+    const requestedStageKey = String(body.stageKey || "").trim();
+    const coreStageKeyAliases: Record<string, string> = {
+      engineering_release: "drawing",
+      stock_check: "stock",
+      material_separation: "material",
+      fitup: "preassembly",
+      dma_va: "scan-initial",
+      quality_visual: "nde",
+      quality_dimensional: "scan-final",
+      hydro_test: "hydro",
+      final_inspection: "final-inspection",
+      dispatch: "package",
+    };
+    const stageKey = coreStageKeyAliases[requestedStageKey] || requestedStageKey;
     const operation = String(body.operation || "").trim().toLowerCase();
     const note = String(body.note || "").trim();
     const progressRaw = body.progress;
@@ -1235,12 +1248,14 @@ Deno.serve(async (request: Request) => {
       preassembly: { label: "Caldeiraria / Fit-up", sector: "Caldeiraria" },
       fitup: { label: "Caldeiraria / Fit-up", sector: "Caldeiraria" },
       welding: { label: "Soldagem", sector: "Solda" },
-      nde: { label: "END / NDE", sector: "Qualidade" },
-      quality_visual: { label: "Inspeção Visual", sector: "Qualidade" },
-      scan_initial: { label: "Inspeção Dimensional", sector: "Qualidade" },
-      scan_final: { label: "Inspeção Dimensional", sector: "Qualidade" },
-      "scan-final": { label: "Inspeção Dimensional", sector: "Qualidade" },
-      quality_dimensional: { label: "Inspeção Dimensional", sector: "Qualidade" },
+      dma_va: { label: "DMA/VA", sector: "Caldeiraria" },
+      "scan-initial": { label: "DMA/VA", sector: "Caldeiraria" },
+      nde: { label: "DMF/VF", sector: "Qualidade" },
+      quality_visual: { label: "DMF/VF", sector: "Qualidade" },
+      scan_initial: { label: "DMA/VA", sector: "Caldeiraria" },
+      scan_final: { label: "END", sector: "Qualidade" },
+      "scan-final": { label: "END", sector: "Qualidade" },
+      quality_dimensional: { label: "END", sector: "Qualidade" },
       hydro: { label: "Hydro Test", sector: "Qualidade" },
       hydro_test: { label: "Hydro Test", sector: "Qualidade" },
       painting: { label: "Pintura / Revestimento", sector: "Pintura" },

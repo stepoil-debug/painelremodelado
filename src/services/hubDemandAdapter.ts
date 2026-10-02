@@ -32,7 +32,9 @@ function latestPanelOverrides(row: HubDemandRow) {
 }
 
 function latestPanelOverride(row: HubDemandRow, stageKey?: string) {
-  return stageKey ? latestPanelOverrides(row)[stageKey] : undefined;
+  if (!stageKey) return undefined;
+  const overrides = latestPanelOverrides(row);
+  return overrides[stageKey] || Object.values(overrides).find((item) => uiStageKey(String(item.stage_key)) === stageKey);
 }
 
 const originBySector: Partial<Record<SectorKey, SectorKey>> = {
@@ -63,6 +65,22 @@ function normalize(value?: string | null) {
     .trim();
 }
 
+function uiStageKey(stageKey: string) {
+  const aliases: Record<string, string> = {
+    drawing: 'engineering_release',
+    stock: 'stock_check',
+    material: 'material_separation',
+    preassembly: 'fitup',
+    'scan-initial': 'dma_va',
+    nde: 'quality_visual',
+    'scan-final': 'quality_dimensional',
+    hydro: 'hydro_test',
+    'final-inspection': 'final_inspection',
+    package: 'dispatch',
+  };
+  return aliases[stageKey] || stageKey;
+}
+
 function stageMapFromTrackingKey(stageKey?: string | null, label?: string | null): StageMap | null {
   const key = normalize(stageKey);
   if (!key) return null;
@@ -70,11 +88,11 @@ function stageMapFromTrackingKey(stageKey?: string | null, label?: string | null
   if (key === 'drawing') return { stageKey: 'engineering_release', sector: 'engenharia', label: label || 'Engenharia / Drawing' };
   if (key === 'stock') return { stageKey: 'stock_check', sector: 'suprimentos', label: label || 'Verificação de Estoque' };
   if (key === 'material') return { stageKey: 'material_separation', sector: 'suprimentos', label: label || 'Separação de Material' };
-  if (key === 'preassembly') return { stageKey: 'fitup', sector: 'caldeiraria', label: label || 'Pré-Montagem / Fit-up' };
+  if (key === 'preassembly') return { stageKey: 'fitup', sector: 'caldeiraria', label: 'Caldeiraria / Fit-up' };
+  if (key === 'dma_va' || key === 'scan-initial') return { stageKey: 'dma_va', sector: 'caldeiraria', label: 'DMA/VA' };
   if (key === 'welding') return { stageKey: 'welding', sector: 'solda', label: 'Soldagem' };
-  if (key === 'scan-initial') return { stageKey: 'quality_dimensional', sector: 'qualidade', label: label || '3D Scan Inicial' };
-  if (key === 'nde') return { stageKey: 'quality_visual', sector: 'qualidade', label: label || 'Aguardando END' };
-  if (key === 'scan-final') return { stageKey: 'quality_dimensional', sector: 'qualidade', label: label || '3D Scan Final' };
+  if (key === 'nde') return { stageKey: 'quality_visual', sector: 'qualidade', label: 'DMF/VF' };
+  if (key === 'scan-final') return { stageKey: 'quality_dimensional', sector: 'qualidade', label: 'END' };
   if (key === 'hydro') return { stageKey: 'hydro_test', sector: 'qualidade', label: 'Hydro Test' };
   if (key === 'painting') return { stageKey: 'painting', sector: 'pintura', label: label || 'Pintura' };
   if (key === 'final-inspection') return { stageKey: 'final_inspection', sector: 'qualidade', label: label || 'Unitização e Inspeção' };
@@ -96,7 +114,7 @@ function hhStageMappingIsReliable(row: HubDemandRow) {
   if (activity.includes('pintura') && key === 'painting') return true;
   if (
     (activity.includes('qualidade') || activity.includes('inspecao'))
-    && ['scan-initial', 'nde', 'scan-final', 'hydro', 'final-inspection'].includes(key)
+    && ['dma_va', 'scan-initial', 'nde', 'scan-final', 'hydro', 'final-inspection'].includes(key)
   ) return true;
 
   return false;
@@ -118,7 +136,7 @@ function trackingStageMap(row: HubDemandRow): StageMap {
     const coreStage = stageMapFromTrackingKey(row.current_stage, row.current_status);
     if (coreStage) return coreStage;
     if (group === 'assembly-simulation') {
-      return { stageKey: 'quality_dimensional', sector: 'qualidade', label: row.current_status || 'Simulação de Montagem' };
+      return { stageKey: 'quality_dimensional', sector: 'qualidade', label: 'END' };
     }
     if (group === 'completed') {
       return { stageKey: 'dispatch', sector: 'expedicao', label: 'Concluído' };
@@ -137,6 +155,9 @@ function trackingStageMap(row: HubDemandRow): StageMap {
     return { stageKey: 'material_separation', sector: 'suprimentos', label: row.current_status || 'Suprimentos' };
   }
   if (group.includes('caldeiraria')) {
+    if (status.includes('dma') || status.includes('va')) {
+      return { stageKey: 'dma_va', sector: 'caldeiraria', label: 'DMA/VA' };
+    }
     return { stageKey: 'fitup', sector: 'caldeiraria', label: row.current_status || 'Caldeiraria / Fit-up' };
   }
   if (group.includes('solda')) {
@@ -153,9 +174,9 @@ function trackingStageMap(row: HubDemandRow): StageMap {
   }
   if (group.includes('qualidade')) {
     if (status === 'th' || status.includes('hidro')) return { stageKey: 'hydro_test', sector: 'qualidade', label: 'Hydro Test' };
-    if (status.includes('dimensional') || status.includes('3d')) return { stageKey: 'quality_dimensional', sector: 'qualidade', label: row.current_status || 'Inspeção Dimensional' };
-    if (status.includes('end')) return { stageKey: 'quality_visual', sector: 'qualidade', label: row.current_status || 'Aguardando END' };
-    return { stageKey: 'quality_visual', sector: 'qualidade', label: row.current_status || 'Qualidade' };
+    if (status.includes('dimensional') || status.includes('3d') || status.includes('end')) return { stageKey: 'quality_dimensional', sector: 'qualidade', label: 'END' };
+    if (status.includes('dmf') || status.includes('vf') || status.includes('visual')) return { stageKey: 'quality_visual', sector: 'qualidade', label: 'DMF/VF' };
+    return { stageKey: 'quality_visual', sector: 'qualidade', label: row.current_status || 'DMF/VF' };
   }
   if (group.includes('pintura')) {
     return { stageKey: 'painting', sector: 'pintura', label: row.current_status || 'Pintura' };
@@ -174,7 +195,7 @@ function stageMap(row: HubDemandRow): StageMap {
   const panelStage = Object.values(latestPanelOverrides(row))
     .filter((item) => normalize(item.status) !== 'completed')
     .sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')))
-    .map((item) => getStage(String(item.stage_key)))
+    .map((item) => getStage(uiStageKey(String(item.stage_key))))
     .find(Boolean);
 
   if (panelStage) {
@@ -281,7 +302,7 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       : (row.source_updated_at || row.synced_at || new Date().toISOString());
     const progress = progressFor(row, mapped.stageKey);
     const overridesByStage = latestPanelOverrides(row);
-    const stageMovement = Object.fromEntries(Object.entries(overridesByStage).map(([stageKey, item]) => [stageKey, {
+    const stageMovement = Object.fromEntries(Object.entries(overridesByStage).map(([stageKey, item]) => [uiStageKey(stageKey), {
       enteredAt: item.stage_entered_at || item.created_at || null,
       lastMovedAt: item.updated_at || null,
       actorName: item.last_actor_name || item.last_actor || null,
@@ -289,12 +310,12 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
     }])) as Record<string, StageMovementMeta>;
     const currentStageMovement = stageMovement[mapped.stageKey];
     const stageProgress = Object.fromEntries(Object.entries(overridesByStage)
-      .map(([stageKey, item]) => [stageKey, Math.max(0, Math.min(100, Number(item.progress || 0)))]));
+      .map(([stageKey, item]) => [uiStageKey(stageKey), Math.max(0, Math.min(100, Number(item.progress || 0)))]));
     const stageStatuses = Object.fromEntries(Object.entries(overridesByStage)
       .filter(([, item]) => item.status)
-      .map(([stageKey, item]) => [stageKey, String(item.status)]));
+      .map(([stageKey, item]) => [uiStageKey(stageKey), String(item.status)]));
     const undoableStages = Object.fromEntries(Object.entries(overridesByStage)
-      .map(([stageKey, item]) => [stageKey, item.can_undo === true]));
+      .map(([stageKey, item]) => [uiStageKey(stageKey), item.can_undo === true]));
     // Keep the source progress attached to the mapped stage as well. This
     // makes the phase strip and the ISO/SPL row use the same percentage when
     // there is no panel override for that stage yet.
@@ -306,7 +327,7 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
     const panelHistory: DemandEvent[] = (row.panel_stage_history || [])
       .filter((event) => event.created_at)
       .map((event, index) => {
-        const eventStage = getStage(String(event.stage_key || ''));
+        const eventStage = getStage(uiStageKey(String(event.stage_key || '')));
         const eventType = normalize(event.event_type);
         const type: DemandEvent['type'] = eventType.includes('complete')
           ? 'completed'
