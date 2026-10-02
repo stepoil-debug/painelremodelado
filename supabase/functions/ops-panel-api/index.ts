@@ -1042,6 +1042,37 @@ Deno.serve(async (request: Request) => {
     return json({ ok: true, data, generatedAt: new Date().toISOString() });
   }
 
+  if (action === "core_project_status") {
+    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode alterar o status operacional da BSP." }, 403);
+
+    const projectCore = String(body.projectCore || body.projectNumber || "").trim();
+    const projectId = String(body.projectId || "").trim();
+    const itemId = String(body.itemId || "").trim();
+    const onHold = body.onHold === true;
+    const note = String(body.note || "").trim().slice(0, 500);
+    const actorName = sessionUser
+      ? String(sessionUser.name || sessionUser.username || sessionUser.email || actor)
+      : "system-backend";
+
+    if (!projectCore && !projectId && !itemId) {
+      return json({ ok: false, error: "Informe a BSP, o projeto ou o item para alterar o status." }, 400);
+    }
+
+    const { data, error } = await admin.rpc("ops_core_set_project_operational_status", {
+      p_on_hold: onHold,
+      p_project_core: projectCore || null,
+      p_project_id: projectId || null,
+      p_item_id: itemId || null,
+      p_actor_email: actor,
+      p_actor_name: actorName,
+      p_note: note || null,
+    });
+    if (error) return json({ ok: false, error: error.message }, 409);
+
+    await refreshDemandCache();
+    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
   if (action === "legacy_stage_action") {
     if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode editar os avanços operacionais." }, 403);
 

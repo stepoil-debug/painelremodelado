@@ -329,7 +329,13 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
       .map((event, index) => {
         const eventStage = getStage(uiStageKey(String(event.stage_key || '')));
         const eventType = normalize(event.event_type);
-        const type: DemandEvent['type'] = eventType.includes('complete')
+        const isHoldChange = eventType.includes('project.on_hold');
+        const isOngoingChange = eventType.includes('project.ongoing');
+        const type: DemandEvent['type'] = isHoldChange
+          ? 'blocked'
+          : isOngoingChange
+            ? 'resumed'
+            : eventType.includes('complete')
           ? 'completed'
           : eventType.includes('block')
             ? 'blocked'
@@ -343,8 +349,14 @@ export function hubRowsToOperationalState(rows: HubDemandRow[]): OperationalStat
         return {
           id: String(event.id || 'panel-history-' + row.iso_key + '-' + index),
           type,
-          title: 'Apontamento pelo painel · ' + (eventStage?.label || event.stage_key || 'Etapa'),
-          description: (event.note || eventType || 'Etapa atualizada') + progressLabel,
+          title: isHoldChange || isOngoingChange
+            ? 'Status da BSP alterado pelo painel'
+            : 'Apontamento pelo painel · ' + (eventStage?.label || event.stage_key || 'Etapa'),
+          description: isHoldChange
+            ? 'BSP colocada em On Hold' + (event.note ? ' · ' + event.note : '')
+            : isOngoingChange
+              ? 'BSP retomada para Ongoing' + (event.note ? ' · ' + event.note : '')
+              : (event.note || eventType || 'Etapa atualizada') + progressLabel,
           at: String(event.created_at),
           actor: [event.actor_name, event.actor_email].filter(Boolean).join(' · ') || 'Usuário do painel',
           sector: eventStage?.sector || mapped.sector,

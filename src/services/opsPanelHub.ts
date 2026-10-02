@@ -1073,6 +1073,24 @@ export async function loadHubEvidence(bsp: string, iso: string): Promise<HubHHEv
   return response.data;
 }
 
+export async function mutateCoreProjectStatus(input: {
+  projectCore?: string;
+  projectId?: string;
+  itemId?: string;
+  onHold: boolean;
+  note?: string;
+}) {
+  const response = await requestHub<{ ok: true; data: Record<string, unknown> }>({
+    action: 'core_project_status',
+    projectCore: input.projectCore || null,
+    projectId: input.projectId || null,
+    itemId: input.itemId || null,
+    onHold: input.onHold,
+    note: input.note || '',
+  });
+  return response.data;
+}
+
 export async function mutateLegacyDemand(
   input: {
     region?: string;

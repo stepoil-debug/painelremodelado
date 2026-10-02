@@ -376,6 +376,11 @@ h1,h2,h3,p { margin-top: 0; }
 .soft-btn,.primary-ref,.danger-ref,.success-ref { min-height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border-radius: 10px; font-size: 10px; font-weight: 600; }
 .soft-btn { border: 1px solid #E1E9F4; background: #fff; color: #2C3E50; }
 .soft-btn:hover { background: #F7FBFF; border-color: #CFE0F3; }
+.status-toggle-ref { min-height: 30px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 9px; font-size: 9px; font-weight: 700; white-space: nowrap; }
+.status-toggle-ref.hold { border: 1px solid #F0D49A; background: #FFF9E9; color: #9B6900; }
+.status-toggle-ref.hold:hover { background: #FFF2D2; border-color: #E9BF62; }
+.status-toggle-ref.resume { border: 1px solid #C5E7D5; background: #F1FBF5; color: #18734C; }
+.status-toggle-ref.resume:hover { background: #E6F7ED; border-color: #99D4B4; }
 .primary-ref { border: 0; background: linear-gradient(100deg,#0E4AA8,#1E86D8); color: #fff; box-shadow: 0 5px 14px rgba(14,74,168,.18); }
 .danger-ref { border: 1px solid #F0CACA; background: #FFF5F5; color: #C53535; }
 .success-ref { border: 1px solid #CCEADD; background: #F3FBF6; color: #167153; }

@@ -58,6 +58,7 @@ import {
   loadCoreNotifications,
   markCoreNotificationRead,
   mutateCoreDemand,
+  mutateCoreProjectStatus,
   mutateLegacyDemand,
   saveDemandComment,
   uploadStageEvidence,
@@ -799,6 +800,32 @@ export default function App() {
     setBanner(demand.bsp + ' retomada.');
   }
 
+  async function toggleDemandHold(id: string) {
+    const demand = demands.find((d) => d.id === id);
+    if (!demand || demand.source === 'demo' || demand.archived) return false;
+
+    const nextOnHold = demand.onHold !== true;
+    const actionLabel = nextOnHold ? 'colocar em On Hold' : 'retomar para Ongoing';
+    if (!window.confirm('Tem certeza que deseja ' + actionLabel + ' a BSP ' + demand.bsp + '?')) return false;
+
+    try {
+      await mutateCoreProjectStatus({
+        projectCore: demand.bsp,
+        projectId: demand.coreProjectId,
+        itemId: demand.coreItemId,
+        onHold: nextOnHold,
+      });
+      await refreshHub(false, search, true);
+      setBanner(nextOnHold ? demand.bsp + ' colocada em On Hold.' : demand.bsp + ' retomada para Ongoing.');
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Não foi possível alterar o status da BSP.';
+      setHubError(message);
+      setBanner(message);
+      return false;
+    }
+  }
+
   async function blockDemand(id: string, targetStageKey?: string) {
     const demand = demands.find((d) => d.id === id);
     if (!demand) return;
@@ -1077,6 +1104,7 @@ export default function App() {
             onUndo={(stageKey) => undoDemand(selected.id, stageKey)}
             onWait={(stageKey) => waitDemand(selected.id, stageKey)}
             onResume={(stageKey) => resumeDemand(selected.id, stageKey)}
+            onToggleHold={() => toggleDemandHold(selected.id)}
             onBlock={(stageKey) => blockDemand(selected.id, stageKey)}
             onEvidence={(type, file, stageKey) => addEvidence(selected.id, type, file, stageKey)}
             onStageEvidenceRefresh={(stageKey) => refreshStageEvidence(selected.id, stageKey)}
@@ -3558,6 +3586,7 @@ function DemandDetail(props: {
   onUndo: (stageKey?: string) => void | Promise<boolean>;
   onWait: (stageKey?: string) => void;
   onResume: (stageKey?: string) => void;
+  onToggleHold: () => void | Promise<boolean>;
   onBlock: (stageKey?: string) => void;
   onEvidence: (type: EvidenceType, file?: File, stageKey?: string) => void | Promise<void>;
   onStageEvidenceRefresh: (stageKey?: string) => void | Promise<void>;
@@ -3721,6 +3750,17 @@ function DemandDetail(props: {
           <div className="detail-bsp"><span>BSP / ISO</span><strong>{demand.bsp}</strong><em>{demand.iso}</em></div>
           <div className="detail-title-copy"><h1>{demand.project}</h1><p>{demand.client} · {sectorName(demand.sector)}</p></div>
           <StatusPill status={status} onHold={demand.onHold === true} />
+          {demand.source !== 'demo' && !demand.archived && (
+            <button
+              className={demand.onHold === true ? 'status-toggle-ref resume' : 'status-toggle-ref hold'}
+              type="button"
+              onClick={() => void props.onToggleHold()}
+              title={demand.onHold === true ? 'Retomar BSP para Ongoing' : 'Colocar BSP em On Hold'}
+            >
+              {demand.onHold === true ? <PlayCircle size={13} /> : <PauseCircle size={13} />}
+              {demand.onHold === true ? 'Retomar operação' : 'Colocar em On Hold'}
+            </button>
+          )}
           {goalfySent && <span className={'goalfy-main-status ' + goalfyStatus}><CheckCircle2 size={13} /> {shippingStatusLabel(goalfyStatus)}</span>}
           <PriorityPill priority={demand.priority} />
         </div>
