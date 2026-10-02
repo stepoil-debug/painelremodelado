@@ -1652,19 +1652,8 @@ Deno.serve(async (request: Request) => {
       admin.rpc(rpcName, rpcArgs),
       admin.rpc("ops_panel_get_execution_overlay"),
       admin.rpc("ops_core_get_panel_legacy_stage_advances", { p_region: region }),
-      admin
-        .schema("ops_core")
-        .from("panel_legacy_stage_advances")
-        .select("region,project_row_id,project_number,iso_key,stage_key,created_at,updated_at,last_actor_email,last_actor_name,last_action")
-        .eq("region", region)
-        .limit(50000),
-      admin
-        .schema("ops_core")
-        .from("panel_legacy_stage_events")
-        .select("id,region,project_row_id,project_number,iso_key,event_type,progress_from,progress_to,actor_email,actor_name,note,payload,created_at")
-        .eq("region", region)
-        .order("created_at", { ascending: true })
-        .limit(50000),
+      admin.rpc("ops_core_get_panel_legacy_stage_metadata", { p_region: region }),
+      admin.rpc("ops_core_get_panel_legacy_stage_events", { p_region: region }),
       admin
         .from("tracking_projects")
         .select("region,project_row_id,project_number,project_display,client,vessel,project_type,project_status,pm,planned_start,planned_finish,replanned_finish,fabrication_start,overall_progress,weight_kg,m2,source_version,source_updated_at,synced_at")
@@ -1756,12 +1745,6 @@ Deno.serve(async (request: Request) => {
       // records must still belong to an active Tracking project in the main view.
       return item.source_mode === "ops_core" || activeProjectIds.has(String(item.project_row_id || ""));
     });
-    const coreItemIds = Array.from(new Set(
-      eligibleRpcRows
-        .filter((item) => item.source_mode === "ops_core")
-        .map((item) => String(item.core_item_id || ""))
-        .filter(Boolean),
-    ));
     const coreProjectNumberCandidates = Array.from(new Set(
       eligibleRpcRows
         .map((item) => String(item.project_number || "").trim())
@@ -1771,48 +1754,18 @@ Deno.serve(async (request: Request) => {
           value.replace(/^(BSP|BEP|BPP|B3D)[-_\s]*/i, ""),
         ]),
     ));
-    const { data: coreProjectRows, error: coreProjectsError } = coreProjectNumberCandidates.length
-      ? await admin
-        .schema("ops_core")
-        .from("projects")
-        .select("id,project_core")
-        .eq("region", region)
-        .in("project_core", coreProjectNumberCandidates)
-        .limit(10000)
+    const { data: coreStageEventRows, error: coreStageEventsError } = coreProjectNumberCandidates.length
+      ? await admin.rpc("ops_core_get_project_stage_history", {
+          p_region: region,
+          p_project_numbers: coreProjectNumberCandidates,
+        })
       : { data: [], error: null };
-    if (coreProjectsError) return json({ ok: false, error: coreProjectsError.message }, 500);
     const coreProjectIdByKey = new Map(
-      (Array.isArray(coreProjectRows) ? coreProjectRows : [])
-        .map((project) => [compact(project.project_core), String(project.id)] as const)
+      (Array.isArray(coreStageEventRows) ? coreStageEventRows : [])
+        .map((event) => [compact(event.project_core), String(event.project_id)] as const)
         .filter(([key, id]) => Boolean(key && id)),
     );
-    const coreProjectIds = Array.from(new Set(
-      eligibleRpcRows
-        .map((item) => String(item.core_project_id || "") || coreProjectIdByKey.get(compact(item.project_number)) || "")
-        .filter(Boolean),
-    ));
-    const [{ data: coreStageEventRows, error: coreStageEventsError }, { data: coreProjectEventRows, error: coreProjectEventsError }] = await Promise.all([
-      coreItemIds.length
-        ? admin
-          .schema("ops_core")
-          .from("stage_events")
-          .select("id,project_id,item_id,stage_key,event_type,progress_from,progress_to,created_at,source_system,actor_email,actor_name,payload")
-          .in("item_id", coreItemIds)
-          .order("created_at", { ascending: false })
-          .limit(20000)
-        : Promise.resolve({ data: [], error: null }),
-      coreProjectIds.length
-        ? admin
-          .schema("ops_core")
-          .from("stage_events")
-          .select("id,project_id,item_id,stage_key,event_type,progress_from,progress_to,created_at,source_system,actor_email,actor_name,payload")
-          .in("project_id", coreProjectIds)
-          .order("created_at", { ascending: false })
-          .limit(20000)
-        : Promise.resolve({ data: [], error: null }),
-    ]);
     if (coreStageEventsError) return json({ ok: false, error: coreStageEventsError.message }, 500);
-    if (coreProjectEventsError) return json({ ok: false, error: coreProjectEventsError.message }, 500);
     const coreStageOverridesByItem = new Map<string, Record<string, unknown>[]>();
     const coreStageHistoryByItem = new Map<string, Record<string, unknown>[]>();
     const coreStageHistoryByProject = new Map<string, Record<string, unknown>[]>();
@@ -1855,7 +1808,7 @@ Deno.serve(async (request: Request) => {
       }
       coreStageOverridesByItem.set(itemId, current);
     }
-    for (const event of (Array.isArray(coreProjectEventRows) ? coreProjectEventRows : []) as Record<string, unknown>[]) {
+    for (const event of (Array.isArray(coreStageEventRows) ? coreStageEventRows : []) as Record<string, unknown>[]) {
       const projectId = String(event.project_id || "");
       const stageKey = String(event.stage_key || "");
       if (!projectId || !stageKey || event.source_system !== "ops_core") continue;
