@@ -872,7 +872,15 @@ Deno.serve(async (request: Request) => {
   }
 
   if (action === "stage_evidence" || action === "stage_evidence_upload") {
-    const itemId = String(body.itemId || "").trim();
+    let itemId = String(body.itemId || "").trim();
+    if (!itemId) {
+      const { data: resolvedItemId, error: resolveItemError } = await admin.rpc("ops_panel_resolve_item_for_evidence", {
+        p_project_core: String(body.projectCore || body.projectNumber || "").trim() || null,
+        p_iso: String(body.iso || "").trim() || null,
+      });
+      if (resolveItemError) return json({ ok: false, error: resolveItemError.message }, 409);
+      itemId = String(resolvedItemId || "").trim();
+    }
     if (!itemId) return json({ ok: false, error: "itemId é obrigatório." }, 400);
 
     const requestedStageKey = String(body.stageKey || "").trim();

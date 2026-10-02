@@ -851,11 +851,16 @@ export default function App() {
 
   async function refreshStageEvidence(id: string, stageKey?: string) {
     const demand = demands.find((item) => item.id === id);
-    if (!demand?.coreItemId || demand.source !== 'ops_core') return;
+    if (!demand || !['ops_core', 'hub_readonly'].includes(demand.source)) return;
 
     setEvidenceLoading(true);
     try {
-      setStageEvidence(await loadStageEvidence(demand.coreItemId, stageKey || demand.stageKey));
+      setStageEvidence(await loadStageEvidence(
+        demand.coreItemId || '',
+        stageKey || demand.stageKey,
+        demand.bsp,
+        demand.iso,
+      ));
     } catch {
       setStageEvidence(null);
     } finally {
@@ -866,8 +871,8 @@ export default function App() {
   async function addEvidence(id: string, type: EvidenceType, file?: File, stageKey?: string) {
     const demand = demands.find((d) => d.id === id);
     if (!demand) return;
-    if (demand.source === 'ops_core') {
-      if (!file || !demand.coreItemId) {
+    if (demand.source === 'ops_core' || demand.source === 'hub_readonly') {
+      if (!file || (!demand.coreItemId && !demand.coreProjectId && !demand.bsp)) {
         setBanner('Selecione uma foto para registrar a evidência da etapa.');
         return;
       }
@@ -877,8 +882,21 @@ export default function App() {
       }
       setEvidenceLoading(true);
       try {
-        await uploadStageEvidence(demand.coreItemId, type, file, '', stageKey || demand.stageKey);
-        setStageEvidence(await loadStageEvidence(demand.coreItemId, stageKey || demand.stageKey));
+        await uploadStageEvidence(
+          demand.coreItemId || '',
+          type,
+          file,
+          '',
+          stageKey || demand.stageKey,
+          demand.bsp,
+          demand.iso,
+        );
+        setStageEvidence(await loadStageEvidence(
+          demand.coreItemId || '',
+          stageKey || demand.stageKey,
+          demand.bsp,
+          demand.iso,
+        ));
         setBanner((type === 'start' ? 'Foto inicial' : type === 'finish' ? 'Foto final' : 'Evidência') + ' adicionada à etapa.');
       } catch (error) {
         setBanner(error instanceof Error ? error.message : 'Não foi possível salvar a foto.');
@@ -3645,9 +3663,10 @@ function DemandDetail(props: {
   const demandStartPhotos = demand.evidences.filter((e) => e.type === 'start').length;
   const demandFinishPhotos = demand.evidences.filter((e) => e.type === 'finish').length;
   const demandExtraPhotos = demand.evidences.filter((e) => e.type === 'extra').length;
-  const sourceStartPhotos = demand.source === 'ops_core' ? panelStartPhotos : hhStartPhotos;
-  const sourceFinishPhotos = demand.source === 'ops_core' ? panelFinishPhotos : hhFinishPhotos;
-  const sourceExtraPhotos = demand.source === 'ops_core' ? panelExtraPhotos : hhExtraPhotos;
+  const sourceStartPhotos = demand.source === 'ops_core' || demand.source === 'hub_readonly' ? panelStartPhotos : hhStartPhotos;
+  const sourceFinishPhotos = demand.source === 'ops_core' || demand.source === 'hub_readonly' ? panelFinishPhotos : hhFinishPhotos;
+  const sourceExtraPhotos = demand.source === 'ops_core' || demand.source === 'hub_readonly' ? panelExtraPhotos : hhExtraPhotos;
+  const supportsPanelEvidence = demand.source === 'ops_core' || demand.source === 'hub_readonly';
   const hasStart = demandStartPhotos > 0 || sourceStartPhotos.length > 0;
   const hasFinish = demandFinishPhotos > 0 || sourceFinishPhotos.length > 0;
   const totalEvidence = demand.evidences.length + hhPhotos.length + panelPhotos.length;
@@ -3664,9 +3683,9 @@ function DemandDetail(props: {
   useEffect(() => setPhaseKey(demand.stageKey), [demand.stageKey]);
 
   useEffect(() => {
-    if (demand.source !== 'ops_core' || !demand.coreItemId || !phase.key) return;
+    if (!supportsPanelEvidence || !phase.key) return;
     void props.onStageEvidenceRefresh(phase.key);
-  }, [demand.source, demand.coreItemId, phase.key]);
+  }, [supportsPanelEvidence, demand.source, demand.coreItemId, demand.bsp, demand.iso, phase.key]);
 
   useEffect(() => {
     if (photoModalIndex === null) return;
@@ -3841,7 +3860,7 @@ function DemandDetail(props: {
                 )}
               </>
             )}
-            {demand.source === 'ops_core' && (
+            {supportsPanelEvidence && (
               <div className="detail-actions">
                 <button className="soft-btn" type="button" onClick={() => selectStagePhoto(phase.key)}>
                   <ImagePlus size={14} /> Adicionar foto
@@ -3862,7 +3881,7 @@ function DemandDetail(props: {
             <HHEvidenceGallery evidence={props.hhEvidence} loading={props.evidenceLoading} onOpenPhoto={openPhoto} />
           )}
 
-          {demand.source === 'ops_core' && (
+          {supportsPanelEvidence && (
             <StageEvidenceGallery evidence={props.stageEvidence} loading={props.evidenceLoading} />
           )}
 
@@ -3913,7 +3932,7 @@ function DemandDetail(props: {
           <div className="side-section">
             <span className="section-mono">Evidências e anexos</span>
             <div className="docs-list">
-              {demand.source === 'ops_core' && panelPhotos.slice(0, 6).map((photo) => (
+              {supportsPanelEvidence && panelPhotos.slice(0, 6).map((photo) => (
                 <a className="side-photo-link" href={photo.signed_url} target="_blank" rel="noreferrer" key={photo.id}>
                   <img src={photo.signed_url} alt={photo.caption || 'Foto da etapa'} loading="lazy" />
                   <div><strong>{photo.caption || (photo.photo_type === 'start' ? 'Foto inicial' : photo.photo_type === 'finish' ? 'Foto final' : 'Evidência extra')}</strong><small>{fmtDate(photo.taken_at || undefined)}{photo.uploaded_by_name ? ' · ' + photo.uploaded_by_name : ''}</small></div>

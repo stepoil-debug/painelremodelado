@@ -1138,11 +1138,18 @@ export interface HubStageEvidence {
   generatedAt?: string;
 }
 
-export async function loadStageEvidence(itemId: string, stageKey?: string): Promise<HubStageEvidence> {
+export async function loadStageEvidence(
+  itemId: string,
+  stageKey?: string,
+  projectCore?: string,
+  iso?: string,
+): Promise<HubStageEvidence> {
   const response = await requestHub<{ ok: true; data: HubStageEvidence }>({
     action: 'stage_evidence',
     itemId,
     stageKey: stageKey || null,
+    projectCore: projectCore || null,
+    iso: iso || null,
   });
   return response.data;
 }
@@ -1153,6 +1160,8 @@ export async function uploadStageEvidence(
   file: File,
   caption = '',
   stageKey?: string,
+  projectCore?: string,
+  iso?: string,
 ): Promise<HubStageEvidencePhoto> {
   const content = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -1170,6 +1179,8 @@ export async function uploadStageEvidence(
     contentType: file.type || 'application/octet-stream',
     content,
     caption,
+    projectCore: projectCore || null,
+    iso: iso || null,
   });
   return response.data;
 }
