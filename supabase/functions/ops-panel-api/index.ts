@@ -875,24 +875,33 @@ Deno.serve(async (request: Request) => {
     const itemId = String(body.itemId || "").trim();
     if (!itemId) return json({ ok: false, error: "itemId é obrigatório." }, 400);
 
-    const { data: item, error: itemError } = await admin
-      .schema("ops_core")
-      .from("items")
-      .select("id,current_stage_key,project_id")
-      .eq("id", itemId)
-      .maybeSingle();
-    if (itemError) return json({ ok: false, error: itemError.message }, 500);
-    if (!item) return json({ ok: false, error: "Item operacional não encontrado." }, 404);
+    const requestedStageKey = String(body.stageKey || "").trim();
+    const coreStageKeyAliases: Record<string, string> = {
+      engineering_release: "drawing",
+      stock_check: "stock",
+      material_separation: "material",
+      cutting: "preassembly",
+      fitup: "preassembly",
+      dma_va: "scan-initial",
+      quality_visual: "nde",
+      quality_dimensional: "scan-final",
+      hydro_test: "hydro",
+      final_inspection: "final-inspection",
+      dispatch: "package",
+    };
 
-    const { data: stage, error: stageError } = await admin
-      .schema("ops_core")
-      .from("item_stages")
-      .select("id,stage_key")
-      .eq("item_id", itemId)
-      .eq("stage_key", String(item.current_stage_key || ""))
-      .maybeSingle();
-    if (stageError) return json({ ok: false, error: stageError.message }, 500);
-    if (!stage) return json({ ok: false, error: "Etapa atual do item não encontrada." }, 409);
+    const requestedCoreStageKey = coreStageKeyAliases[requestedStageKey] || requestedStageKey || null;
+    const { data: stagePayload, error: stagePayloadError } = await admin.rpc("ops_panel_stage_evidence_list", {
+      p_item_id: itemId,
+      p_stage_key: requestedCoreStageKey,
+    });
+    if (stagePayloadError) return json({ ok: false, error: stagePayloadError.message }, 500);
+    const stageData = stagePayload && typeof stagePayload === "object"
+      ? stagePayload as Record<string, unknown>
+      : null;
+    const stageId = String(stageData?.item_stage_id || "");
+    const targetStageKey = String(stageData?.stage_key || requestedCoreStageKey || "");
+    if (!stageData || !stageId) return json({ ok: false, error: "Etapa do item não encontrada." }, 409);
 
     if (action === "stage_evidence_upload") {
       if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode anexar evidências." }, 403);
@@ -909,7 +918,7 @@ Deno.serve(async (request: Request) => {
       if (binary.byteLength > 8 * 1024 * 1024) return json({ ok: false, error: "A foto excede o limite de 8 MB." }, 413);
 
       const originalName = String(body.fileName || "foto").replace(/[^a-zA-Z0-9._-]/g, "_").slice(-120);
-      const storagePath = `${itemId}/${String(stage.id)}/${crypto.randomUUID()}-${originalName}`;
+      const storagePath = `${itemId}/${stageId}/${crypto.randomUUID()}-${originalName}`;
       const bucket = "ops-evidence";
       const { error: uploadError } = await admin.storage.from(bucket).upload(storagePath, binary, {
         contentType: match[1],
@@ -920,23 +929,18 @@ Deno.serve(async (request: Request) => {
       const actorName = sessionUser
         ? String(sessionUser.name || sessionUser.username || sessionUser.email || actor)
         : "system-backend";
-      const { data: inserted, error: insertError } = await admin
-        .schema("ops_core")
-        .from("stage_evidence")
-        .insert({
-          item_id: itemId,
-          item_stage_id: stage.id,
-          photo_type: photoType,
-          storage_bucket: bucket,
-          storage_path: storagePath,
-          caption: String(body.caption || "").trim().slice(0, 200) || null,
-          uploaded_by_email: actor,
-          uploaded_by_name: actorName,
-          content_type: match[1],
-          file_size_bytes: binary.byteLength,
-        })
-        .select("id,item_id,item_stage_id,photo_type,caption,taken_at,uploaded_by_name,content_type,file_size_bytes,storage_bucket,storage_path")
-        .single();
+      const { data: inserted, error: insertError } = await admin.rpc("ops_panel_stage_evidence_insert", {
+        p_item_id: itemId,
+        p_stage_key: targetStageKey,
+        p_photo_type: photoType,
+        p_storage_bucket: bucket,
+        p_storage_path: storagePath,
+        p_caption: String(body.caption || "").trim().slice(0, 200) || null,
+        p_uploaded_by_email: actor,
+        p_uploaded_by_name: actorName,
+        p_content_type: match[1],
+        p_file_size_bytes: binary.byteLength,
+      });
       if (insertError) {
         await admin.storage.from(bucket).remove([storagePath]);
         return json({ ok: false, error: insertError.message }, 500);
@@ -952,15 +956,7 @@ Deno.serve(async (request: Request) => {
       });
     }
 
-    const { data: rows, error: rowsError } = await admin
-      .schema("ops_core")
-      .from("stage_evidence")
-      .select("id,item_id,item_stage_id,photo_type,caption,taken_at,uploaded_by_name,content_type,file_size_bytes,storage_bucket,storage_path")
-      .eq("item_id", itemId)
-      .eq("item_stage_id", stage.id)
-      .order("taken_at", { ascending: true })
-      .limit(100);
-    if (rowsError) return json({ ok: false, error: rowsError.message }, 500);
+    const rows = Array.isArray(stageData.photos) ? stageData.photos : [];
 
     const photos = await Promise.all((rows || []).map(async (row: Record<string, unknown>) => {
       const bucket = String(row.storage_bucket || "ops-evidence");
@@ -980,7 +976,7 @@ Deno.serve(async (request: Request) => {
       };
     }));
 
-    return json({ ok: true, data: { item_id: itemId, item_stage_id: stage.id, photos, generatedAt: new Date().toISOString() } });
+    return json({ ok: true, data: { item_id: itemId, item_stage_id: stageId, photos, generatedAt: new Date().toISOString() } });
   }
 
 

@@ -521,17 +521,7 @@ export default function App() {
         if (active) setEvidenceLoading(false);
       });
 
-    if (selected.source === 'ops_core' && selected.coreItemId) {
-      loadStageEvidence(selected.coreItemId)
-        .then((evidence) => {
-          if (active) setStageEvidence(evidence);
-        })
-        .catch(() => {
-          if (active) setStageEvidence(null);
-        });
-    } else {
-      setStageEvidence(null);
-    }
+    setStageEvidence(null);
 
     Promise.all([
       loadGoalfyShipping(selected.bsp),
@@ -832,7 +822,21 @@ export default function App() {
     setBanner(demand.bsp + ' bloqueada.');
   }
 
-  async function addEvidence(id: string, type: EvidenceType, file?: File) {
+  async function refreshStageEvidence(id: string, stageKey?: string) {
+    const demand = demands.find((item) => item.id === id);
+    if (!demand?.coreItemId || demand.source !== 'ops_core') return;
+
+    setEvidenceLoading(true);
+    try {
+      setStageEvidence(await loadStageEvidence(demand.coreItemId, stageKey || demand.stageKey));
+    } catch {
+      setStageEvidence(null);
+    } finally {
+      setEvidenceLoading(false);
+    }
+  }
+
+  async function addEvidence(id: string, type: EvidenceType, file?: File, stageKey?: string) {
     const demand = demands.find((d) => d.id === id);
     if (!demand) return;
     if (demand.source === 'ops_core') {
@@ -846,8 +850,8 @@ export default function App() {
       }
       setEvidenceLoading(true);
       try {
-        await uploadStageEvidence(demand.coreItemId, type, file);
-        setStageEvidence(await loadStageEvidence(demand.coreItemId));
+        await uploadStageEvidence(demand.coreItemId, type, file, '', stageKey || demand.stageKey);
+        setStageEvidence(await loadStageEvidence(demand.coreItemId, stageKey || demand.stageKey));
         setBanner((type === 'start' ? 'Foto inicial' : type === 'finish' ? 'Foto final' : 'Evidência') + ' adicionada à etapa.');
       } catch (error) {
         setBanner(error instanceof Error ? error.message : 'Não foi possível salvar a foto.');
@@ -1074,7 +1078,8 @@ export default function App() {
             onWait={(stageKey) => waitDemand(selected.id, stageKey)}
             onResume={(stageKey) => resumeDemand(selected.id, stageKey)}
             onBlock={(stageKey) => blockDemand(selected.id, stageKey)}
-            onEvidence={(type, file) => addEvidence(selected.id, type, file)}
+            onEvidence={(type, file, stageKey) => addEvidence(selected.id, type, file, stageKey)}
+            onStageEvidenceRefresh={(stageKey) => refreshStageEvidence(selected.id, stageKey)}
             onComplete={(stageKey) => completeDemand(selected.id, stageKey)}
             hubDetail={projectDetail}
             hhEvidence={hhEvidence}
@@ -3554,7 +3559,8 @@ function DemandDetail(props: {
   onWait: (stageKey?: string) => void;
   onResume: (stageKey?: string) => void;
   onBlock: (stageKey?: string) => void;
-  onEvidence: (type: EvidenceType, file?: File) => void | Promise<void>;
+  onEvidence: (type: EvidenceType, file?: File, stageKey?: string) => void | Promise<void>;
+  onStageEvidenceRefresh: (stageKey?: string) => void | Promise<void>;
   onComplete: (stageKey?: string) => void | Promise<void>;
   hubDetail: Awaited<ReturnType<typeof loadHubProject>> | null;
   hhEvidence: HubHHEvidence | null;
@@ -3580,8 +3586,10 @@ function DemandDetail(props: {
   const [completeSubmitting, setCompleteSubmitting] = useState(false);
   const [undoConfirmOpen, setUndoConfirmOpen] = useState(false);
   const [undoSubmitting, setUndoSubmitting] = useState(false);
+  const [photoUploadStageKey, setPhotoUploadStageKey] = useState<string | null>(null);
   const startPhotoInput = useRef<HTMLInputElement>(null);
   const finishPhotoInput = useRef<HTMLInputElement>(null);
+  const stagePhotoInput = useRef<HTMLInputElement>(null);
   const fallbackPhase = {
     key: demand.stageKey || 'unclassified',
     label: demand.stage || 'Etapa não classificada',
@@ -3627,6 +3635,11 @@ function DemandDetail(props: {
   useEffect(() => setPhaseKey(demand.stageKey), [demand.stageKey]);
 
   useEffect(() => {
+    if (demand.source !== 'ops_core' || !demand.coreItemId || !phase.key) return;
+    void props.onStageEvidenceRefresh(phase.key);
+  }, [demand.source, demand.coreItemId, phase.key]);
+
+  useEffect(() => {
     if (photoModalIndex === null) return;
 
     const previousOverflow = document.body.style.overflow;
@@ -3662,6 +3675,20 @@ function DemandDetail(props: {
     const file = input.files?.[0];
     input.value = '';
     if (file) void props.onEvidence(type, file);
+  }
+
+  function selectStagePhoto(stageKey: string) {
+    setPhaseKey(stageKey);
+    setPhotoUploadStageKey(stageKey);
+    stagePhotoInput.current?.click();
+  }
+
+  function selectStageEvidence(input: HTMLInputElement) {
+    const file = input.files?.[0];
+    const stageKey = photoUploadStageKey;
+    input.value = '';
+    setPhotoUploadStageKey(null);
+    if (file && stageKey) void props.onEvidence('extra', file, stageKey);
   }
 
   async function confirmCompletion() {
@@ -3725,14 +3752,15 @@ function DemandDetail(props: {
             const future = index > currentIndex;
             const pct = stageOverrideProgress != null ? stageOverrideProgress : done ? 100 : current ? demand.progress : 0;
             return (
-              <button key={stage.key} className={'phase-card ' + (phaseKey === stage.key ? 'selected ' : '') + (done ? 'done' : current ? 'current' : future ? 'future' : '')} onClick={() => setPhaseKey(stage.key)}>
-                <div><small>{String(index + 1).padStart(2, '0')}</small><strong>{stage.label}</strong><b>{pct}%</b></div>
+              <div key={stage.key} className={'phase-card ' + (phaseKey === stage.key ? 'selected ' : '') + (done ? 'done' : current ? 'current' : future ? 'future' : '')} role="button" tabIndex={0} onClick={() => setPhaseKey(stage.key)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setPhaseKey(stage.key); } }}>
+                <div><small>{String(index + 1).padStart(2, '0')}</small><strong>{stage.label}</strong>{demand.source === 'ops_core' && <button type="button" className="phase-photo-action" title={'Adicionar foto em ' + stage.label} aria-label={'Adicionar foto em ' + stage.label} onClick={(event) => { event.stopPropagation(); selectStagePhoto(stage.key); }}><ImagePlus size={12} /></button>}<b>{pct}%</b></div>
                 <span>{sectorName(stage.sector)} · SLA {Math.round(stage.slaMinutes / 60 * 10) / 10}h</span>
                 <i><em style={{ width: pct + '%' }} /></i>
-              </button>
+              </div>
             );
           })}
         </div>
+        <input ref={stagePhotoInput} className="hidden-file-input" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => selectStageEvidence(event.currentTarget)} />
       </section>
 
       <section className="detail-content">

@@ -1120,10 +1120,11 @@ export interface HubStageEvidence {
   generatedAt?: string;
 }
 
-export async function loadStageEvidence(itemId: string): Promise<HubStageEvidence> {
+export async function loadStageEvidence(itemId: string, stageKey?: string): Promise<HubStageEvidence> {
   const response = await requestHub<{ ok: true; data: HubStageEvidence }>({
     action: 'stage_evidence',
     itemId,
+    stageKey: stageKey || null,
   });
   return response.data;
 }
@@ -1133,6 +1134,7 @@ export async function uploadStageEvidence(
   photoType: EvidenceType,
   file: File,
   caption = '',
+  stageKey?: string,
 ): Promise<HubStageEvidencePhoto> {
   const content = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -1144,6 +1146,7 @@ export async function uploadStageEvidence(
   const response = await requestHub<{ ok: true; data: HubStageEvidencePhoto }>({
     action: 'stage_evidence_upload',
     itemId,
+    stageKey: stageKey || null,
     photoType,
     fileName: file.name,
     contentType: file.type || 'application/octet-stream',
