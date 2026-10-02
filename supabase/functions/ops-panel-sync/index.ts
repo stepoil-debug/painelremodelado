@@ -6,6 +6,7 @@ type Source = {
   sheet_name: string;
   last_synced_version: number | null;
   current_version: number | null;
+  last_synced_at?: string | null;
   config?: Record<string, unknown>;
 };
 
@@ -434,23 +435,27 @@ async function sheetVersion(token: string, sheetId: number): Promise<number> {
   return Number(data.version ?? 0);
 }
 
-async function loadSheet(token: string, source: Source) {
+async function loadSheet(token: string, source: Source, rowsModifiedSince?: string | null) {
   const pageSize = 500;
+  const incremental = Boolean(rowsModifiedSince);
   let page = 1;
   let totalRowCount = 0;
   let columns: any[] = [];
   const rows: any[] = [];
 
   while (true) {
-    const data = await smartsheet(
-      token,
-      "/sheets/" + source.sheet_id + "?pageSize=" + pageSize + "&page=" + page + "&include=objectValue"
-    );
+    const params = new URLSearchParams({
+      pageSize: String(pageSize),
+      page: String(page),
+      include: "objectValue",
+    });
+    if (incremental) params.set("rowsModifiedSince", String(rowsModifiedSince));
+    const data = await smartsheet(token, "/sheets/" + source.sheet_id + "?" + params.toString());
     if (!columns.length && Array.isArray(data.columns)) columns = data.columns;
     const batch = Array.isArray(data.rows) ? data.rows : [];
     rows.push(...batch);
     totalRowCount = Number(data.totalRowCount ?? rows.length);
-    if (!batch.length || rows.length >= totalRowCount || batch.length < pageSize) break;
+    if (!batch.length || (!incremental && rows.length >= totalRowCount) || batch.length < pageSize) break;
     page += 1;
     if (page > 100) throw new Error("Limite de paginação excedido para " + source.source_key);
   }
@@ -544,7 +549,15 @@ Deno.serve(async (request: Request) => {
         continue;
       }
 
-      const sheet = await loadSheet(token, source);
+      // Smartsheet supports row-level deltas. Keep a small overlap with the
+      // previous checkpoint so edits made at the exact boundary are not lost;
+      // the database upsert is idempotent by source_key/source_row_id.
+      const checkpoint = source.last_synced_at ? Date.parse(String(source.last_synced_at)) : NaN;
+      const incrementalSince = !force && Number.isFinite(checkpoint)
+        ? new Date(checkpoint - 5 * 60 * 1000).toISOString()
+        : null;
+      const incremental = Boolean(incrementalSince);
+      const sheet = await loadSheet(token, source, incrementalSince);
       const { data: begin, error: beginError } = await admin.rpc("ops_panel_try_begin_sync", {
         p_source_key: source.source_key,
         p_source_version: version,
@@ -553,6 +566,8 @@ Deno.serve(async (request: Request) => {
           sheet_name: source.sheet_name,
           columns: sheet.columns,
           total_row_count: sheet.totalRowCount,
+          sync_mode: incremental ? "incremental" : "full",
+          rows_modified_since: incrementalSince,
         },
       });
       if (beginError) throw new Error(beginError.message);
@@ -580,14 +595,16 @@ Deno.serve(async (request: Request) => {
         if (batchError) throw new Error(batchError.message);
       }
 
-      const { data: finish, error: finishError } = await admin.rpc("ops_panel_finish_sync", {
+      const finishRpc = incremental ? "ops_panel_finish_incremental_sync" : "ops_panel_finish_sync";
+      const { data: finish, error: finishError } = await admin.rpc(finishRpc, {
         p_run_id: runId,
         p_source_key: source.source_key,
         p_source_version: version,
-        p_total_row_count: sheet.totalRowCount,
+        // The delta response must not be used to replace the full row count.
+        p_total_row_count: incremental ? 0 : sheet.totalRowCount,
       });
       if (finishError) throw new Error(finishError.message);
-      results.push({ source: source.source_key, status: "synced", ...finish });
+      results.push({ source: source.source_key, status: "synced", mode: incremental ? "incremental" : "full", fetched_rows: sheet.rows.length, ...finish });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await admin.rpc("ops_panel_mark_sync_error", {

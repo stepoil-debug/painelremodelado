@@ -389,7 +389,13 @@ Deno.serve(async(req:Request)=>{
   if(!requestedProject)return json({ok:false,error:"projectCore é obrigatório."},400);
   if(!isValidProjectCore(project))return json({ok:false,error:"projectCore inválido: "+requestedProject},400);
 
-  const {data:sourcesRaw,error:sourcesError}=await admin.rpc("ops_core_fcb_sources",{p_project_key:project});
+  // Automatic dispatch sends a concrete drawing row so the importer can
+  // inspect its PDF attachments even when the Smartsheet row itself is a
+  // normal SUP/STR drawing and does not contain the text "FCB".
+  const {data:sourcesRaw,error:sourcesError}=await admin.rpc("ops_core_fcb_sources",{
+    p_project_key:project,
+    p_include_attachment_candidates:Boolean(sourceRowId),
+  });
   if(sourcesError)return json({ok:false,error:sourcesError.message},500);
   const allSources=Array.isArray(sourcesRaw)?sourcesRaw:[];
   const sources=sourceRowId
