@@ -721,6 +721,31 @@ h1,h2,h3,p { margin-top: 0; }
 .source-block-head { display: flex; justify-content: space-between; gap: 10px; padding: 13px 0 9px; }
 .source-block-head strong { color: #24374B; font-size: 10px; }
 .source-block-head span { color: #7B8FA2; font: 8px 'IBM Plex Mono', monospace; }
+.collapsible-source-block > summary { list-style: none; cursor: pointer; }
+.collapsible-source-block > summary::-webkit-details-marker { display: none; }
+.source-block-summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 47px; padding: 10px 0; }
+.source-block-summary > span { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.source-block-summary strong { color: #24374B; font-size: 10px; }
+.source-block-summary small { color: #7B8FA2; font: 8px 'IBM Plex Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-block-summary > svg { flex: 0 0 auto; color: #7D91A3; transition: transform .16s ease; }
+.collapsible-source-block[open] > .source-block-summary > svg { transform: rotate(180deg); }
+.source-block-content { padding-bottom: 1px; }
+.source-timeline.collapsible-source-block { padding: 0 13px 1px; }
+.source-timeline.collapsible-source-block .source-block-summary { min-height: 52px; }
+.source-timeline.collapsible-source-block .source-block-summary small { font-family: inherit; }
+.source-timeline.collapsible-source-block .source-block-content { padding-bottom: 12px; }
+.goalfy-collapse { border-top: 1px solid #edf2f6; }
+.goalfy-collapse > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 17px; cursor: pointer; list-style: none; }
+.goalfy-collapse > summary::-webkit-details-marker { display: none; }
+.goalfy-collapse > summary > span { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.goalfy-collapse > summary strong { color: #2b4a61; font-size: 9px; }
+.goalfy-collapse > summary small { color: #8094a5; font-size: 8px; }
+.goalfy-collapse > summary > svg { color: #7d91a3; transition: transform .16s ease; }
+.goalfy-collapse[open] > summary > svg { transform: rotate(180deg); }
+.goalfy-collapse > .goalfy-kpis,
+.goalfy-collapse > .goalfy-empty,
+.goalfy-collapse > .goalfy-warning,
+.goalfy-collapse > .goalfy-dn-list { margin-left: 17px; margin-right: 17px; }
 .source-mini-table { overflow: hidden; border: 1px solid #E8EEF6; border-radius: 10px; }
 .source-mini-head,.source-mini-row { display: grid; grid-template-columns: 1.6fr .5fr 1fr .5fr; gap: 10px; align-items: center; padding: 8px 10px; }
 .source-mini-head { background: #F8FBFF; color: #8093A5; font-size: 7px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }

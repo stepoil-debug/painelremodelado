@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -1892,6 +1893,27 @@ function stepflowClosedPhase(value: unknown) {
   return ['po enviada', 'processos cancelados', 'recebido', 'cancelado', 'nao diligenciavel'].includes(normalized);
 }
 
+function CollapsibleSourceSection({ title, meta, children, className = '', defaultOpen = false }: {
+  title: string;
+  meta?: string;
+  children: ReactNode;
+  className?: string;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <details className={`source-block collapsible-source-block ${className}`} open={defaultOpen}>
+      <summary className="source-block-summary">
+        <span>
+          <strong>{title}</strong>
+          {meta && <small>{meta}</small>}
+        </span>
+        <ChevronDown size={15} aria-hidden="true" />
+      </summary>
+      <div className="source-block-content">{children}</div>
+    </details>
+  );
+}
+
 function StepFlowProjectBlock({ data, error }: {
   data: import('./services/opsPanelHub').HubStepflowProject | null | undefined;
   error?: string | null;
@@ -1900,13 +1922,9 @@ function StepFlowProjectBlock({ data, error }: {
 
   if (!data) {
     return (
-      <div className="source-block stepflow-block">
-        <div className="source-block-head">
-          <strong>STEP Flow</strong>
-          <span>Leitura indisponível</span>
-        </div>
+      <CollapsibleSourceSection title="STEP Flow" meta="Leitura indisponível" className="stepflow-block">
         <div className="stepflow-error">{error || 'Não foi possível consultar o STEP Flow.'}</div>
-      </div>
+      </CollapsibleSourceSection>
     );
   }
 
@@ -1918,11 +1936,11 @@ function StepFlowProjectBlock({ data, error }: {
   const openDilig = diligenciamentos.filter((row) => !stepflowClosedPhase(row.fase)).slice(0, 10);
 
   return (
-    <div className="source-block stepflow-block">
-      <div className="source-block-head">
-        <strong>STEP Flow · Processos vinculados à BSP</strong>
-        <span>{data.generated_at ? 'Leitura ' + fmtDate(data.generated_at) : 'Somente leitura'}</span>
-      </div>
+    <CollapsibleSourceSection
+      title="STEP Flow · Processos vinculados à BSP"
+      meta={data.generated_at ? 'Leitura ' + fmtDate(data.generated_at) : 'Somente leitura'}
+      className="stepflow-block"
+    >
 
       <div className="stepflow-kpis">
         <div><span>Compras</span><strong>{data.summary?.compras ?? compras.length}</strong><small>{data.summary?.compras_abertas ?? 0} aberta(s)</small></div>
@@ -1982,7 +2000,7 @@ function StepFlowProjectBlock({ data, error }: {
       {!openCompras.length && !openDilig.length && (
         <div className="drawing-attachments-empty">Nenhum processo aberto do STEP Flow encontrado para esta BSP.</div>
       )}
-    </div>
+    </CollapsibleSourceSection>
   );
 }
 
@@ -2162,43 +2180,45 @@ function RealSourcesPanel({ detail, loading, iso, onRefreshProject }: {
         </div>
       )}
 
-      {!supportOnly && sourceTimeline?.status !== 'not_applicable' && <div className="source-timeline">
-        <div className="source-timeline-head">
-          <div><span className="section-mono">Linha do tempo documental</span><strong>Drawing → FCB</strong></div>
-          <span className={`source-timeline-status ${sourceTimeline?.status === 'fcb_detected' ? 'done' : 'pending'}`}>{timelineStatus}</span>
-        </div>
-        <div className="source-timeline-grid">
-          <SummaryField label="Cadastro no Drawing" value={fmtDate(sourceTimeline?.drawing_registered_at || undefined)} />
-          <SummaryField label="Identificado pelo painel" value={fmtDate(sourceTimeline?.drawing_detected_at || undefined)} />
-          <SummaryField label="FCB emitido" value={fmtDate(sourceTimeline?.fcb_issued_at || undefined)} />
-          <SummaryField label="Tempo até o FCB" value={leadTimeValue} />
-        </div>
-        {sourceTimeline?.fcb_drawing_number && (
-          <small className="source-timeline-note">
-            Referência: {sourceTimeline.fcb_drawing_number}{sourceTimeline.fcb_revision ? ` · Rev. ${sourceTimeline.fcb_revision}` : ''}
-            {sourceTimeline.fcb_issued_basis ? ` · data baseada em ${sourceTimeline.fcb_issued_basis}` : ''}.
-          </small>
-        )}
-        {sourceTimeline?.status === 'awaiting_fcb' && (
-          <small className="source-timeline-note">O Drawing já foi identificado. O cronômetro será fechado automaticamente assim que o FCB aparecer na fonte sincronizada.</small>
-        )}
-      </div>}
+      {!supportOnly && sourceTimeline?.status !== 'not_applicable' && (
+        <details className="source-timeline collapsible-source-block">
+          <summary className="source-block-summary">
+            <span>
+              <strong>Linha do tempo documental · Drawing → FCB</strong>
+              <small>{timelineStatus}</small>
+            </span>
+            <ChevronDown size={15} aria-hidden="true" />
+          </summary>
+          <div className="source-block-content">
+            <div className="source-timeline-grid">
+              <SummaryField label="Cadastro no Drawing" value={fmtDate(sourceTimeline?.drawing_registered_at || undefined)} />
+              <SummaryField label="Identificado pelo painel" value={fmtDate(sourceTimeline?.drawing_detected_at || undefined)} />
+              <SummaryField label="FCB emitido" value={fmtDate(sourceTimeline?.fcb_issued_at || undefined)} />
+              <SummaryField label="Tempo até o FCB" value={leadTimeValue} />
+            </div>
+            {sourceTimeline?.fcb_drawing_number && (
+              <small className="source-timeline-note">
+                Referência: {sourceTimeline.fcb_drawing_number}{sourceTimeline.fcb_revision ? ` · Rev. ${sourceTimeline.fcb_revision}` : ''}
+                {sourceTimeline.fcb_issued_basis ? ` · data baseada em ${sourceTimeline.fcb_issued_basis}` : ''}.
+              </small>
+            )}
+            {sourceTimeline?.status === 'awaiting_fcb' && (
+              <small className="source-timeline-note">O Drawing já foi identificado. O cronômetro será fechado automaticamente assim que o FCB aparecer na fonte sincronizada.</small>
+            )}
+          </div>
+        </details>
+      )}
 
       <StepFlowProjectBlock data={detail.stepflow} error={detail.stepflow_error} />
 
       {drawings.length === 0 && (
-        <div className="source-block">
-          <div className="source-block-head"><strong>Drawing / FCB</strong><span>ISO {iso}</span></div>
+        <CollapsibleSourceSection title="Drawing / FCB" meta={`ISO ${iso}`}>
           <div className="drawing-attachments-empty">Nenhum Drawing vinculado especificamente a este ISO.</div>
-        </div>
+        </CollapsibleSourceSection>
       )}
 
       {drawings.length > 0 && (
-        <div className="source-block">
-          <div className="source-block-head">
-            <strong>Drawing / FCB</strong>
-            <span>{drawings.length} documento(s) · {revisions.length} revisão(ões)</span>
-          </div>
+        <CollapsibleSourceSection title="Drawing / FCB" meta={`${drawings.length} documento(s) · ${revisions.length} revisão(ões)`}>
 
           {attachmentError && <div className="drawing-attachment-error">{attachmentError}</div>}
           {revisionApplyError && <div className="drawing-attachment-error">{revisionApplyError}</div>}
@@ -2287,12 +2307,11 @@ function RealSourcesPanel({ detail, loading, iso, onRefreshProject }: {
           </div>
 
           {drawings.length > 20 && <div className="source-more">+ {drawings.length - 20} documento(s) vinculados ao projeto.</div>}
-        </div>
+        </CollapsibleSourceSection>
       )}
 
       {jobs.length > 0 && (
-        <div className="source-block">
-          <div className="source-block-head"><strong>Job Order / Comercial</strong><span>{jobs.length} registro(s)</span></div>
+        <CollapsibleSourceSection title="Job Order / Comercial" meta={`${jobs.length} registro(s)`}>
           <div className="source-card-grid">
             {jobs.slice(0, 4).map((row, index) => (
               <div className="source-data-card" key={String(row.project_key || index)}>
@@ -2305,11 +2324,11 @@ function RealSourcesPanel({ detail, loading, iso, onRefreshProject }: {
               </div>
             ))}
           </div>
-        </div>
+        </CollapsibleSourceSection>
       )}
 
       {dimensional.length > 0 && (
-        <div className="source-block">
+        <CollapsibleSourceSection title="3D / Dimensional Control · BSP" meta={`${dimensional.length} registro(s) referenciado(s)`}>
           {(() => {
             const indicators = dimensional.map(dimensionalIndicator);
             const emitted = dimensional.filter((row) => dimensionalDate(row) !== 'Não emitido').length;
@@ -2319,7 +2338,6 @@ function RealSourcesPanel({ detail, loading, iso, onRefreshProject }: {
 
             return (
               <>
-                <div className="source-block-head"><strong>3D / Dimensional Control · BSP</strong><span>{dimensional.length} registro(s) referenciado(s)</span></div>
                 <div className="dimensional-summary" aria-label="Resumo dos relatórios dimensionais">
                   <div><span>Relatórios</span><strong>{dimensional.length}</strong></div>
                   <div><span>Emitidos</span><strong>{emitted}</strong></div>
@@ -2347,12 +2365,11 @@ function RealSourcesPanel({ detail, loading, iso, onRefreshProject }: {
               </>
             );
           })()}
-        </div>
+        </CollapsibleSourceSection>
       )}
 
       {logistics.length > 0 && (
-        <div className="source-block">
-          <div className="source-block-head"><strong>Logística</strong><span>{logistics.length} movimento(s)</span></div>
+        <CollapsibleSourceSection title="Logística" meta={`${logistics.length} movimento(s)`}>
           <div className="source-mini-table logistics-source-table">
             <div className="source-mini-head"><span>Data</span><span>Movimento</span><span>Origem</span><span>Destino</span></div>
             {logistics.slice(0, 8).map((row, index) => (
@@ -2364,7 +2381,7 @@ function RealSourcesPanel({ detail, loading, iso, onRefreshProject }: {
               </div>
             ))}
           </div>
-        </div>
+        </CollapsibleSourceSection>
       )}
 
       {pdfViewer && (
@@ -3382,10 +3399,15 @@ function GoalfyShippingPanel(props: {
         </div>
       )}
 
-      {props.loading ? (
-        <div className="goalfy-empty"><RefreshCcw size={18} className="spin" /><span>Carregando expedição da BSP...</span></div>
-      ) : (
-        <>
+      <details className="goalfy-collapse">
+        <summary>
+          <span><strong>Detalhamento da expedição</strong><small>{summary?.dn_count ?? 0} DN(s) · clique para expandir</small></span>
+          <ChevronDown size={15} aria-hidden="true" />
+        </summary>
+        {props.loading ? (
+          <div className="goalfy-empty"><RefreshCcw size={18} className="spin" /><span>Carregando expedição da BSP...</span></div>
+        ) : (
+          <>
           <div className="goalfy-kpis">
             <div><span>DNs encontradas</span><strong>{summary?.dn_count ?? 0}</strong></div>
             <div><span>Expedidas</span><strong>{summary?.shipped_dn_count ?? 0}</strong></div>
@@ -3488,8 +3510,9 @@ function GoalfyShippingPanel(props: {
               })}
             </div>
           )}
-        </>
-      )}
+          </>
+        )}
+      </details>
     </div>
   );
 }
