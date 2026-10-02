@@ -126,6 +126,16 @@ const proxyUrl = demoOnly ? '' : (envProxy || directEdgeApi);
 
 export const hubConfigured = Boolean(proxyUrl);
 
+export class HubRequestError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'HubRequestError';
+    this.status = status;
+  }
+}
+
 async function requestHub<T>(payload: Record<string, unknown>): Promise<T> {
   if (!proxyUrl) throw new Error('Hub operacional não configurado neste ambiente.');
 
@@ -142,7 +152,7 @@ async function requestHub<T>(payload: Record<string, unknown>): Promise<T> {
 
   const data = await response.json().catch(() => ({})) as { ok?: boolean; error?: string; data?: unknown };
   if (!response.ok || data.ok === false) {
-    throw new Error(data.error || 'Não foi possível consultar o hub operacional.');
+    throw new HubRequestError(data.error || 'Não foi possível consultar o hub operacional.', response.status);
   }
   return data as T;
 }
@@ -165,9 +175,9 @@ async function requestHubBlob(payload: Record<string, unknown>): Promise<Blob> {
     const contentType = response.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
       const data = await response.json().catch(() => ({})) as { error?: string };
-      throw new Error(data.error || 'Não foi possível carregar o PDF.');
+      throw new HubRequestError(data.error || 'Não foi possível carregar o PDF.', response.status);
     }
-    throw new Error('Não foi possível carregar o PDF.');
+    throw new HubRequestError('Não foi possível carregar o PDF.', response.status);
   }
 
   const contentType = response.headers.get('content-type') || '';

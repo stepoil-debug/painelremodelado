@@ -40,6 +40,7 @@ import MonthlyProductionReport from './MonthlyProductionReport';
 import { liveHHReadOnlyEnabled, loadHHSessionsReadOnly } from './services/hhReadOnly';
 import {
   hubConfigured,
+  HubRequestError,
   loadHubDemands,
   loadMonthlyProductionReport,
   loadHubDrawingAttachments,
@@ -371,7 +372,7 @@ export default function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Falha ao carregar dados reais.';
       setHubError(message);
-      if (/sessão inválida|não autorizado/i.test(message)) {
+      if ((error instanceof HubRequestError && error.status === 401) || /sessão inválida|não autorizado/i.test(message)) {
         clearPanelSession();
         setPanelUser(null);
         setAuthError('Sua sessão expirou. Entre novamente.');
@@ -413,7 +414,14 @@ export default function App() {
       .catch((error) => {
         if (active) {
           setMonthlyProduction(null);
-          setMonthlyProductionError(error instanceof Error ? error.message : 'Falha ao carregar a produção mensal.');
+          if (error instanceof HubRequestError && error.status === 401) {
+            clearPanelSession();
+            setPanelUser(null);
+            setAuthError('Sua sessão expirou. Entre novamente para abrir o relatório mensal.');
+            setMonthlyProductionError(null);
+          } else {
+            setMonthlyProductionError(error instanceof Error ? error.message : 'Falha ao carregar a produção mensal.');
+          }
         }
       })
       .finally(() => {
