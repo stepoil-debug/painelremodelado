@@ -59,6 +59,7 @@ import {
   markCoreNotificationRead,
   mutateCoreDemand,
   mutateCoreProjectStatus,
+  mutateLegacyProjectStatus,
   mutateLegacyDemand,
   saveDemandComment,
   uploadStageEvidence,
@@ -823,12 +824,21 @@ export default function App() {
 
     setHoldSubmitting(true);
     try {
-      await mutateCoreProjectStatus({
-        projectCore: demand.bsp,
-        projectId: demand.coreProjectId,
-        itemId: demand.coreItemId,
-        onHold: request.nextOnHold,
-      });
+      if (demand.source === 'hub_readonly' && demand.legacyProjectRowId) {
+        await mutateLegacyProjectStatus({
+          region: demand.sourceRegion,
+          projectRowId: demand.legacyProjectRowId,
+          projectNumber: demand.bsp,
+          onHold: request.nextOnHold,
+        });
+      } else {
+        await mutateCoreProjectStatus({
+          projectCore: demand.bsp,
+          projectId: demand.coreProjectId,
+          itemId: demand.coreItemId,
+          onHold: request.nextOnHold,
+        });
+      }
       await refreshHub(false, search, true);
       setBanner(request.nextOnHold ? demand.bsp + ' colocada em On Hold.' : demand.bsp + ' retomada para Ongoing.');
     } catch (error) {

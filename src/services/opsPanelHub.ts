@@ -1113,6 +1113,24 @@ export async function mutateCoreProjectStatus(input: {
   return response.data;
 }
 
+export async function mutateLegacyProjectStatus(input: {
+  region?: string;
+  projectRowId: string;
+  projectNumber: string;
+  onHold: boolean;
+  note?: string;
+}) {
+  const response = await requestHub<{ ok: true; data: Record<string, unknown> }>({
+    action: 'legacy_project_status',
+    region: input.region || 'BR',
+    projectRowId: input.projectRowId,
+    projectNumber: input.projectNumber,
+    onHold: input.onHold,
+    note: input.note || '',
+  });
+  return response.data;
+}
+
 export async function mutateLegacyDemand(
   input: {
     region?: string;

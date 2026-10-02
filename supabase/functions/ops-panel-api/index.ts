@@ -1046,6 +1046,37 @@ Deno.serve(async (request: Request) => {
     return json({ ok: true, data, generatedAt: new Date().toISOString() });
   }
 
+  if (action === "legacy_project_status") {
+    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode alterar o status operacional." }, 403);
+
+    const region = String(body.region || "BR").trim() || "BR";
+    const projectRowId = String(body.projectRowId || "").trim();
+    const projectNumber = String(body.projectNumber || "").trim();
+    const onHold = body.onHold === true;
+    const note = String(body.note || "").trim().slice(0, 500);
+    const actorName = sessionUser
+      ? String(sessionUser.name || sessionUser.username || sessionUser.email || actor)
+      : "system-backend";
+
+    if (!projectRowId || !projectNumber) {
+      return json({ ok: false, error: "A BSP legada precisa de projectRowId e projectNumber." }, 400);
+    }
+
+    const { data, error } = await admin.rpc("ops_core_set_legacy_project_operational_status", {
+      p_region: region,
+      p_project_row_id: projectRowId,
+      p_project_number: projectNumber,
+      p_on_hold: onHold,
+      p_actor_email: actor,
+      p_actor_name: actorName,
+      p_note: note || null,
+    });
+    if (error) return json({ ok: false, error: error.message }, 409);
+
+    await refreshDemandCache();
+    return json({ ok: true, data, generatedAt: new Date().toISOString() });
+  }
+
   if (action === "core_project_status") {
     const projectCore = String(body.projectCore || body.projectNumber || "").trim();
     const projectId = String(body.projectId || "").trim();
@@ -1648,12 +1679,13 @@ Deno.serve(async (request: Request) => {
       ? { p_region: region, p_search: search, p_limit: limit }
       : { p_region: region, p_limit: limit };
 
-    const [{ data, error }, { data: executionOverlay, error: executionError }, { data: panelAdvanceOverlay, error: panelAdvanceError }, { data: legacyPanelStageRows, error: legacyPanelStageError }, { data: legacyPanelStageEventRows, error: legacyPanelStageEventsError }, { data: activeProjectRows, error: activeProjectsError }, { data: commentRows, error: commentsError }] = await Promise.all([
+    const [{ data, error }, { data: executionOverlay, error: executionError }, { data: panelAdvanceOverlay, error: panelAdvanceError }, { data: legacyPanelStageRows, error: legacyPanelStageError }, { data: legacyPanelStageEventRows, error: legacyPanelStageEventsError }, { data: legacyProjectStatusRows, error: legacyProjectStatusError }, { data: activeProjectRows, error: activeProjectsError }, { data: commentRows, error: commentsError }] = await Promise.all([
       admin.rpc(rpcName, rpcArgs),
       admin.rpc("ops_panel_get_execution_overlay"),
       admin.rpc("ops_core_get_panel_legacy_stage_advances", { p_region: region }),
       admin.rpc("ops_core_get_panel_legacy_stage_metadata", { p_region: region }),
       admin.rpc("ops_core_get_panel_legacy_stage_events", { p_region: region }),
+      admin.rpc("ops_core_get_legacy_project_status", { p_region: region }),
       admin
         .from("tracking_projects")
         .select("region,project_row_id,project_number,project_display,client,vessel,project_type,project_status,pm,planned_start,planned_finish,replanned_finish,fabrication_start,overall_progress,weight_kg,m2,source_version,source_updated_at,synced_at")
@@ -1671,6 +1703,7 @@ Deno.serve(async (request: Request) => {
     if (panelAdvanceError) console.error("panel advance overlay error:", panelAdvanceError.message);
     if (legacyPanelStageError) console.error("legacy panel stage metadata error:", legacyPanelStageError.message);
     if (legacyPanelStageEventsError) console.error("legacy panel stage history error:", legacyPanelStageEventsError.message);
+    if (legacyProjectStatusError) console.error("legacy project status overlay error:", legacyProjectStatusError.message);
     if (activeProjectsError) return json({ ok: false, error: activeProjectsError.message }, 500);
     if (commentsError) return json({ ok: false, error: commentsError.message }, 500);
 
@@ -1711,6 +1744,27 @@ Deno.serve(async (request: Request) => {
         tag_comment: tagComment?.comment || null,
         bsp_comment_updated_at: bspComment?.updated_at || null,
         tag_comment_updated_at: tagComment?.updated_at || null,
+      };
+    };
+    const legacyProjectStatusMap = new Map<string, Record<string, unknown>>();
+    for (const raw of (Array.isArray(legacyProjectStatusRows) ? legacyProjectStatusRows : []) as Record<string, unknown>[]) {
+      const projectRowId = String(raw.project_row_id || "");
+      const projectKey = compact(raw.project_number);
+      if (projectRowId) legacyProjectStatusMap.set("row:" + projectRowId, raw);
+      if (projectKey) legacyProjectStatusMap.set("project:" + projectKey, raw);
+    }
+    const legacyProjectStatusForRow = (item: Record<string, unknown>) => {
+      const projectRowId = String(item.project_row_id || "");
+      const projectKey = compact(item.project_number);
+      const overlay = legacyProjectStatusMap.get("row:" + projectRowId)
+        || legacyProjectStatusMap.get("project:" + projectKey);
+      if (!overlay?.panel_status) return {};
+      return {
+        project_status: overlay.panel_status,
+        legacy_panel_status: overlay.panel_status,
+        legacy_panel_status_updated_at: overlay.updated_at || null,
+        legacy_panel_status_actor_email: overlay.last_actor_email || null,
+        legacy_panel_status_actor_name: overlay.last_actor_name || null,
       };
     };
 
@@ -2006,7 +2060,7 @@ Deno.serve(async (request: Request) => {
         core_item_id: null,
       }));
     const baseRows = dedupeLogicalRows([...currentRows, ...trackingIsoFallbackRows, ...missingProjectRows])
-      .map((item) => ({ ...item, ...commentsForRow(item) }));
+      .map((item) => ({ ...item, ...legacyProjectStatusForRow(item), ...commentsForRow(item) }));
 
     const overlayRows = Array.isArray(executionOverlay) ? executionOverlay : [];
     const overlayMap = new Map<string, Record<string, unknown>>();
