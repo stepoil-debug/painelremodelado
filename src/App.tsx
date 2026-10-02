@@ -805,7 +805,9 @@ export default function App() {
     if (!demand || demand.source === 'demo' || demand.archived) return false;
 
     const nextOnHold = demand.onHold !== true;
-    const actionLabel = nextOnHold ? 'colocar em On Hold' : 'retomar para Ongoing';
+    const actionLabel = nextOnHold
+      ? 'colocar todas as tags da BSP em On Hold'
+      : 'retomar todas as tags da BSP para Ongoing';
     if (!window.confirm('Tem certeza que deseja ' + actionLabel + ' a BSP ' + demand.bsp + '?')) return false;
 
     try {
@@ -1160,6 +1162,7 @@ export default function App() {
             expandedId={expandedId}
             setExpandedId={setExpandedId}
             onOpen={setSelectedId}
+            onToggleHold={(id) => void toggleDemandHold(id)}
             onSaveComment={saveComment}
             onReset={resetDemo}
             liveData={hubConfigured}
@@ -2680,6 +2683,7 @@ function Portfolio(props: {
   expandedId: string | null;
   setExpandedId: (value: string | null) => void;
   onOpen: (id: string) => void;
+  onToggleHold: (id: string) => void;
   onSaveComment: (id: string, scope: 'bsp' | 'tag', comment: string) => Promise<boolean>;
   onReset: () => void;
   liveData: boolean;
@@ -3001,6 +3005,7 @@ function Portfolio(props: {
               expanded={props.expandedId === group.key}
               onToggle={() => props.setExpandedId(props.expandedId === group.key ? null : group.key)}
               onOpen={props.onOpen}
+              onToggleHold={props.onToggleHold}
               onSaveComment={props.onSaveComment}
             />
           ))}
@@ -3116,6 +3121,7 @@ function BspTreeRow({
   expanded,
   onToggle,
   onOpen,
+  onToggleHold,
   onSaveComment,
 }: {
   group: BspGroup;
@@ -3123,6 +3129,7 @@ function BspTreeRow({
   expanded: boolean;
   onToggle: () => void;
   onOpen: (id: string) => void;
+  onToggleHold: (id: string) => void;
   onSaveComment: (id: string, scope: 'bsp' | 'tag', comment: string) => Promise<boolean>;
 }) {
   const first = group.demands[0];
@@ -3175,7 +3182,27 @@ function BspTreeRow({
           <strong>{progress}%</strong>
           <div><i style={{ width: progress + '%' }} /></div>
         </div>
-        <div><StatusPill status={status} onHold={groupOnHold} /><PriorityPill priority={priority} /></div>
+        <div className="bsp-parent-status-actions">
+          <StatusPill status={status} onHold={groupOnHold} />
+          <PriorityPill priority={priority} />
+          {first && first.source !== 'demo' && !first.archived && (
+            <span
+              className={'bsp-status-action ' + (groupOnHold ? 'resume' : 'hold')}
+              role="button"
+              tabIndex={0}
+              title={groupOnHold ? 'Retomar todas as tags desta BSP' : 'Colocar todas as tags desta BSP em On Hold'}
+              onClick={(event) => { event.stopPropagation(); onToggleHold(first.id); }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                event.stopPropagation();
+                onToggleHold(first.id);
+              }}
+            >
+              {groupOnHold ? 'Retomar tags' : 'On Hold · tags'}
+            </span>
+          )}
+        </div>
         <ChevronDown className={expanded ? 'rotate' : ''} size={17} />
       </button>
 
