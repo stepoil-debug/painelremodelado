@@ -101,6 +101,44 @@ function stageMapFromTrackingKey(stageKey?: string | null, label?: string | null
   return null;
 }
 
+function stageMapFromHoldStatus(status?: string | null): StageMap | null {
+  const value = normalize(status);
+  if (!value || value === 'on hold') return null;
+
+  if (value.includes('fabrication not started')) {
+    return { stageKey: 'engineering_release', sector: 'engenharia', label: 'Engenharia / Drawing' };
+  }
+  if (value.includes('material separation') || value.includes('procurement')) {
+    return { stageKey: 'material_separation', sector: 'suprimentos', label: 'Separação de Material' };
+  }
+  if (value.includes('spool assemble') || value.includes('welding preparation')) {
+    return { stageKey: 'fitup', sector: 'caldeiraria', label: 'Caldeiraria / Fit-up' };
+  }
+  if (value.includes('full welding') || value.includes('welding execution')) {
+    return { stageKey: 'welding', sector: 'solda', label: 'Soldagem' };
+  }
+  if (value.includes('hydro test')) {
+    return { stageKey: 'hydro_test', sector: 'qualidade', label: 'Hydro Test' };
+  }
+  if (value.includes('package and delivered') || value.includes('exped')) {
+    return { stageKey: 'dispatch', sector: 'expedicao', label: 'Preparado para envio' };
+  }
+  if (value.includes('inspeção dimensional inicial') || value.includes('inspecao dimensional inicial')) {
+    return { stageKey: 'dma_va', sector: 'caldeiraria', label: 'DMA/VA' };
+  }
+  if (value.includes('inspeção dimensional') || value.includes('inspecao dimensional') || value.includes('3d')) {
+    return { stageKey: 'quality_dimensional', sector: 'qualidade', label: 'END' };
+  }
+  if (value.includes('end') || value.includes('nde') || value.includes('visual')) {
+    return { stageKey: 'quality_visual', sector: 'qualidade', label: 'DMF/VF' };
+  }
+  if (value.includes('pintura') || value.includes('hdg') || value.includes('fbe')) {
+    return { stageKey: 'painting', sector: 'pintura', label: 'Pintura' };
+  }
+
+  return null;
+}
+
 function hhStageMappingIsReliable(row: HubDemandRow) {
   if (row.hh_status !== 'open') return false;
 
@@ -133,8 +171,17 @@ function trackingStageMap(row: HubDemandRow): StageMap {
   );
 
   if (row.source_mode === 'ops_core') {
+    const projectOnHold = normalize(row.project_status) === 'on hold';
+    if (projectOnHold) {
+      return { stageKey: 'on_hold', sector: 'on_hold', label: 'On Hold' };
+    }
+
     const coreStage = stageMapFromTrackingKey(row.current_stage, row.current_status);
     if (coreStage) return coreStage;
+    if (group.includes('on hold')) {
+      const restoredStage = stageMapFromHoldStatus(row.current_status);
+      if (restoredStage) return restoredStage;
+    }
     if (group === 'assembly-simulation') {
       return { stageKey: 'quality_dimensional', sector: 'qualidade', label: 'END' };
     }
@@ -164,6 +211,10 @@ function trackingStageMap(row: HubDemandRow): StageMap {
     return { stageKey: 'welding', sector: 'solda', label: 'Soldagem' };
   }
   if (group.includes('on hold')) {
+    if (normalize(row.project_status) !== 'on hold') {
+      const restoredStage = stageMapFromHoldStatus(row.current_status);
+      if (restoredStage) return restoredStage;
+    }
     return { stageKey: 'on_hold', sector: 'on_hold', label: 'On Hold' };
   }
   if (group.includes('producao')) {
