@@ -274,6 +274,8 @@ export default function App() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [holdConfirm, setHoldConfirm] = useState<{ id: string; nextOnHold: boolean } | null>(null);
+  const [holdSubmitting, setHoldSubmitting] = useState(false);
   const [newBspPopup, setNewBspPopup] = useState<HubNewBspAlert | null>(null);
   const [clock, setClock] = useState(new Date());
   const [productionMonth, setProductionMonth] = useState(() => {
@@ -286,6 +288,7 @@ export default function App() {
 
   const demands = state.demands;
   const selected = selectedId ? demands.find((d) => d.id === selectedId) ?? null : null;
+  const holdDemand = holdConfirm ? demands.find((demand) => demand.id === holdConfirm.id) ?? null : null;
 
   useEffect(() => {
     if (!hubConfigured) saveOperationalState(state);
@@ -800,31 +803,41 @@ export default function App() {
     setBanner(demand.bsp + ' retomada.');
   }
 
-  async function toggleDemandHold(id: string) {
+  function toggleDemandHold(id: string) {
     const demand = demands.find((d) => d.id === id);
     if (!demand || demand.source === 'demo' || demand.archived) return false;
 
     const nextOnHold = demand.onHold !== true;
-    const actionLabel = nextOnHold
-      ? 'colocar todas as tags da BSP em On Hold'
-      : 'retomar todas as tags da BSP para Ongoing';
-    if (!window.confirm('Tem certeza que deseja ' + actionLabel + ' a BSP ' + demand.bsp + '?')) return false;
+    setHoldConfirm({ id, nextOnHold });
+    return true;
+  }
 
+  async function confirmDemandHold() {
+    if (!holdConfirm) return;
+    const request = holdConfirm;
+    const demand = demands.find((item) => item.id === request.id);
+    if (!demand) {
+      setHoldConfirm(null);
+      return;
+    }
+
+    setHoldSubmitting(true);
     try {
       await mutateCoreProjectStatus({
         projectCore: demand.bsp,
         projectId: demand.coreProjectId,
         itemId: demand.coreItemId,
-        onHold: nextOnHold,
+        onHold: request.nextOnHold,
       });
       await refreshHub(false, search, true);
-      setBanner(nextOnHold ? demand.bsp + ' colocada em On Hold.' : demand.bsp + ' retomada para Ongoing.');
-      return true;
+      setBanner(request.nextOnHold ? demand.bsp + ' colocada em On Hold.' : demand.bsp + ' retomada para Ongoing.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Não foi possível alterar o status da BSP.';
       setHubError(message);
       setBanner(message);
-      return false;
+    } finally {
+      setHoldSubmitting(false);
+      setHoldConfirm(null);
     }
   }
 
@@ -1115,6 +1128,42 @@ export default function App() {
         </aside>
       )}
 
+      {holdConfirm && holdDemand && (
+        <div
+          className="advance-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="hold-modal-title"
+          onMouseDown={(event) => { if (!holdSubmitting && event.currentTarget === event.target) setHoldConfirm(null); }}
+        >
+          <div className="advance-dialog complete-confirm-dialog">
+            <header>
+              <div>
+                <span className="section-mono">Confirmar status da BSP</span>
+                <h2 id="hold-modal-title">{holdConfirm.nextOnHold ? 'Colocar todas as tags em On Hold?' : 'Retomar todas as tags?'}</h2>
+                <p>{holdDemand.bsp} · {holdDemand.iso}</p>
+              </div>
+              <button className="advance-close" onClick={() => setHoldConfirm(null)} disabled={holdSubmitting} aria-label="Fechar">×</button>
+            </header>
+            <div className={'complete-confirm-warning ' + (holdConfirm.nextOnHold ? 'hold-confirm-warning' : 'resume-confirm-warning')}>
+              {holdConfirm.nextOnHold ? <PauseCircle size={18} /> : <PlayCircle size={18} />}
+              <div>
+                <strong>{holdConfirm.nextOnHold ? 'Atenção: ação em toda a BSP' : 'Retomar a BSP inteira'}</strong>
+                <span>Todas as tags vinculadas à BSP serão alteradas juntas para {holdConfirm.nextOnHold ? 'On Hold' : 'Ongoing'}.</span>
+              </div>
+            </div>
+            <p className="advance-note"><ShieldCheck size={14} /> A alteração será registrada no histórico com seu usuário e horário.</p>
+            <footer>
+              <button className="soft-btn" onClick={() => setHoldConfirm(null)} disabled={holdSubmitting}>Cancelar</button>
+              <button className="primary-ref" onClick={() => void confirmDemandHold()} disabled={holdSubmitting}>
+                {holdConfirm.nextOnHold ? <PauseCircle size={14} /> : <PlayCircle size={14} />}
+                {holdSubmitting ? 'Salvando...' : holdConfirm.nextOnHold ? 'Sim, colocar em On Hold' : 'Sim, retomar tags'}
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
       <main className="workspace">
         {selected ? (
           <DemandDetail
@@ -1124,7 +1173,7 @@ export default function App() {
             onUndo={(stageKey) => undoDemand(selected.id, stageKey)}
             onWait={(stageKey) => waitDemand(selected.id, stageKey)}
             onResume={(stageKey) => resumeDemand(selected.id, stageKey)}
-            onToggleHold={() => toggleDemandHold(selected.id)}
+            onToggleHold={() => { toggleDemandHold(selected.id); }}
             onBlock={(stageKey) => blockDemand(selected.id, stageKey)}
             onEvidence={(type, file, stageKey) => addEvidence(selected.id, type, file, stageKey)}
             onStageEvidenceRefresh={(stageKey) => refreshStageEvidence(selected.id, stageKey)}

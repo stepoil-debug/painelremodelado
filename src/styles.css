@@ -509,6 +509,10 @@ h1,h2,h3,p { margin-top: 0; }
 .complete-confirm-warning strong, .complete-confirm-warning span { display: block; }
 .complete-confirm-warning strong { color: #145A43; font-size: 11px; }
 .complete-confirm-warning span { margin-top: 4px; color: #5D806F; font-size: 9px; line-height: 1.45; }
+.complete-confirm-warning.hold-confirm-warning { border-color: #F0D49A; background: #FFF9E9; color: #966200; }
+.complete-confirm-warning.hold-confirm-warning strong { color: #805300; }
+.complete-confirm-warning.hold-confirm-warning span { color: #8B734A; }
+.complete-confirm-warning.resume-confirm-warning { border-color: #CDE8DA; background: #F3FBF6; color: #176C4D; }
 .full-timeline { padding: 15px 17px; }
 .full-timeline > div { display: grid; grid-template-columns: 10px 1fr; gap: 9px; padding-bottom: 13px; }
 .full-timeline > div > i { width: 6px; height: 6px; margin-top: 5px; border-radius: 50%; background: #17A9E8; }
