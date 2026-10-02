@@ -1043,8 +1043,6 @@ Deno.serve(async (request: Request) => {
   }
 
   if (action === "core_project_status") {
-    if (!mayManageCore) return json({ ok: false, error: "Somente PCP ou administrador pode alterar o status operacional da BSP." }, 403);
-
     const projectCore = String(body.projectCore || body.projectNumber || "").trim();
     const projectId = String(body.projectId || "").trim();
     const itemId = String(body.itemId || "").trim();
