@@ -1,0 +1,5 @@
+[functions.ops-panel-auth]
+verify_jwt = false
+
+[functions.ops-panel-api]
+verify_jwt = false

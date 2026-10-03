@@ -1,0 +1,15 @@
+name: Deploy Secure Operational Panel to Netlify
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  unavailable:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Netlify temporarily disabled
+        run: echo "Netlify production deploy is disabled because the account reported credit usage exceeded. GitHub Pages now uses STEP authentication and the secure Supabase hub directly."
