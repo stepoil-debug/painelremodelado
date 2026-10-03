@@ -2495,8 +2495,20 @@ h1,h2,h3,p { margin-top: 0; }
   cursor: pointer;
 }
 .new-bsp-popup-primary:hover { background: #0B5DA6; }
+.new-bsp-popup-all {
+  border: 1px solid #D4E1EC;
+  border-radius: 8px;
+  padding: 8px 11px;
+  background: #F7FAFD;
+  color: #24516F;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.new-bsp-popup-all:hover { background: #EDF5FB; border-color: #B8D0E2; }
 @media (max-width: 640px) {
   .new-bsp-popup { top: 70px; right: 14px; left: 14px; width: auto; }
+  .new-bsp-popup-actions { flex-wrap: wrap; }
 }
 
 

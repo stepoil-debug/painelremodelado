@@ -278,6 +278,7 @@ export default function App() {
   const [holdConfirm, setHoldConfirm] = useState<{ id: string; nextOnHold: boolean } | null>(null);
   const [holdSubmitting, setHoldSubmitting] = useState(false);
   const [newBspPopup, setNewBspPopup] = useState<HubNewBspAlert | null>(null);
+  const dismissedNewBspIds = useRef<Set<string>>(new Set());
   const [clock, setClock] = useState(new Date());
   const [productionMonth, setProductionMonth] = useState(() => {
     const current = new Date();
@@ -298,6 +299,17 @@ export default function App() {
   useEffect(() => {
     const timer = window.setInterval(() => setClock(new Date()), 30_000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(window.localStorage.getItem('ops-panel.dismissed-new-bsp-alerts') || '[]');
+      if (Array.isArray(stored)) {
+        stored.filter((id): id is string => typeof id === 'string').forEach((id) => dismissedNewBspIds.current.add(id));
+      }
+    } catch {
+      // O bloqueio persistente é complementar; o banco continua sendo a fonte principal.
+    }
   }, []);
 
   useEffect(() => {
@@ -349,12 +361,13 @@ export default function App() {
     try {
       const region = panelUser.operationRegion || 'BR';
       const query = searchQuery.trim();
-      const [rows, coreNotifications] = await Promise.all([
+      const [rows, coreNotifications, newBspAlerts] = await Promise.all([
         loadHubDemands(region, query ? 1200 : 3000, query),
         loadCoreNotifications(panelUser.sector || '', panelUser.email || panelUser.username || '', 300).catch(() => []),
+        loadNewBspAlerts(200).catch(() => []),
       ]);
       const nextState = hubRowsToOperationalState(rows);
-      nextState.notifications = coreNotifications.map((notification) => {
+      const coreNotificationItems = coreNotifications.map((notification) => {
         const demand = nextState.demands.find((item) => item.coreItemId === notification.item_id);
         return {
           id: notification.id,
@@ -367,6 +380,19 @@ export default function App() {
           severity: notification.severity || 'info',
         };
       });
+      const coreNotificationIds = new Set(coreNotificationItems.map((notification) => notification.id));
+      const newBspNotificationItems = newBspAlerts
+        .filter((alert) => !coreNotificationIds.has(alert.id))
+        .map((alert) => ({
+          id: alert.id,
+          title: alert.title || 'Nova BSP detectada',
+          message: alert.message,
+          sector: 'engenharia' as SectorKey,
+          createdAt: alert.created_at,
+          read: Boolean(alert.read_at),
+          severity: alert.severity || 'warning',
+        }));
+      nextState.notifications = [...coreNotificationItems, ...newBspNotificationItems];
       setState(nextState);
       if (!preserveSelection) {
         setSelectedId(null);
@@ -445,8 +471,9 @@ export default function App() {
     const checkNewBsp = async () => {
       try {
         const alerts = await loadNewBspAlerts(5);
-        if (!active || !alerts.length) return;
-        setNewBspPopup((current) => current || alerts[0]);
+        const nextAlert = alerts.find((alert) => !dismissedNewBspIds.current.has(alert.id));
+        if (!active || !nextAlert) return;
+        setNewBspPopup((current) => current || nextAlert);
       } catch {
         // Popup é complementar; falha aqui não bloqueia a carteira.
       }
@@ -460,10 +487,35 @@ export default function App() {
     };
   }, [panelUser]);
 
-  async function closeNewBspPopup(openRegistration = false) {
+  async function closeNewBspPopup(openRegistration = false, openAll = false) {
     const alert = newBspPopup;
     if (!alert) return;
     setNewBspPopup(null);
+    dismissedNewBspIds.current.add(alert.id);
+    try {
+      const ids = Array.from(dismissedNewBspIds.current).slice(-200);
+      window.localStorage.setItem('ops-panel.dismissed-new-bsp-alerts', JSON.stringify(ids));
+    } catch {
+      // O alerta já foi marcado no banco; o armazenamento local é apenas uma trava extra.
+    }
+    setState((current) => {
+      const item = {
+        id: alert.id,
+        title: alert.title || 'Nova BSP detectada',
+        message: alert.message,
+        sector: 'engenharia' as SectorKey,
+        createdAt: alert.created_at,
+        read: true,
+        severity: alert.severity || 'warning',
+      };
+      const exists = current.notifications.some((notification) => notification.id === alert.id);
+      return {
+        ...current,
+        notifications: exists
+          ? current.notifications.map((notification) => notification.id === alert.id ? { ...notification, read: true } : notification)
+          : [item, ...current.notifications],
+      };
+    });
     try {
       await markCoreNotificationRead(alert.id);
     } catch {
@@ -473,6 +525,10 @@ export default function App() {
       setSelectedId(null);
       setExpandedId(null);
       setPage('migration');
+    } else if (openAll) {
+      setSelectedId(null);
+      setExpandedId(null);
+      setPage('notifications');
     }
   }
 
@@ -1133,6 +1189,7 @@ export default function App() {
           </div>
           <div className="new-bsp-popup-actions">
             <button className="soft-btn" onClick={() => void closeNewBspPopup(false)}>Fechar</button>
+            <button className="new-bsp-popup-all" onClick={() => void closeNewBspPopup(false, true)}>Visualizar tudo</button>
             <button className="new-bsp-popup-primary" onClick={() => void closeNewBspPopup(true)}>Abrir cadastro</button>
           </div>
         </aside>
